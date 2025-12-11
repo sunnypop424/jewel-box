@@ -33,7 +33,7 @@ const App: React.FC = () => {
     characters: [],
   });
 
-  const [loading, setLoading] = useState(false); // 전체 데이터 로딩용
+  const [loading, setLoading] = useState(false); // 전체 데이터 로딩용 (스켈레톤 제어)
   const [saving, setSaving] = useState(false);   // 저장(API 호출) 중 상태
   const [status, setStatus] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -70,7 +70,7 @@ const App: React.FC = () => {
     }
   }, []);
 
-  // 로컬 스토리지 자동 저장 (localSquad 변경 시)
+  // 로컬 스토리지 자동 저장
   useEffect(() => {
     if (typeof window === 'undefined') return;
     window.localStorage.setItem(LOCAL_SQUAD_KEY, JSON.stringify(localSquad));
@@ -79,7 +79,7 @@ const App: React.FC = () => {
   // 전체 캐릭터 데이터 새로고침
   const refreshAllCharacters = async () => {
     try {
-      setLoading(true);
+      setLoading(true); // 로딩 시작 -> 스켈레톤 표시
       setStatus('데이터 동기화 중...');
 
       const list = await fetchCharacters();
@@ -94,7 +94,7 @@ const App: React.FC = () => {
       console.error(e);
       setStatus(`로드 실패: ${e?.message ?? e}`);
     } finally {
-      setLoading(false);
+      setLoading(false); // 로딩 종료
     }
   };
 
@@ -103,39 +103,33 @@ const App: React.FC = () => {
     refreshAllCharacters().catch(console.error);
   }, []);
 
-  // 레이드 배정 로직용 캐릭터 목록
   const effectiveCharacters = useMemo(() => {
     if (!localSquad.discordName) return allCharacters;
-    // 전체 목록에서 내 닉네임 제거하고, 현재 로컬 데이터로 교체 (최신 반영)
     const others = allCharacters.filter((c) => c.discordName !== localSquad.discordName);
     return [...others, ...localSquad.characters];
   }, [allCharacters, localSquad]);
 
   const schedule = useMemo(() => buildRaidSchedule(effectiveCharacters), [effectiveCharacters]);
 
-  // [수정됨] 저장 & 동기화 핸들러 (모달에서 호출)
+  // 저장 & 동기화 핸들러
   const handleSaveAndSync = async (discordName: string, characters: Character[]) => {
     try {
-      setSaving(true); // 저장 로딩 시작
+      setSaving(true);
       
-      // 1. 구글 시트 저장 API 호출
       await saveCharacters(discordName, characters);
 
-      // 2. 로컬 상태 업데이트 (localStorage는 useEffect에 의해 자동 처리됨)
       const newSquad: Squad = { discordName, characters };
       setLocalSquad(newSquad);
 
-      // 3. 전체 데이터 새로고침 (내 데이터가 반영된 시트 다시 불러오기)
       await refreshAllCharacters();
 
-      // 4. 성공 시 모달 닫기
       setIsModalOpen(false);
       setStatus(`${discordName}님의 정보가 저장되고 동기화되었습니다.`);
     } catch (e: any) {
       console.error(e);
       alert(`저장 실패: ${e?.message ?? e}`);
     } finally {
-      setSaving(false); // 저장 로딩 종료
+      setSaving(false);
     }
   };
 
@@ -202,7 +196,7 @@ const App: React.FC = () => {
 
         {/* 메인 컨텐츠: 레이드 스케줄 */}
         <section>
-          {effectiveCharacters.length === 0 ? (
+          {effectiveCharacters.length === 0 && !loading ? (
             <div className="flex min-h-[300px] flex-col items-center justify-center rounded-3xl border-2 border-dashed border-zinc-200 bg-zinc-50/50 p-8 text-center dark:border-zinc-800 dark:bg-zinc-900/50">
               <div className="mb-4 rounded-full bg-zinc-100 p-4 dark:bg-zinc-800">
                 <UserCog size={32} className="text-zinc-400" />
@@ -212,13 +206,17 @@ const App: React.FC = () => {
             </div>
           ) : (
              <div className="space-y-4">
-               <div className="flex items-center justify-between px-1">
-                 <h3 className="flex items-center gap-2 text-lg font-bold text-zinc-900 dark:text-zinc-100">
-                   <LayoutDashboard size={20} className="text-indigo-500" />
-                   레이드 배정 결과
-                 </h3>
-               </div>
-               <RaidScheduleView schedule={schedule} />
+               {!loading && (
+                 <div className="flex items-center justify-between px-1">
+                   <h3 className="flex items-center gap-2 text-lg font-bold text-zinc-900 dark:text-zinc-100">
+                     <LayoutDashboard size={20} className="text-indigo-500" />
+                     레이드 배정 결과
+                   </h3>
+                 </div>
+               )}
+               
+               {/* isLoading prop 전달 */}
+               <RaidScheduleView schedule={schedule} isLoading={loading} />
              </div>
           )}
         </section>
@@ -227,7 +225,7 @@ const App: React.FC = () => {
       <Modal
         open={isModalOpen}
         title="내 원정대 편집"
-        onClose={() => !saving && setIsModalOpen(false)} // 저장 중일 땐 닫기 방지
+        onClose={() => !saving && setIsModalOpen(false)}
       >
         <CharacterFormList
           discordName={localSquad.discordName}
@@ -235,6 +233,10 @@ const App: React.FC = () => {
           isLoading={saving}
           onSubmit={handleSaveAndSync}
           onCancel={() => setIsModalOpen(false)}
+          // 닉네임 검색용 함수 전달
+          onLoadByDiscordName={(targetName: string) => {
+            return allCharacters.filter((c) => c.discordName === targetName);
+          }}
         />
       </Modal>
     </div>

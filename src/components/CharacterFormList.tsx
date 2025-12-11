@@ -1,7 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import type { Character, Role } from '../types';
 import { JOB_OPTIONS, ROLE_OPTIONS } from '../constants';
-import { fetchCharacters } from '../api/sheetApi';
 import { Trash2, Plus, Save, User, Shield, Swords, Loader2, Info, Download } from 'lucide-react';
 
 interface CharacterFormRow {
@@ -19,6 +18,8 @@ interface Props {
   isLoading?: boolean;
   onSubmit: (discordName: string, characters: Character[]) => void;
   onCancel?: () => void;
+  // [수정] 부모 컴포넌트로부터 검색 함수를 받도록 타입 정의 추가
+  onLoadByDiscordName: (targetName: string) => Character[];
 }
 
 export const CharacterFormList: React.FC<Props> = ({
@@ -26,7 +27,8 @@ export const CharacterFormList: React.FC<Props> = ({
   characters,
   isLoading = false,
   onSubmit,
-  onCancel
+  onCancel,
+  onLoadByDiscordName // Prop으로 받음
 }) => {
   const [localDiscord, setLocalDiscord] = useState(discordName);
   const [rows, setRows] = useState<CharacterFormRow[]>([]);
@@ -41,6 +43,7 @@ export const CharacterFormList: React.FC<Props> = ({
     }
   }, [discordName, characters]);
 
+  // [수정] API 직접 호출 대신 부모가 준 데이터(onLoadByDiscordName) 사용
   const handleFetchFromCloud = async () => {
     const trimmedName = localDiscord.trim();
     if (!trimmedName) {
@@ -50,8 +53,9 @@ export const CharacterFormList: React.FC<Props> = ({
 
     try {
       setIsFetching(true);
-      const allData = await fetchCharacters();
-      const myCharacters = allData.filter(c => c.discordName === trimmedName);
+      
+      // App.tsx가 이미 가지고 있는 전체 데이터에서 필터링
+      const myCharacters = onLoadByDiscordName(trimmedName);
 
       if (myCharacters.length > 0) {
         setRows(myCharacters.map(c => ({
@@ -74,15 +78,15 @@ export const CharacterFormList: React.FC<Props> = ({
     }
   };
 
-  const isModified = useMemo(() => {
-    if (localDiscord !== discordName) return true;
-    const originalRows = characters.map(c => ({
-      id: c.id, discordName: c.discordName, jobCode: c.jobCode, 
-      role: c.role, itemLevel: c.itemLevel, combatPower: c.combatPower
-    }));
-    if (originalRows.length !== rows.length) return true;
-    return JSON.stringify(originalRows) !== JSON.stringify(rows);
-  }, [localDiscord, rows, discordName, characters]);
+  // const isModified = useMemo(() => {
+  //   if (localDiscord !== discordName) return true;
+  //   const originalRows = characters.map(c => ({
+  //     id: c.id, discordName: c.discordName, jobCode: c.jobCode, 
+  //     role: c.role, itemLevel: c.itemLevel, combatPower: c.combatPower
+  //   }));
+  //   if (originalRows.length !== rows.length) return true;
+  //   return JSON.stringify(originalRows) !== JSON.stringify(rows);
+  // }, [localDiscord, rows, discordName, characters]);
 
   const handleChangeRow = (index: number, field: keyof CharacterFormRow, value: any) => {
     setRows(prev => prev.map((row, i) => i === index ? {
@@ -115,6 +119,8 @@ export const CharacterFormList: React.FC<Props> = ({
     }
     onSubmit(trimmedName, cleaned);
   };
+
+  const characterCount = rows.filter(r => r.jobCode).length;
 
   return (
     <div className="space-y-8">
@@ -156,15 +162,14 @@ export const CharacterFormList: React.FC<Props> = ({
 
       {/* 2. 캐릭터 리스트 섹션 */}
       <div className="space-y-3">
-        {/* 헤더에서 버튼 제거 */}
+        {/* 리스트 헤더 */}
         <div className="flex items-center justify-between px-1">
           <h3 className="flex items-center gap-2 text-sm font-bold text-zinc-900 dark:text-zinc-100">
             보유 캐릭터
             <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-extrabold text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
-              {rows.filter(r => r.jobCode).length}
+              {characterCount}
             </span>
           </h3>
-          {/* 상단 버튼 제거됨 */}
         </div>
 
         <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900/50">
@@ -250,7 +255,7 @@ export const CharacterFormList: React.FC<Props> = ({
             ))}
           </div>
 
-          {/* [변경됨] 하단 전체 너비 추가 버튼 (테이블의 마지막 행처럼 동작) */}
+          {/* [하단 추가 버튼] 테이블의 마지막 행처럼 동작 */}
           <button
             type="button"
             onClick={handleAddRow}
@@ -266,14 +271,14 @@ export const CharacterFormList: React.FC<Props> = ({
       {/* 3. 하단 액션 버튼 */}
       <div className="flex items-center justify-between pt-4">
         <div className="flex items-center gap-2 text-sm font-medium">
-          {isModified ? (
+          {/* {isModified ? (
             <div className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400 animate-pulse">
               <Info size={16} />
               <span>수정된 내용이 있습니다.</span>
             </div>
           ) : (
             <div className="text-zinc-400 text-xs">최신 상태입니다.</div>
-          )}
+          )} */}
         </div>
 
         <div className="flex items-center gap-3">
