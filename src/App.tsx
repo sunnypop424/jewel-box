@@ -19,7 +19,8 @@ import {
   RefreshCw,
   LayoutDashboard,
   Eraser,
-  ArrowRightLeft,
+  ClipboardClock,
+  ChartGantt,
 } from 'lucide-react';
 
 type Theme = 'light' | 'dark';
@@ -360,7 +361,7 @@ const App: React.FC = () => {
               {!loading && (
                 <div className="flex items-center justify-between px-1">
                   <h3 className="flex items-center gap-2 text-lg font-bold text-zinc-900 dark:text-zinc-100">
-                    <LayoutDashboard size={20} className="text-indigo-500" />
+                    <ClipboardClock size={20} className="text-indigo-500" />
                     레이드 배정 결과
                   </h3>
 
@@ -370,7 +371,7 @@ const App: React.FC = () => {
                     onClick={() => setIsSequenceModalOpen(true)}
                     className="group inline-flex items-center gap-2 rounded-xl border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-700 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
                   >
-                    <ArrowRightLeft className="h-4 w-4 text-zinc-400 group-hover:text-zinc-700 dark:group-hover:text-zinc-100" />
+                    <ChartGantt className="h-4 w-4 text-zinc-400 group-hover:text-zinc-700 dark:group-hover:text-zinc-100" />
                     레이드 진행 순서 확인
                   </button>
                 </div>
