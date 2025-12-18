@@ -16,9 +16,11 @@ import {
   Shield,
   Swords,
   Users,
-  GitCommitHorizontal,
-  ArrowDown,
+  X
 } from 'lucide-react';
+
+// 모드 타입(문자열) – App / raidLogic과 동일한 리터럴 사용
+type BalanceMode = 'overall' | 'role' | 'speed';
 
 // ----------------------------------------------------------------------
 // [LOGIC ZONE] - 기존 로직은 그대로 두고, "표시용" 보조 로직만 아래쪽(UI)에서 추가합니다.
@@ -496,9 +498,14 @@ function StartRoster({
 interface Props {
   schedule: RaidSchedule | null;
   exclusions?: RaidExclusionMap; // ✅ RaidScheduleView.tsx와 동일한 제외 반영
+  balanceMode?: BalanceMode; // ✅ RaidScheduleView.tsx와 동일하게 평균 전투력 표시용
 }
 
-export const RaidSequenceView: React.FC<Props> = ({ schedule, exclusions }) => {
+export const RaidSequenceView: React.FC<Props> = ({
+  schedule,
+  exclusions,
+  balanceMode = 'overall',
+}) => {
   const { groups } = useMemo(() => {
     if (!schedule) return { groups: [], totalCost: 0 };
     return buildSequence(schedule);
@@ -613,6 +620,49 @@ export const RaidSequenceView: React.FC<Props> = ({ schedule, exclusions }) => {
                     const showStartRoster =
                       isGroupFirst && (isFirst || prevKey !== currentKey);
 
+                    // ✅ 이 공대의 "보이는 멤버" 기준 평균 전투력 (RaidScheduleView와 동일)
+                    const allVisibleMembers = getVisibleMembers(
+                      step.raidId,
+                      step.run,
+                      exclusions,
+                    );
+                    const dpsMembers = allVisibleMembers.filter(
+                      (m) => resolveRole(m) === 'DPS',
+                    );
+                    const supMembers = allVisibleMembers.filter(
+                      (m) => resolveRole(m) === 'SUPPORT',
+                    );
+
+                    const avgDps =
+                      dpsMembers.length > 0
+                        ? Math.round(
+                            dpsMembers.reduce(
+                              (sum, m) => sum + m.combatPower,
+                              0,
+                            ) / dpsMembers.length,
+                          )
+                        : null;
+
+                    const avgSup =
+                      supMembers.length > 0
+                        ? Math.round(
+                            supMembers.reduce(
+                              (sum, m) => sum + m.combatPower,
+                              0,
+                            ) / supMembers.length,
+                          )
+                        : null;
+
+                    const overallAvg =
+                      allVisibleMembers.length > 0
+                        ? Math.round(
+                            allVisibleMembers.reduce(
+                              (sum, m) => sum + m.combatPower,
+                              0,
+                            ) / allVisibleMembers.length,
+                          )
+                        : null;
+
                     // advance global index
                     flatIdx++;
 
@@ -661,8 +711,53 @@ export const RaidSequenceView: React.FC<Props> = ({ schedule, exclusions }) => {
                                 </div>
                               </div>
                             </div>
-                            <div className="rounded-md bg-zinc-50 px-2 py-1 text-xs font-medium text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
-                              #{step.run.runIndex} 공대
+                            <div className="flex items-center gap-2">
+                              {/* ✅ 모드에 따라 평균 전투력 표시 방식 변경 */}
+                              <div className="flex flex-wrap items-center gap-2">
+                                {balanceMode === 'role' ? (
+                                  <>
+                                    <span className="inline-flex items-center gap-1.5 rounded-md bg-white px-2 py-1 text-[11px] font-medium text-zinc-500 shadow-sm ring-1 ring-zinc-100 dark:bg-zinc-900 dark:text-zinc-400 dark:ring-zinc-700">
+                                      <Swords className="h-3 w-3 text-zinc-600 dark:text-zinc-300" />
+                                      <span className="uppercase tracking-wide">
+                                        DPS
+                                      </span>
+                                      <strong className="ml-1 text-zinc-800 dark:text-zinc-100">
+                                        {avgDps !== null
+                                          ? avgDps.toLocaleString()
+                                          : '없음'}
+                                      </strong>
+                                    </span>
+                                    <span className="inline-flex items-center gap-1.5 rounded-md bg-white px-2 py-1 text-[11px] font-medium text-zinc-500 shadow-sm ring-1 ring-zinc-100 dark:bg-zinc-900 dark:text-zinc-400 dark:ring-zinc-700">
+                                      <Shield className="h-3 w-3 text-emerald-600 dark:text-emerald-300" />
+                                      <span className="uppercase tracking-wide">
+                                        SUP
+                                      </span>
+                                      <strong className="ml-1 text-zinc-800 dark:text-zinc-100">
+                                        {avgSup !== null
+                                          ? avgSup.toLocaleString()
+                                          : '없음'}
+                                      </strong>
+                                    </span>
+                                  </>
+                                ) : (
+                                  // overall + speed는 전체 평균 표시
+                                  <span className="inline-flex items-center gap-1.5 rounded-md bg-white px-2 py-1 text-[11px] font-medium text-zinc-500 shadow-sm ring-1 ring-zinc-100 dark:bg-zinc-900 dark:text-zinc-400 dark:ring-zinc-700">
+                                    <Swords className="h-3 w-3 text-zinc-600 dark:text-zinc-300" />
+                                    <span className="tracking-wide">
+                                      평균 전투력
+                                    </span>
+                                    <strong className="ml-1 text-zinc-800 dark:text-zinc-100">
+                                      {overallAvg !== null
+                                        ? overallAvg.toLocaleString()
+                                        : '없음'}
+                                    </strong>
+                                  </span>
+                                )}
+                              </div>
+
+                              <div className="rounded-md bg-zinc-50 px-2 py-1 text-xs font-medium text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
+                                #{step.run.runIndex} 공대
+                              </div>
                             </div>
                           </div>
 
@@ -675,8 +770,8 @@ export const RaidSequenceView: React.FC<Props> = ({ schedule, exclusions }) => {
                             />
                           ) : !hasChanges ? (
                             <div className="flex items-center gap-2 rounded-xl border border-dashed border-zinc-200 p-3 text-sm text-zinc-400 dark:border-zinc-800 dark:text-zinc-500">
-                              <ArrowDown className="h-4 w-4" />
-                              <span>로스터 변동 없음 (Same Members)</span>
+                              <X className="h-4 w-4" />
+                              <span>캐릭터 변동 없음 (Same Members)</span>
                             </div>
                           ) : (
                             <div className="flex flex-col gap-3">

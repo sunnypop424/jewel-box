@@ -416,7 +416,10 @@ const App: React.FC = () => {
         onClose={() => setIsSequenceModalOpen(false)}
       >
         {/* 모달 안에서 스크롤 되도록 */}
-          <RaidSequenceView schedule={schedule} />
+          <RaidSequenceView
+            schedule={schedule}
+            balanceMode={balanceMode} // 'overall' | 'role' | 'speed'
+          />
       </Modal>
     </div>
   );
