@@ -261,7 +261,7 @@ const App: React.FC = () => {
 
           <div className="flex flex-wrap items-center gap-3">
             {/* ✅ 전투력 밸런싱 모드 토글 (스피드 추가) */}
-            <div className="flex items-center gap-1 rounded-2xl bg-zinc-100 p-1 text-xs font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
+            {/* <div className="flex items-center gap-1 rounded-2xl bg-zinc-100 p-1 text-xs font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
               <button
                 type="button"
                 onClick={() => setBalanceMode('overall')}
@@ -295,7 +295,7 @@ const App: React.FC = () => {
               >
                 스피드 모드
               </button>
-            </div>
+            </div> */}
 
             <button
               onClick={() => setIsModalOpen(true)}
