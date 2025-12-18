@@ -1,20 +1,30 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import type { Character } from './types';
+import type { Character, RaidId, RaidExclusionMap } from './types';
 import { buildRaidSchedule } from './raidLogic';
 import { CharacterFormList } from './components/CharacterFormList';
 import { RaidScheduleView } from './components/RaidScheduleView';
+import { RaidSequenceView } from './components/RaidSequenceView';
 import { fetchCharacters, saveCharacters } from './api/sheetApi';
+import {
+  fetchRaidExclusions,
+  excludeCharacterOnRaid,
+  resetRaidExclusions,
+} from './api/exclusionApi';
 import { Modal } from './components/Modal';
-import { 
-  Swords, 
-  Sun, 
-  Moon, 
-  UserCog, 
-  RefreshCw, 
-  LayoutDashboard 
+import {
+  Swords,
+  Sun,
+  Moon,
+  UserCog,
+  RefreshCw,
+  LayoutDashboard,
+  Eraser,
+  ArrowRightLeft,
 } from 'lucide-react';
 
 type Theme = 'light' | 'dark';
+// ✅ 전투력 밸런싱 모드 (스피드 추가)
+type BalanceMode = 'overall' | 'role' | 'speed';
 
 interface Squad {
   discordName: string;
@@ -26,24 +36,38 @@ const THEME_KEY = 'raidTheme_v1';
 
 const App: React.FC = () => {
   const [allCharacters, setAllCharacters] = useState<Character[]>([]);
-  
-  // 내 원정대 정보
+
+  // 내 원정대 정보 (로컬 편집용)
   const [localSquad, setLocalSquad] = useState<Squad>({
     discordName: '',
     characters: [],
   });
 
-  const [loading, setLoading] = useState(false); // 전체 데이터 로딩용 (스켈레톤 제어)
-  const [saving, setSaving] = useState(false);   // 저장(API 호출) 중 상태
+  const [loading, setLoading] = useState(false); // 캐릭터 로딩
+  const [saving, setSaving] = useState(false); // 저장 중
   const [status, setStatus] = useState<string | null>(null);
+
+  // ✅ 기존 모달(내 원정대 관리)
   const [isModalOpen, setIsModalOpen] = useState(false);
+
+  // ✅ 추가: 레이드 진행 순서 모달
+  const [isSequenceModalOpen, setIsSequenceModalOpen] = useState(false);
+
+  // 🔹 레이드 제외 상태 (모든 사람이 공유)
+  const [raidExclusions, setRaidExclusions] = useState<RaidExclusionMap>({});
+  const [loadingExclusions, setLoadingExclusions] = useState(false);
+
+  // 🔹 전투력 밸런싱 모드 (기본값: 전체 평균 스피드 모드)
+  const [balanceMode, setBalanceMode] = useState<BalanceMode>('speed');
 
   // 테마 설정
   const [theme, setTheme] = useState<Theme>(() => {
     if (typeof window === 'undefined') return 'light';
     const stored = window.localStorage.getItem(THEME_KEY) as Theme | null;
     if (stored === 'light' || stored === 'dark') return stored;
-    return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    return window.matchMedia?.('(prefers-color-scheme: dark)').matches
+      ? 'dark'
+      : 'light';
   });
 
   useEffect(() => {
@@ -54,14 +78,18 @@ const App: React.FC = () => {
     window.localStorage.setItem(THEME_KEY, theme);
   }, [theme]);
 
-  // 초기 로컬 스토리지 로드
+  // 초기 로컬 스토리지(내 원정대) 로드
   useEffect(() => {
     try {
       if (typeof window === 'undefined') return;
       const raw = window.localStorage.getItem(LOCAL_SQUAD_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
-        if (parsed && typeof parsed.discordName === 'string' && Array.isArray(parsed.characters)) {
+        if (
+          parsed &&
+          typeof parsed.discordName === 'string' &&
+          Array.isArray(parsed.characters)
+        ) {
           setLocalSquad(parsed);
         }
       }
@@ -70,7 +98,7 @@ const App: React.FC = () => {
     }
   }, []);
 
-  // 로컬 스토리지 자동 저장
+  // 내 원정대 로컬 저장
   useEffect(() => {
     if (typeof window === 'undefined') return;
     window.localStorage.setItem(LOCAL_SQUAD_KEY, JSON.stringify(localSquad));
@@ -79,13 +107,12 @@ const App: React.FC = () => {
   // 전체 캐릭터 데이터 새로고침
   const refreshAllCharacters = async () => {
     try {
-      setLoading(true); // 로딩 시작 -> 스켈레톤 표시
+      setLoading(true);
       setStatus('데이터 동기화 중...');
 
       const list = await fetchCharacters();
       setAllCharacters(list);
 
-      // 디스코드 닉네임 기준 유저 수 계산
       const uniqueUsers = new Set(list.map((c) => c.discordName)).size;
       const totalChars = list.length;
 
@@ -94,28 +121,52 @@ const App: React.FC = () => {
       console.error(e);
       setStatus(`로드 실패: ${e?.message ?? e}`);
     } finally {
-      setLoading(false); // 로딩 종료
+      setLoading(false);
     }
   };
 
-  // 앱 시작 시 데이터 로드
+  // 제외 목록 새로고침
+  const refreshExclusions = async () => {
+    try {
+      setLoadingExclusions(true);
+      const ex = await fetchRaidExclusions();
+      setRaidExclusions(ex);
+    } catch (e) {
+      console.error('load exclusions error', e);
+    } finally {
+      setLoadingExclusions(false);
+    }
+  };
+
+  // 앱 시작 시 캐릭터 + 제외 목록 로드
   useEffect(() => {
     refreshAllCharacters().catch(console.error);
+    refreshExclusions().catch(console.error);
   }, []);
 
+  // 내 원정대 반영한 전체 캐릭터
   const effectiveCharacters = useMemo(() => {
     if (!localSquad.discordName) return allCharacters;
-    const others = allCharacters.filter((c) => c.discordName !== localSquad.discordName);
+    const others = allCharacters.filter(
+      (c) => c.discordName !== localSquad.discordName,
+    );
     return [...others, ...localSquad.characters];
   }, [allCharacters, localSquad]);
 
-  const schedule = useMemo(() => buildRaidSchedule(effectiveCharacters), [effectiveCharacters]);
+  // ✅ 모드 + 제외 내역을 반영한 레이드 스케줄
+  const schedule = useMemo(
+    () => buildRaidSchedule(effectiveCharacters, raidExclusions, balanceMode),
+    [effectiveCharacters, raidExclusions, balanceMode],
+  );
 
-  // 저장 & 동기화 핸들러
-  const handleSaveAndSync = async (discordName: string, characters: Character[]) => {
+  // 저장 & 동기화
+  const handleSaveAndSync = async (
+    discordName: string,
+    characters: Character[],
+  ) => {
     try {
       setSaving(true);
-      
+
       await saveCharacters(discordName, characters);
 
       const newSquad: Squad = { discordName, characters };
@@ -133,9 +184,40 @@ const App: React.FC = () => {
     }
   };
 
+  // 🔹 X 버튼으로 레이드에서 캐릭 제외
+  const handleExcludeCharacterFromRaid = async (
+    raidId: RaidId,
+    charId: string,
+  ) => {
+    try {
+      setStatus('레이드 제외 처리 중...');
+      const next = await excludeCharacterOnRaid(raidId, charId);
+      setRaidExclusions(next);
+      setStatus('레이드 제외 내역이 업데이트되었습니다.');
+    } catch (e) {
+      console.error(e);
+      alert('레이드 제외 처리에 실패했습니다. 잠시 후 다시 시도해주세요.');
+    }
+  };
+
+  // 🔹 제외 내역 초기화
+  const handleResetExclusions = async () => {
+    const ok = window.confirm('모든 레이드의 제외 내역을 초기화하시겠습니까?');
+    if (!ok) return;
+
+    try {
+      setStatus('제외 내역 초기화 중...');
+      const next = await resetRaidExclusions();
+      setRaidExclusions(next);
+      setStatus('제외 내역이 초기화되었습니다.');
+    } catch (e) {
+      console.error(e);
+      alert('제외 내역 초기화에 실패했습니다. 잠시 후 다시 시도해주세요.');
+    }
+  };
+
   return (
     <div className="font-['Paperozi'] min-h-screen bg-zinc-50 text-zinc-900 transition-colors duration-300 dark:bg-zinc-950 dark:text-zinc-100">
-      
       {/* 네비게이션 바 */}
       <nav className="sticky top-0 z-30 w-full border-b border-zinc-200 bg-white/80 backdrop-blur-md transition-colors dark:border-zinc-800 dark:bg-zinc-950/80">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6">
@@ -144,12 +226,17 @@ const App: React.FC = () => {
               <Swords size={20} strokeWidth={2.5} />
             </div>
             <h1 className="text-lg font-bold tracking-tight sm:text-xl">
-              Lost Ark <span className="text-indigo-600 dark:text-indigo-400">Raid Plan</span>
+              Lost Ark{' '}
+              <span className="text-indigo-600 dark:text-indigo-400">
+                Raid Plan
+              </span>
             </h1>
           </div>
-          
+
           <button
-            onClick={() => setTheme(prev => prev === 'light' ? 'dark' : 'light')}
+            onClick={() =>
+              setTheme((prev) => (prev === 'light' ? 'dark' : 'light'))
+            }
             className="rounded-full bg-zinc-100 p-2 text-zinc-600 transition-colors hover:bg-zinc-200 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800"
           >
             {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
@@ -158,7 +245,6 @@ const App: React.FC = () => {
       </nav>
 
       <main className="mx-auto flex max-w-7xl flex-col gap-6 px-4 py-8 sm:px-6">
-        
         {/* 컨트롤 패널 */}
         <section className="flex flex-col gap-4 rounded-3xl bg-white p-6 shadow-sm ring-1 ring-zinc-900/5 transition-all dark:bg-zinc-900 dark:ring-zinc-800 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-start gap-4">
@@ -174,20 +260,81 @@ const App: React.FC = () => {
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-             <button
+            {/* ✅ 전투력 밸런싱 모드 토글 (스피드 추가) */}
+            <div className="flex items-center gap-1 rounded-2xl bg-zinc-100 p-1 text-xs font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
+              <button
+                type="button"
+                onClick={() => setBalanceMode('overall')}
+                className={`rounded-xl px-3 py-1 transition-colors ${
+                  balanceMode === 'overall'
+                    ? 'bg-white text-zinc-900 shadow-sm dark:bg-zinc-900 dark:text-zinc-50'
+                    : 'text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-100'
+                }`}
+              >
+                전체 평균
+              </button>
+              <button
+                type="button"
+                onClick={() => setBalanceMode('role')}
+                className={`rounded-xl px-3 py-1 transition-colors ${
+                  balanceMode === 'role'
+                    ? 'bg-white text-zinc-900 shadow-sm dark:bg-zinc-900 dark:text-zinc-50'
+                    : 'text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-100'
+                }`}
+              >
+                역할별 평균
+              </button>
+              <button
+                type="button"
+                onClick={() => setBalanceMode('speed')}
+                className={`rounded-xl px-3 py-1 transition-colors ${
+                  balanceMode === 'speed'
+                    ? 'bg-white text-zinc-900 shadow-sm dark:bg-zinc-900 dark:text-zinc-50'
+                    : 'text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-100'
+                }`}
+              >
+                스피드 모드
+              </button>
+            </div>
+
+            <button
               onClick={() => setIsModalOpen(true)}
               className="group inline-flex items-center gap-2 rounded-xl bg-zinc-100 px-5 py-2.5 text-sm font-semibold text-zinc-900 transition-colors hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700"
             >
-              <UserCog size={18} className="text-zinc-500 transition-colors group-hover:text-zinc-900 dark:text-zinc-400 dark:group-hover:text-zinc-100" />
+              <UserCog
+                size={18}
+                className="text-zinc-500 transition-colors group-hover:text-zinc-900 dark:text-zinc-400 dark:group-hover:text-zinc-100"
+              />
               <span>내 원정대 관리</span>
             </button>
+
             <button
               onClick={refreshAllCharacters}
               disabled={loading || saving}
               className="group inline-flex items-center gap-2 rounded-xl border border-zinc-200 bg-white px-5 py-2.5 text-sm font-semibold text-zinc-700 transition-colors hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
             >
-              <RefreshCw size={18} className={`text-zinc-400 transition-all group-hover:text-zinc-600 dark:group-hover:text-zinc-200 ${loading ? 'animate-spin' : ''}`} />
+              <RefreshCw
+                size={18}
+                className={`text-zinc-400 transition-all group-hover:text-zinc-600 dark:group-hover:text-zinc-200 ${
+                  loading ? 'animate-spin' : ''
+                }`}
+              />
               <span>새로고침</span>
+            </button>
+
+            {/* 제외 내역 초기화 버튼 */}
+            <button
+              onClick={handleResetExclusions}
+              disabled={loadingExclusions}
+              className="group inline-flex items-center gap-2 rounded-xl border border-zinc-200 bg-white px-5 py-2.5 text-sm font-semibold text-zinc-600 transition-colors hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
+            >
+              <Eraser
+                size={18}
+                className={`text-zinc-400 transition-all group-hover:text-zinc-700 dark:group-hover:text-zinc-100 ${
+                  loadingExclusions ? 'animate-spin' : ''
+                }`}
+              />
+              <span>제외 내역 초기화</span>
             </button>
           </div>
         </section>
@@ -201,30 +348,53 @@ const App: React.FC = () => {
               <div className="mb-4 rounded-full bg-zinc-100 p-4 dark:bg-zinc-800">
                 <UserCog size={32} className="text-zinc-400" />
               </div>
-              <p className="text-lg font-medium text-zinc-400">등록된 캐릭터가 없습니다.</p>
-              <p className="mt-1 text-sm text-zinc-500">"내 원정대 관리" 버튼을 눌러 캐릭터를 등록해주세요.</p>
+              <p className="text-lg font-medium text-zinc-400">
+                등록된 캐릭터가 없습니다.
+              </p>
+              <p className="mt-1 text-sm text-zinc-500">
+                "내 원정대 관리" 버튼을 눌러 캐릭터를 등록해주세요.
+              </p>
             </div>
           ) : (
-             <div className="space-y-4">
-               {!loading && (
-                 <div className="flex items-center justify-between px-1">
-                   <h3 className="flex items-center gap-2 text-lg font-bold text-zinc-900 dark:text-zinc-100">
-                     <LayoutDashboard size={20} className="text-indigo-500" />
-                     레이드 배정 결과
-                   </h3>
-                 </div>
-               )}
-               
-               {/* isLoading prop 전달 */}
-               <RaidScheduleView schedule={schedule} isLoading={loading} />
-             </div>
+            <div className="space-y-4">
+              {!loading && (
+                <div className="flex items-center justify-between px-1">
+                  <h3 className="flex items-center gap-2 text-lg font-bold text-zinc-900 dark:text-zinc-100">
+                    <LayoutDashboard size={20} className="text-indigo-500" />
+                    레이드 배정 결과
+                  </h3>
+
+                  {/* ✅ 추가 버튼: 레이드 진행 순서 확인 */}
+                  <button
+                    type="button"
+                    onClick={() => setIsSequenceModalOpen(true)}
+                    className="group inline-flex items-center gap-2 rounded-xl border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-700 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                  >
+                    <ArrowRightLeft className="h-4 w-4 text-zinc-400 group-hover:text-zinc-700 dark:group-hover:text-zinc-100" />
+                    레이드 진행 순서 확인
+                  </button>
+                </div>
+              )}
+
+              <RaidScheduleView
+                schedule={schedule}
+                isLoading={loading}
+                exclusions={raidExclusions}
+                onExcludeCharacter={handleExcludeCharacterFromRaid}
+                balanceMode={balanceMode}
+              />
+
+              {/* ✅ 기존 본문 렌더 제거: Modal로만 확인 */}
+              {/* <RaidSequenceView schedule={schedule} /> */}
+            </div>
           )}
         </section>
       </main>
 
+      {/* 내 원정대 관리 모달 */}
       <Modal
         open={isModalOpen}
-        title="내 원정대 편집"
+        title="내 원정대 관리"
         onClose={() => !saving && setIsModalOpen(false)}
       >
         <CharacterFormList
@@ -233,11 +403,20 @@ const App: React.FC = () => {
           isLoading={saving}
           onSubmit={handleSaveAndSync}
           onCancel={() => setIsModalOpen(false)}
-          // 닉네임 검색용 함수 전달
           onLoadByDiscordName={(targetName: string) => {
             return allCharacters.filter((c) => c.discordName === targetName);
           }}
         />
+      </Modal>
+
+      {/* ✅ 레이드 진행 순서 모달 */}
+      <Modal
+        open={isSequenceModalOpen}
+        title="레이드 진행 순서"
+        onClose={() => setIsSequenceModalOpen(false)}
+      >
+        {/* 모달 안에서 스크롤 되도록 */}
+          <RaidSequenceView schedule={schedule} />
       </Modal>
     </div>
   );

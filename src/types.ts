@@ -29,3 +29,6 @@ export interface RaidRun {
 }
 
 export type RaidSchedule = Record<RaidId, RaidRun[]>;
+
+// 레이드별로 제외된 캐릭터 id 목록
+export type RaidExclusionMap = Partial<Record<RaidId, string[]>>;

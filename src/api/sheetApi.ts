@@ -1,16 +1,18 @@
 import type { Character } from '../types';
 
-// TODO: 실제 배포한 Apps Script 웹앱 URL로 교체
-const BASE_URL = 'https://script.google.com/macros/s/AKfycby_AulGeGdc0BN_zHGrTrUQI2R55uHC2sQME0qLNsyYWS20cc5M42TnxZz7hnlonuaqOw/exec';
+// ✅ 실제 배포한 Apps Script 웹앱 URL로 교체
+export const BASE_URL =
+  'https://script.google.com/macros/s/AKfycby_AulGeGdc0BN_zHGrTrUQI2R55uHC2sQME0qLNsyYWS20cc5M42TnxZz7hnlonuaqOw/exec';
 
-if (BASE_URL === 'YOUR_APPS_SCRIPT_WEB_APP_URL_HERE') {
+if (!BASE_URL) {
   console.warn(
-    '[sheetApi] BASE_URL가 설정되지 않았습니다. Apps Script 웹앱 URL로 교체하세요.'
+    '[sheetApi] BASE_URL가 설정되지 않았습니다. Apps Script 웹앱 URL로 교체하세요.',
   );
 }
 
+// 전체 캐릭터 목록 조회 (옵션: 특정 디스코드만)
 export async function fetchCharacters(
-  discordName?: string
+  discordName?: string,
 ): Promise<Character[]> {
   if (!BASE_URL) return [];
 
@@ -31,13 +33,14 @@ export async function fetchCharacters(
     jobCode: String(c.jobCode),
     role: c.role === 'SUPPORT' ? 'SUPPORT' : 'DPS',
     itemLevel: Number(c.itemLevel),
-    combatPower: Number(c.combatPower)
+    combatPower: Number(c.combatPower),
   }));
 }
 
+// 캐릭터 저장
 export async function saveCharacters(
   discordName: string,
-  characters: Character[]
+  characters: Character[],
 ): Promise<void> {
   if (!BASE_URL) return;
 
@@ -46,9 +49,9 @@ export async function saveCharacters(
   const res = await fetch(BASE_URL, {
     method: 'POST',
     headers: {
-      'Content-Type': 'text/plain;charset=utf-8'
+      'Content-Type': 'text/plain;charset=utf-8',
     },
-    body: JSON.stringify(payload)
+    body: JSON.stringify(payload),
   });
 
   if (!res.ok) {

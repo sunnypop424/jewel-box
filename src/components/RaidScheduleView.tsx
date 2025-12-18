@@ -1,23 +1,29 @@
 import React, { useState } from 'react';
-import type { RaidSchedule, RaidRun } from '../types';
+import type { RaidSchedule, RaidRun, RaidId, RaidExclusionMap } from '../types';
 import { RAID_META } from '../constants';
-import {
-  Shield,
-  Swords,
-  Users,
-  User,
-  ChevronDown,
-} from 'lucide-react';
+import { Shield, Swords, Users, User, ChevronDown, X } from 'lucide-react';
+
+// 모드 타입(문자열) – App / raidLogic과 동일한 리터럴 사용
+type BalanceMode = 'overall' | 'role' | 'speed';
 
 interface Props {
   schedule: RaidSchedule | null;
-  isLoading?: boolean; // 로딩 상태 prop 추가
+  isLoading?: boolean;
+  exclusions?: RaidExclusionMap;
+  onExcludeCharacter?: (raidId: RaidId, characterId: string) => void;
+  balanceMode?: BalanceMode;
 }
 
-export const RaidScheduleView: React.FC<Props> = ({ schedule, isLoading = false }) => {
-  // 레이드(각 카드) 접힘/펼침 상태
-  const [raidOpenState, setRaidOpenState] = useState<Record<string, boolean>>({});
-  // 공대(각 run) 접힘/펼침 상태
+export const RaidScheduleView: React.FC<Props> = ({
+  schedule,
+  isLoading = false,
+  exclusions,
+  onExcludeCharacter,
+  balanceMode = 'overall',
+}) => {
+  const [raidOpenState, setRaidOpenState] = useState<Record<string, boolean>>(
+    {},
+  );
   const [runOpenState, setRunOpenState] = useState<Record<string, boolean>>({});
 
   const toggleRaid = (raidId: string) => {
@@ -35,7 +41,7 @@ export const RaidScheduleView: React.FC<Props> = ({ schedule, isLoading = false 
     }));
   };
 
-  // [추가] 로딩 스켈레톤 UI
+  // 로딩 스켈레톤
   if (isLoading) {
     return (
       <div className="grid gap-6">
@@ -44,7 +50,6 @@ export const RaidScheduleView: React.FC<Props> = ({ schedule, isLoading = false 
             key={i}
             className="overflow-hidden rounded-3xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
           >
-            {/* 스켈레톤 헤더 */}
             <div className="flex items-center justify-between border-b border-zinc-100 px-5 py-4 dark:border-zinc-800">
               <div className="flex items-center gap-3">
                 <div className="h-3 w-3 animate-pulse rounded-full bg-zinc-200 dark:bg-zinc-800" />
@@ -54,7 +59,6 @@ export const RaidScheduleView: React.FC<Props> = ({ schedule, isLoading = false 
                 </div>
               </div>
             </div>
-            {/* 스켈레톤 내용 */}
             <div className="space-y-4 p-5">
               <div className="h-12 w-full animate-pulse rounded-xl bg-zinc-100 dark:bg-zinc-800" />
               <div className="h-12 w-full animate-pulse rounded-xl bg-zinc-100 dark:bg-zinc-800" />
@@ -88,16 +92,17 @@ export const RaidScheduleView: React.FC<Props> = ({ schedule, isLoading = false 
           : 'text-sky-900 dark:text-sky-100';
 
         const isRaidOpen = raidOpenState[raidId] ?? true;
+        const excludedIdsForRaid = exclusions?.[raidId] ?? [];
 
         return (
           <div
             key={raidId}
             className={`overflow-hidden rounded-3xl border bg-white shadow-sm dark:bg-zinc-900 ${borderColor}`}
           >
-            {/* 레이드 헤더 (접기/펼치기 토글) */}
+            {/* 레이드 헤더 */}
             <button
               type="button"
-              onClick={() => toggleRaid(raidId)}
+              onClick={() => toggleRaid(raidId as string)}
               className={`flex w-full items-center justify-between border-b px-5 py-4 text-left transition-colors hover:bg-white/70 dark:hover:bg-zinc-800/70 ${headerBg} ${borderColor} bg-opacity-50`}
             >
               <div className="flex items-center gap-3">
@@ -125,7 +130,6 @@ export const RaidScheduleView: React.FC<Props> = ({ schedule, isLoading = false 
                 </div>
               </div>
               <div className="flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400">
-                {/* 고정 폭 라벨 + 아이콘 회전 애니메이션 */}
                 <span className="inline-block w-10 text-right">
                   {isRaidOpen ? '접기' : '펼치기'}
                 </span>
@@ -138,16 +142,20 @@ export const RaidScheduleView: React.FC<Props> = ({ schedule, isLoading = false 
               </div>
             </button>
 
-            {/* 레이드 내용 (공대 리스트) */}
             {isRaidOpen && (
               <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
                 {runs.map((run: RaidRun) => {
-                  // 이 공대의 전체 멤버 / 딜러 / 서폿 리스트
-                  const allMembers = run.parties.flatMap((p) => p.members);
-                  const dpsMembers = allMembers.filter(
+                  const runKey = `${raidId}-${run.runIndex}`;
+                  const isRunOpen = runOpenState[runKey] ?? true;
+
+                  // 이 공대에서 "보이는" 멤버 기준 평균
+                  const allVisibleMembers = run.parties.flatMap((p) =>
+                    p.members.filter((m) => !excludedIdsForRaid.includes(m.id)),
+                  );
+                  const dpsMembers = allVisibleMembers.filter(
                     (m) => m.role === 'DPS',
                   );
-                  const supMembers = allMembers.filter(
+                  const supMembers = allVisibleMembers.filter(
                     (m) => m.role === 'SUPPORT',
                   );
 
@@ -171,12 +179,19 @@ export const RaidScheduleView: React.FC<Props> = ({ schedule, isLoading = false 
                         )
                       : null;
 
-                  const runKey = `${raidId}-${run.runIndex}`;
-                  const isRunOpen = runOpenState[runKey] ?? true;
+                  const overallAvg =
+                    allVisibleMembers.length > 0
+                      ? Math.round(
+                          allVisibleMembers.reduce(
+                            (sum, m) => sum + m.combatPower,
+                            0,
+                          ) / allVisibleMembers.length,
+                        )
+                      : null;
 
                   return (
                     <div key={run.runIndex} className="p-5">
-                      {/* 공대 헤더 (접기/펼치기 토글) */}
+                      {/* 공대 헤더 */}
                       <button
                         type="button"
                         onClick={() =>
@@ -194,36 +209,54 @@ export const RaidScheduleView: React.FC<Props> = ({ schedule, isLoading = false 
                         </div>
 
                         <div className="flex items-center gap-3">
-                          {/* 평균 전투력: 딜러 / 서포터 구분 표시 */}
+                          {/* ✅ 모드에 따라 평균 전투력 표시 방식 변경 */}
                           <div className="flex flex-wrap items-center gap-2">
-                            <span className="inline-flex items-center gap-1.5 rounded-md bg-white px-2 py-1 text-[11px] font-medium text-zinc-500 shadow-sm ring-1 ring-zinc-100 dark:bg-zinc-900 dark:text-zinc-400 dark:ring-zinc-700">
-                              <Swords
-                                size={12}
-                                className="text-zinc-600 dark:text-zinc-300"
-                              />
-                              <span className="uppercase tracking-wide">
-                                DPS
+                            {balanceMode === 'role' ? (
+                              <>
+                                <span className="inline-flex items-center gap-1.5 rounded-md bg-white px-2 py-1 text-[11px] font-medium text-zinc-500 shadow-sm ring-1 ring-zinc-100 dark:bg-zinc-900 dark:text-zinc-400 dark:ring-zinc-700">
+                                  <Swords
+                                    size={12}
+                                    className="text-zinc-600 dark:text-zinc-300"
+                                  />
+                                  <span className="uppercase tracking-wide">
+                                    DPS
+                                  </span>
+                                  <strong className="ml-1 text-zinc-800 dark:text-zinc-100">
+                                    {avgDps !== null
+                                      ? avgDps.toLocaleString()
+                                      : '없음'}
+                                  </strong>
+                                </span>
+                                <span className="inline-flex items-center gap-1.5 rounded-md bg-white px-2 py-1 text-[11px] font-medium text-zinc-500 shadow-sm ring-1 ring-zinc-100 dark:bg-zinc-900 dark:text-zinc-400 dark:ring-zinc-700">
+                                  <Shield
+                                    size={12}
+                                    className="text-emerald-600 dark:text-emerald-300"
+                                  />
+                                  <span className="uppercase tracking-wide">
+                                    SUP
+                                  </span>
+                                  <strong className="ml-1 text-zinc-800 dark:text-zinc-100">
+                                    {avgSup !== null
+                                      ? avgSup.toLocaleString()
+                                      : '없음'}
+                                  </strong>
+                                </span>
+                              </>
+                            ) : (
+                              // overall + speed는 전체 평균 표시
+                              <span className="inline-flex items-center gap-1.5 rounded-md bg-white px-2 py-1 text-[11px] font-medium text-zinc-500 shadow-sm ring-1 ring-zinc-100 dark:bg-zinc-900 dark:text-zinc-400 dark:ring-zinc-700">
+                                <Swords
+                                  size={12}
+                                  className="text-zinc-600 dark:text-zinc-300"
+                                />
+                                <span className="tracking-wide">평균 전투력</span>
+                                <strong className="ml-1 text-zinc-800 dark:text-zinc-100">
+                                  {overallAvg !== null
+                                    ? overallAvg.toLocaleString()
+                                    : '없음'}
+                                </strong>
                               </span>
-                              <strong className="ml-1 text-zinc-800 dark:text-zinc-100">
-                                {avgDps !== null
-                                  ? avgDps.toLocaleString()
-                                  : '없음'}
-                              </strong>
-                            </span>
-                            <span className="inline-flex items-center gap-1.5 rounded-md bg-white px-2 py-1 text-[11px] font-medium text-zinc-500 shadow-sm ring-1 ring-zinc-100 dark:bg-zinc-900 dark:text-zinc-400 dark:ring-zinc-700">
-                              <Shield
-                                size={12}
-                                className="text-emerald-600 dark:text-emerald-300"
-                              />
-                              <span className="uppercase tracking-wide">
-                                SUP
-                              </span>
-                              <strong className="ml-1 text-zinc-800 dark:text-zinc-100">
-                                {avgSup !== null
-                                  ? avgSup.toLocaleString()
-                                  : '없음'}
-                              </strong>
-                            </span>
+                            )}
                           </div>
 
                           <div className="flex items-center gap-1 text-[11px] text-zinc-400 dark:text-zinc-500">
@@ -240,80 +273,109 @@ export const RaidScheduleView: React.FC<Props> = ({ schedule, isLoading = false 
                         </div>
                       </button>
 
-                      {/* 공대 내용 (파티 정보) */}
+                      {/* 공대 내용 */}
                       {isRunOpen && (
                         <div className="mt-4 grid gap-4 lg:grid-cols-2">
-                          {run.parties.map((party) => (
-                            <div
-                              key={party.partyIndex}
-                              className="flex flex-col rounded-2xl border border-zinc-200 bg-zinc-50/50 p-3 dark:border-zinc-800 dark:bg-zinc-950/50"
-                            >
-                              <div className="mb-3 flex items-center justify-between px-1">
-                                <div className="flex items-center gap-1.5 text-xs font-bold text-zinc-500">
-                                  <Users size={14} />
-                                  <span>PARTY {party.partyIndex}</span>
-                                </div>
-                                <span className="text-[10px] text-zinc-400">
-                                  {party.members.length}/4
-                                </span>
-                              </div>
+                          {run.parties.map((party) => {
+                            const visibleMembers = party.members.filter(
+                              (m) => !excludedIdsForRaid.includes(m.id),
+                            );
+                            const emptySlots = Math.max(
+                              0,
+                              4 - visibleMembers.length,
+                            );
 
-                              <div className="flex flex-col gap-2">
-                                {party.members.map((m) => (
-                                  <div
-                                    key={m.id}
-                                    className="flex items-center justify-between rounded-xl bg-white p-2.5 shadow-sm ring-1 ring-zinc-900/5 dark:bg-zinc-900 dark:ring-zinc-800"
-                                  >
-                                    <div className="flex items-center gap-3">
-                                      <div
-                                        className={`flex h-8 w-8 items-center justify-center rounded-lg ${
-                                          m.role === 'SUPPORT'
-                                            ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400'
-                                            : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400'
-                                        }`}
-                                        title={m.role}
-                                      >
-                                        {m.role === 'SUPPORT' ? (
-                                          <Shield size={16} />
-                                        ) : (
-                                          <Swords size={16} />
+                            return (
+                              <div
+                                key={party.partyIndex}
+                                className="flex flex-col rounded-2xl border border-zinc-200 bg-zinc-50/50 p-3 dark:border-zinc-800 dark:bg-zinc-950/50"
+                              >
+                                <div className="mb-3 flex items-center justify-between px-1">
+                                  <div className="flex items-center gap-1.5 text-xs font-bold text-zinc-500">
+                                    <Users size={14} />
+                                    <span>PARTY {party.partyIndex}</span>
+                                  </div>
+                                  <span className="text-[10px] text-zinc-400">
+                                    {visibleMembers.length}/4
+                                  </span>
+                                </div>
+
+                                <div className="flex flex-col gap-2">
+                                  {visibleMembers.map((m) => (
+                                    <div
+                                      key={m.id}
+                                      className="flex items-center justify-between rounded-xl bg-white p-2.5 shadow-sm ring-1 ring-zinc-900/5 dark:bg-zinc-900 dark:ring-zinc-800"
+                                    >
+                                      <div className="flex items-center gap-3">
+                                        <div
+                                          className={`flex h-8 w-8 items-center justify-center rounded-lg ${
+                                            m.role === 'SUPPORT'
+                                              ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400'
+                                              : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400'
+                                          }`}
+                                          title={m.role}
+                                        >
+                                          {m.role === 'SUPPORT' ? (
+                                            <Shield size={16} />
+                                          ) : (
+                                            <Swords size={16} />
+                                          )}
+                                        </div>
+                                        <div>
+                                          <div className="text-sm font-bold text-zinc-900 dark:text-zinc-100">
+                                            {m.jobCode}
+                                          </div>
+                                          <div className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400">
+                                            {m.discordName}
+                                          </div>
+                                        </div>
+                                      </div>
+
+                                      <div className="flex items-center gap-2">
+                                        <div className="text-right">
+                                          <div className="text-xs font-bold text-zinc-700 dark:text-zinc-300">
+                                            Lv.{m.itemLevel}
+                                          </div>
+                                          <div className="text-[10px] text-zinc-400">
+                                            CP {m.combatPower.toLocaleString()}
+                                          </div>
+                                        </div>
+
+                                        {onExcludeCharacter && (
+                                          <button
+                                            type="button"
+                                            // text-[10px] font-bold 제거 -> 아이콘 사이즈로 제어
+                                            className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-red-200 text-red-500 hover:bg-red-50 dark:border-red-700/60 dark:text-red-300 dark:hover:bg-red-900/40"
+                                            onClick={() => {
+                                              const ok = window.confirm(
+                                                `${m.discordName}님의 ${m.jobCode} 캐릭터를 "${meta.label}" 레이드에서 제외하시겠습니까?\n(이 레이드에서만 제외되고, 다른 레이드는 그대로 남습니다.)`,
+                                              );
+                                              if (!ok) return;
+                                              onExcludeCharacter(raidId as RaidId, m.id);
+                                            }}
+                                          >
+                                            <X className="h-3 w-3" />
+                                          </button>
                                         )}
                                       </div>
-                                      <div>
-                                        <div className="text-sm font-bold text-zinc-900 dark:text-zinc-100">
-                                          {m.jobCode}
-                                        </div>
-                                        <div className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400">
-                                          {m.discordName}
-                                        </div>
-                                      </div>
                                     </div>
-                                    <div className="text-right">
-                                      <div className="text-xs font-bold text-zinc-700 dark:text-zinc-300">
-                                        Lv.{m.itemLevel}
-                                      </div>
-                                      <div className="text-[10px] text-zinc-400">
-                                        CP {m.combatPower.toLocaleString()}
-                                      </div>
-                                    </div>
-                                  </div>
-                                ))}
+                                  ))}
 
-                                {/* 빈 슬롯 표시 */}
-                                {Array.from({
-                                  length: 4 - party.members.length,
-                                }).map((_, i) => (
-                                  <div
-                                    key={`empty-${run.runIndex}-${party.partyIndex}-${i}`}
-                                    className="flex items-center justify-center gap-2 rounded-xl border border-dashed border-zinc-200 py-3 text-xs text-zinc-400 dark:border-zinc-800 dark:text-zinc-600"
-                                  >
-                                    <User size={14} className="opacity-50" />
-                                    빈 자리 (공팟)
-                                  </div>
-                                ))}
+                                  {Array.from({ length: emptySlots }).map(
+                                    (_, i) => (
+                                      <div
+                                        key={`empty-${run.runIndex}-${party.partyIndex}-${i}`}
+                                        className="flex items-center justify-center gap-2 rounded-xl border border-dashed border-zinc-200 py-3 text-xs text-zinc-400 dark:border-zinc-800 dark:text-zinc-600"
+                                      >
+                                        <User size={14} className="opacity-50" />
+                                        빈 자리 (공팟)
+                                      </div>
+                                    ),
+                                  )}
+                                </div>
                               </div>
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       )}
                     </div>
