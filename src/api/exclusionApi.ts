@@ -1,4 +1,3 @@
-// src/api/exclusionApi.ts
 import type { RaidId, RaidExclusionMap } from '../types';
 import { BASE_URL } from './sheetApi';
 
@@ -25,14 +24,12 @@ export async function fetchRaidExclusions(): Promise<RaidExclusionMap> {
   const url = new URL(BASE_URL);
   url.searchParams.set('action', 'getExclusions');
 
-  const res = await fetch(url.toString(), {
-    method: 'GET',
-  });
+  const res = await fetch(url.toString(), { method: 'GET' });
   const data = await parseJson(res);
   return data.exclusions || {};
 }
 
-// 🔹 특정 레이드에서 캐릭터 제외 (POST)
+// 🔹 특정 레이드에서 캐릭터 제외 (POST) - 단건
 export async function excludeCharacterOnRaid(
   raidId: RaidId,
   characterId: string,
@@ -58,6 +55,24 @@ export async function excludeCharacterOnRaid(
 
   const data = await parseJson(res);
   return data.exclusions || {};
+}
+
+// ✅ 여러 캐릭터를 한 번에 제외 (RaidSequenceView “레이드 완료”용)
+export async function excludeCharactersOnRaid(
+  raidId: RaidId,
+  characterIds: string[],
+  updatedBy?: string,
+): Promise<RaidExclusionMap> {
+  const uniq = Array.from(new Set(characterIds)).filter(Boolean);
+  if (uniq.length === 0) return await fetchRaidExclusions();
+
+  // Apps Script가 단건 exclude만 지원해도 OK (시트에는 row가 누적됨)
+  for (const id of uniq) {
+    await excludeCharacterOnRaid(raidId, id, updatedBy);
+  }
+
+  // 최신 exclusions 재조회 (안정)
+  return await fetchRaidExclusions();
 }
 
 // 🔹 제외 내역 전체 초기화 (POST)
