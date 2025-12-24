@@ -1,4 +1,3 @@
-// src/components/RaidSequenceView.tsx
 import React, { useEffect, useMemo, useState } from 'react';
 import type {
   RaidSchedule,
@@ -18,17 +17,17 @@ import {
   Users,
   X,
   CheckCircle2,
+  Filter,
 } from 'lucide-react';
 import { excludeCharactersOnRaid } from '../api/exclusionApi';
 
-// 모드 타입(문자열) – App / raidLogic과 동일한 리터럴 사용
+// 모드 타입
 type BalanceMode = 'overall' | 'role' | 'speed';
 
 // ----------------------------------------------------------------------
 // [LOGIC ZONE]
 // ----------------------------------------------------------------------
 
-// 출력용 레이드 정렬 우선순위
 const RAID_ORDER: RaidId[] = [
   'ACT3_HARD',
   'ACT4_NORMAL',
@@ -199,11 +198,15 @@ function orderRunsInsideParticipantGroup(group: ParticipantGroup): OrderedRun[] 
   return bestOrderPos.map((pos) => runs[pos]);
 }
 
+// ✅ 스케줄 객체를 받아서 시퀀스를 생성하는 함수
+// (필터링된 스케줄이 들어오면 그에 맞춰 그룹과 Diff가 자동 재계산됨)
 function buildSequence(schedule: RaidSchedule): {
   groups: { size: number; participants: string[]; steps: GlobalStep[] }[];
   totalCost: number;
 } {
   const flat: { raidId: RaidId; run: RaidRun }[] = [];
+  
+  // RAID_ORDER 순서대로 순회하지만 schedule에 없는 키는 건너뜀
   RAID_ORDER.forEach((raidId) => {
     const runs = schedule[raidId] || [];
     runs.forEach((run) => flat.push({ raidId, run }));
@@ -319,14 +322,13 @@ function computeDiffByMembers(
 }
 
 function resolveRole(char: Character): Role {
-  // ✅ Sheet API에서 내려온 role을 우선 사용
   if (char.role === 'SUPPORT') return 'SUPPORT';
   if (char.role === 'DPS') return 'DPS';
   return getRoleFallbackByJob(char.jobCode);
 }
 
 // ----------------------------------------------------------------------
-// [NEW UI COMPONENTS]
+// [UI COMPONENTS]
 // ----------------------------------------------------------------------
 
 function RoleIcon({ role, className }: { role: Role; className?: string }) {
@@ -360,15 +362,13 @@ function CharacterBadge({
       break;
     case 'switch-from':
       bgClass = 'bg-zinc-50 dark:bg-zinc-800/50';
-      textClass =
-        'text-zinc-500 dark:text-zinc-400 decoration-zinc-400 line-through';
+      textClass = 'text-zinc-500 dark:text-zinc-400 decoration-zinc-400 line-through';
       borderClass = 'border-zinc-200 dark:border-zinc-700';
       break;
     case 'switch-to':
       bgClass = 'bg-amber-50 dark:bg-amber-950/40';
       textClass = 'text-amber-800 dark:text-amber-100 font-bold';
-      borderClass =
-        'border-amber-200 dark:border-amber-900/50 ring-1 ring-amber-300/50 dark:ring-amber-700/50';
+      borderClass = 'border-amber-200 dark:border-amber-900/50 ring-1 ring-amber-300/50 dark:ring-amber-700/50';
       break;
     default:
       bgClass = 'bg-zinc-50 dark:bg-zinc-900';
@@ -377,17 +377,12 @@ function CharacterBadge({
   }
 
   return (
-    <div
-      className={`flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm transition-all ${bgClass} ${borderClass}`}
-    >
+    <div className={`flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm transition-all ${bgClass} ${borderClass}`}>
       <div className={`flex items-center gap-1.5 ${textClass}`}>
         <RoleIcon role={role} className="h-3.5 w-3.5 opacity-80" />
         <span className="font-medium">{char.jobCode}</span>
       </div>
-      <span className="text-xs text-zinc-400 dark:text-zinc-500">
-        Lv.{char.itemLevel}
-      </span>
-
+      <span className="text-xs text-zinc-400 dark:text-zinc-500">Lv.{char.itemLevel}</span>
       {type !== 'switch-from' && type !== 'switch-to' && (
         <span className="ml-1 border-l border-zinc-300 pl-2 text-xs font-semibold text-zinc-900 dark:border-zinc-700 dark:text-zinc-100">
           {char.discordName}
@@ -426,9 +421,7 @@ function StartRoster({
                   <Users className="h-4 w-4" />
                   <span>PARTY {party.partyIndex}</span>
                 </div>
-                <span className="text-[10px] text-zinc-400">
-                  {visibleMembers.length}/4
-                </span>
+                <span className="text-[10px] text-zinc-400">{visibleMembers.length}/4</span>
               </div>
 
               <div className="flex flex-col gap-2">
@@ -444,7 +437,6 @@ function StartRoster({
                             ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-300'
                             : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300'
                         }`}
-                        title={resolveRole(m)}
                       >
                         <RoleIcon role={resolveRole(m)} className="h-4 w-4" />
                       </div>
@@ -457,18 +449,14 @@ function StartRoster({
                         </div>
                       </div>
                     </div>
-
                     <div className="text-right">
                       <div className="text-xs font-bold text-zinc-700 dark:text-zinc-300">
                         Lv.{m.itemLevel}
                       </div>
-                      <div className="text-[10px] text-zinc-400">
-                        CP {m.combatPower.toLocaleString()}
-                      </div>
+                      <div className="text-[10px] text-zinc-400">CP {m.combatPower.toLocaleString()}</div>
                     </div>
                   </div>
                 ))}
-
                 {Array.from({ length: emptySlots }).map((_, i) => (
                   <div
                     key={`empty-${run.runIndex}-${party.partyIndex}-${i}`}
@@ -492,17 +480,9 @@ function StartRoster({
 
 interface Props {
   schedule: RaidSchedule | null;
-
-  // ✅ 제외 반영
   exclusions?: RaidExclusionMap;
-
-  // ✅ 평균 전투력 표시 모드
   balanceMode?: BalanceMode;
-
-  // ✅ RaidExclusions.updatedBy에 들어갈 값 (디코명 등)
   updatedBy?: string;
-
-  // ✅ 상위에서도 exclusions 상태를 같이 갱신하고 싶으면 사용
   onExclusionsUpdated?: (next: RaidExclusionMap) => void;
 }
 
@@ -513,7 +493,9 @@ export const RaidSequenceView: React.FC<Props> = ({
   updatedBy,
   onExclusionsUpdated,
 }) => {
-  // ✅ 버튼 클릭 시 바로 “제외 반영”되도록 로컬 exclusions도 유지
+  // ✅ 1. 레이드 필터 상태 (기본값: 전체 선택)
+  const [selectedRaids, setSelectedRaids] = useState<Set<RaidId>>(new Set(RAID_ORDER));
+
   const [localExclusions, setLocalExclusions] = useState<RaidExclusionMap>(
     exclusions ?? {},
   );
@@ -524,17 +506,45 @@ export const RaidSequenceView: React.FC<Props> = ({
   const [completingKey, setCompletingKey] = useState<string | null>(null);
   const isBlocking = completingKey !== null;
 
-  const { groups } = useMemo(() => {
-    if (!schedule) return { groups: [], totalCost: 0 };
-    return buildSequence(schedule);
-  }, [schedule]);
+  // ✅ 2. 필터가 적용된 스케줄 생성
+  const filteredSchedule = useMemo(() => {
+    if (!schedule) return null;
+    const fs: RaidSchedule = {
+      ACT3_HARD: [],
+      ACT4_NORMAL: [],
+      ACT4_HARD: [],
+      FINAL_NORMAL: [],
+      FINAL_HARD: [],
+    };
+    
+    // 선택된 레이드 키의 데이터만 복사
+    selectedRaids.forEach((raidId) => {
+      if (schedule[raidId]) {
+        fs[raidId] = schedule[raidId];
+      }
+    });
+    return fs;
+  }, [schedule, selectedRaids]);
 
-  if (!schedule || groups.length === 0) return null;
+  // ✅ 3. 필터링된 스케줄 기준으로 시퀀스(그룹 및 diff) 다시 생성
+  const { groups } = useMemo(() => {
+    if (!filteredSchedule) return { groups: [], totalCost: 0 };
+    return buildSequence(filteredSchedule);
+  }, [filteredSchedule]);
+
+  if (!schedule) return null;
+
+  const toggleRaid = (id: RaidId) => {
+    const next = new Set(selectedRaids);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setSelectedRaids(next);
+  };
 
   const flatSteps: GlobalStep[] = groups.flatMap((g) => g.steps);
-  if (flatSteps.length <= 1) return null;
+  // steps가 없어도 필터 UI는 보여주기 위해 조건문 위치 조정 필요할 수 있으나, 데이터가 없으면 null 리턴 유지
 
-  // ✅ Diff도 "보이는 멤버" 기준으로 계산
+  // Diff 계산 (보이는 멤버 기준 + 필터링된 인접 스텝 기준)
   const diffs: (TransitionDiff | null)[] = [];
   flatSteps.forEach((step, idx) => {
     if (idx === 0) {
@@ -550,8 +560,46 @@ export const RaidSequenceView: React.FC<Props> = ({
   let flatIdx = 0;
 
   return (
-    <div className="relative mx-auto w-full max-w-4xl space-y-12">
-      {/* ✅ 레이드 완료 처리 중 전체 화면 조작 막기 */}
+    <div className="relative mx-auto w-full max-w-4xl space-y-4">
+      
+      {/* ✅ Filter Controls UI */}
+      <div className="sticky top-0 z-30 flex flex-col gap-3 rounded-2xl border border-zinc-200 bg-white/90 px-4 py-3 shadow-sm backdrop-blur-md dark:border-zinc-800 dark:bg-zinc-900/90">
+        <div className="flex items-center gap-2 text-sm font-semibold text-zinc-600 dark:text-zinc-400">
+          <Filter className="h-4 w-4" />
+          <span>오늘 진행할 레이드 선택</span>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {RAID_ORDER.map((raidId) => {
+            const isActive = selectedRaids.has(raidId);
+            const meta = RAID_META[raidId];
+            const isHard = meta.difficulty === 'HARD';
+            
+            // 버튼 스타일 계산
+            let btnClass = 'flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-bold transition-all border ';
+            if (isActive) {
+              if (isHard) {
+                btnClass += 'bg-rose-50 border-rose-200 text-rose-700 dark:bg-rose-950/30 dark:border-rose-900 dark:text-rose-200 shadow-sm';
+              } else {
+                btnClass += 'bg-sky-50 border-sky-200 text-sky-700 dark:bg-sky-950/30 dark:border-sky-900 dark:text-sky-200 shadow-sm';
+              }
+            } else {
+              btnClass += 'bg-transparent border-zinc-200 text-zinc-400 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-800';
+            }
+
+            return (
+              <button
+                key={raidId}
+                onClick={() => toggleRaid(raidId)}
+                className={btnClass}
+              >
+                <div className={`h-2 w-2 rounded-full ${isActive ? (isHard ? 'bg-rose-500' : 'bg-sky-500') : 'bg-zinc-300 dark:bg-zinc-700'}`} />
+                {meta.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       {isBlocking && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 backdrop-blur-sm">
           <div className="rounded-2xl bg-white px-5 py-4 text-sm font-bold text-zinc-900 shadow-lg dark:bg-zinc-900 dark:text-zinc-100">
@@ -560,13 +608,22 @@ export const RaidSequenceView: React.FC<Props> = ({
         </div>
       )}
 
+      {/* Empty State when filters are all off */}
+      {flatSteps.length === 0 && (
+        <div className="flex flex-col items-center justify-center py-20 text-zinc-400">
+          <Filter className="mb-2 h-8 w-8 opacity-20" />
+          <p>선택된 레이드가 없습니다.</p>
+        </div>
+      )}
+
       <div className="relative">
         {/* Continuous Timeline Line */}
-        <div className="absolute bottom-0 left-[19px] top-4 w-0.5 bg-zinc-200 dark:bg-zinc-800" />
+        {flatSteps.length > 0 && (
+          <div className="absolute bottom-0 left-[19px] top-4 w-0.5 bg-zinc-200 dark:bg-zinc-800" />
+        )}
 
         <div className="space-y-16">
           {groups.map((group, groupIdx) => {
-            // ✅ 그룹 헤더의 참가자도 "보이는 멤버" 기준
             const firstStep = group.steps[0];
             const startUsers = Array.from(
               new Set(
@@ -611,13 +668,13 @@ export const RaidSequenceView: React.FC<Props> = ({
                     const meta = RAID_META[step.raidId];
                     const isHard = meta.difficulty === 'HARD';
 
-                    // 변경 사항이 있는지 확인
                     const hasLeaving = diff && diff.leaving.length > 0;
                     const hasEntering = diff && diff.entering.length > 0;
                     const hasSwitching = diff && diff.switching.length > 0;
                     const hasChanges = hasLeaving || hasEntering || hasSwitching;
 
-                    // ✅ 그룹이 바뀌는 지점에서는 입장/퇴장/교체 대신 시작 멤버만
+                    // 그룹이 바뀌는 지점에서는 입장/퇴장/교체 대신 시작 멤버만
+                    // (필터링된 flatSteps 기준이므로, 중간 레이드가 생략되면 건너뛰고 비교함)
                     const prevKey =
                       currentFlatIdx > 0
                         ? Array.from(
@@ -633,7 +690,6 @@ export const RaidSequenceView: React.FC<Props> = ({
                             .join('|')
                         : null;
 
-                    // ✅ 성능/중복 방지: 여기서 currentVisible 한번만 계산
                     const currentVisibleMembers = getVisibleMembers(
                       step.raidId,
                       step.run,
@@ -648,14 +704,12 @@ export const RaidSequenceView: React.FC<Props> = ({
 
                     const showStartRoster = isGroupFirst && (isFirst || prevKey !== currentKey);
 
-                    // ✅ 레이드 완료 시 제외할 대상(=현재 보이는 멤버들의 캐릭터 id)
                     const completeTargetIds = Array.from(
                       new Set(currentVisibleMembers.map((m) => m.id)),
                     );
                     const completeBtnKey = `${step.raidId}-${step.run.runIndex}`;
                     const isCompleting = completingKey === completeBtnKey;
 
-                    // ✅ 평균 전투력
                     const dpsMembers = currentVisibleMembers.filter(
                       (m) => resolveRole(m) === 'DPS',
                     );
@@ -663,31 +717,16 @@ export const RaidSequenceView: React.FC<Props> = ({
                       (m) => resolveRole(m) === 'SUPPORT',
                     );
 
-                    const avgDps =
-                      dpsMembers.length > 0
-                        ? Math.round(
-                            dpsMembers.reduce((sum, m) => sum + m.combatPower, 0) /
-                              dpsMembers.length,
-                          )
+                    const avgDps = dpsMembers.length > 0
+                        ? Math.round(dpsMembers.reduce((sum, m) => sum + m.combatPower, 0) / dpsMembers.length)
+                        : null;
+                    const avgSup = supMembers.length > 0
+                        ? Math.round(supMembers.reduce((sum, m) => sum + m.combatPower, 0) / supMembers.length)
+                        : null;
+                    const overallAvg = currentVisibleMembers.length > 0
+                        ? Math.round(currentVisibleMembers.reduce((sum, m) => sum + m.combatPower, 0) / currentVisibleMembers.length)
                         : null;
 
-                    const avgSup =
-                      supMembers.length > 0
-                        ? Math.round(
-                            supMembers.reduce((sum, m) => sum + m.combatPower, 0) /
-                              supMembers.length,
-                          )
-                        : null;
-
-                    const overallAvg =
-                      currentVisibleMembers.length > 0
-                        ? Math.round(
-                            currentVisibleMembers.reduce((sum, m) => sum + m.combatPower, 0) /
-                              currentVisibleMembers.length,
-                          )
-                        : null;
-
-                    // advance global index
                     flatIdx++;
 
                     return (
@@ -714,22 +753,10 @@ export const RaidSequenceView: React.FC<Props> = ({
                               </span>
                               <div>
                                 <div className="flex items-center gap-2">
-                                  <h4
-                                    className={`font-bold ${
-                                      isHard
-                                        ? 'text-rose-600 dark:text-rose-400'
-                                        : 'text-sky-600 dark:text-sky-400'
-                                    }`}
-                                  >
+                                  <h4 className={`font-bold ${isHard ? 'text-rose-600 dark:text-rose-400' : 'text-sky-600 dark:text-sky-400'}`}>
                                     {meta.label}
                                   </h4>
-                                  <span
-                                    className={`text-[10px] font-extrabold uppercase tracking-wider ${
-                                      isHard
-                                        ? 'text-rose-800/60 dark:text-rose-300/60'
-                                        : 'text-sky-800/60 dark:text-sky-300/60'
-                                    }`}
-                                  >
+                                  <span className={`text-[10px] font-extrabold uppercase tracking-wider ${isHard ? 'text-rose-800/60 dark:text-rose-300/60' : 'text-sky-800/60 dark:text-sky-300/60'}`}>
                                     {meta.difficulty}
                                   </span>
                                 </div>
@@ -737,7 +764,7 @@ export const RaidSequenceView: React.FC<Props> = ({
                             </div>
 
                             <div className="flex items-center gap-2">
-                              {/* ✅ 모드에 따라 평균 전투력 표시 방식 변경 */}
+                              {/* 평균 전투력 표시 */}
                               <div className="flex flex-wrap items-center gap-2">
                                 {balanceMode === 'role' ? (
                                   <>
@@ -767,49 +794,31 @@ export const RaidSequenceView: React.FC<Props> = ({
                                 )}
                               </div>
 
-                              {/* ✅ 모바일 줄바꿈 깨짐 방지 + 레이드 완료 버튼 */}
+                              {/* 레이드 완료 버튼 */}
                               <div className="flex items-center gap-2">
                                 <div className="shrink-0 whitespace-nowrap rounded-md bg-zinc-50 px-2 py-1 text-xs font-medium text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
                                   #{step.run.runIndex} 공대
                                 </div>
-
                                 <button
                                   type="button"
                                   disabled={completeTargetIds.length === 0 || isCompleting}
                                   onClick={async () => {
-                                    const ok = window.confirm(
-                                      `${meta.label} #${step.run.runIndex} 공대를 완료 처리할까요?\n\n이 공대의 멤버들이 이 레이드에서 제외됩니다.`,
-                                    );
+                                    const ok = window.confirm(`${meta.label} #${step.run.runIndex} 공대를 완료 처리할까요?\n\n이 공대의 멤버들이 이 레이드에서 제외됩니다.`);
                                     if (!ok) return;
-
                                     try {
                                       setCompletingKey(completeBtnKey);
-
-                                      // 서버/시트 저장 + 최신 exclusions 수신
-                                      const next = await excludeCharactersOnRaid(
-                                        step.raidId,
-                                        completeTargetIds,
-                                        updatedBy,
-                                      );
-
-                                      // 화면 즉시 반영
+                                      const next = await excludeCharactersOnRaid(step.raidId, completeTargetIds, updatedBy);
                                       setLocalExclusions(next);
                                       onExclusionsUpdated?.(next);
                                     } catch (e) {
                                       console.error(e);
-                                      alert('레이드 완료 처리(제외 저장)에 실패했습니다.');
+                                      alert('레이드 완료 처리 실패');
                                     } finally {
                                       setCompletingKey(null);
                                     }
                                   }}
-                                  className={[
-                                    'inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-bold',
-                                    'border border-emerald-200 text-emerald-700 hover:bg-emerald-50',
-                                    'dark:border-emerald-900/50 dark:text-emerald-200 dark:hover:bg-emerald-950/40',
-                                    'disabled:cursor-not-allowed disabled:opacity-40',
-                                    'whitespace-nowrap',
-                                  ].join(' ')}
-                                  title="레이드 완료(해당 공대 멤버 제외)"
+                                  className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-bold border border-emerald-200 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-900/50 dark:text-emerald-200 dark:hover:bg-emerald-950/40 disabled:cursor-not-allowed disabled:opacity-40 whitespace-nowrap"
+                                  title="레이드 완료"
                                 >
                                   <CheckCircle2 className="h-3.5 w-3.5" />
                                   레이드 완료
@@ -832,7 +841,6 @@ export const RaidSequenceView: React.FC<Props> = ({
                             </div>
                           ) : (
                             <div className="flex flex-col gap-3">
-                              {/* 1. Leaving */}
                               {hasLeaving && (
                                 <div className="flex flex-col gap-2">
                                   <div className="flex items-center gap-2 text-xs font-semibold text-red-600 dark:text-red-400">
@@ -847,7 +855,6 @@ export const RaidSequenceView: React.FC<Props> = ({
                                 </div>
                               )}
 
-                              {/* 2. Switching */}
                               {hasSwitching && (
                                 <div className="flex flex-col gap-2">
                                   <div className="flex items-center gap-2 text-xs font-semibold text-amber-600 dark:text-amber-400">
@@ -865,14 +872,11 @@ export const RaidSequenceView: React.FC<Props> = ({
                                             {s.discordName}
                                           </span>
                                         </div>
-
-                                        {/* ✅ 모바일: to만 풀폭, PC: from+arrow+to */}
                                         <div className="flex flex-1 items-center gap-2 sm:justify-end">
                                           <div className="hidden items-center gap-2 sm:flex">
                                             <CharacterBadge char={s.from} type="switch-from" />
                                             <ArrowRight className="h-3 w-3 text-amber-400" />
                                           </div>
-
                                           <div className="w-full sm:w-auto">
                                             <CharacterBadge char={s.to} type="switch-to" />
                                           </div>
@@ -883,7 +887,6 @@ export const RaidSequenceView: React.FC<Props> = ({
                                 </div>
                               )}
 
-                              {/* 3. Entering */}
                               {hasEntering && (
                                 <div className="flex flex-col gap-2">
                                   <div className="flex items-center gap-2 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
