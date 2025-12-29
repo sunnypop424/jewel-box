@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import type { RaidSchedule, RaidRun, RaidId, RaidExclusionMap } from '../types';
+import type { RaidSchedule, RaidRun, RaidId, RaidExclusionMap, RaidSettingsMap } from '../types';
 import { RAID_META } from '../constants';
 import { Shield, Swords, Users, User, ChevronDown, X } from 'lucide-react';
 
@@ -12,6 +12,11 @@ interface Props {
   exclusions?: RaidExclusionMap;
   onExcludeCharacter?: (raidId: RaidId, characterId: string) => void;
   balanceMode?: BalanceMode;
+
+  /** ✅ 레이드별 랏폿(서폿 부족) 설정 */
+  raidSettings?: RaidSettingsMap;
+  isRaidSettingsLoading?: boolean;
+  onToggleSupportShortage?: (raidId: RaidId, next: boolean) => void;
 }
 
 export const RaidScheduleView: React.FC<Props> = ({
@@ -20,6 +25,9 @@ export const RaidScheduleView: React.FC<Props> = ({
   exclusions,
   onExcludeCharacter,
   balanceMode = 'overall',
+  raidSettings,
+  isRaidSettingsLoading = false,
+  onToggleSupportShortage,
 }) => {
   const [raidOpenState, setRaidOpenState] = useState<Record<string, boolean>>(
     {},
@@ -71,7 +79,19 @@ export const RaidScheduleView: React.FC<Props> = ({
 
   if (!schedule) return null;
 
-  const raidIds = Object.keys(schedule) as (keyof RaidSchedule)[];
+  // 레벨대 순 정렬 (요청한 순서)
+  const RAID_ORDER: (keyof RaidSchedule)[] = [
+    'ACT3_HARD',      // 1700
+    'ACT4_NORMAL',    // 1700
+    'FINAL_NORMAL',   // 1710
+    'SERKA_NORMAL',   // 1710
+    'ACT4_HARD',      // 1720
+    'FINAL_HARD',     // 1730
+    'SERKA_HARD',     // 1730
+    'SERKA_NIGHTMARE' // 1740
+  ];
+
+  const raidIds = RAID_ORDER.filter((raidId) => (schedule[raidId]?.length ?? 0) > 0);
 
   return (
     <div className="grid gap-6">
@@ -80,16 +100,44 @@ export const RaidScheduleView: React.FC<Props> = ({
         if (!runs || runs.length === 0) return null;
 
         const meta = RAID_META[raidId];
-        const isHard = meta.difficulty === 'HARD';
-        const borderColor = isHard
-          ? 'border-rose-200 dark:border-rose-900/50'
-          : 'border-sky-200 dark:border-sky-900/50';
-        const headerBg = isHard
-          ? 'bg-rose-50 dark:bg-rose-950/30'
-          : 'bg-sky-50 dark:bg-sky-950/30';
-        const titleColor = isHard
-          ? 'text-rose-900 dark:text-rose-100'
-          : 'text-sky-900 dark:text-sky-100';
+        const DIFF_LABEL: Record<string, string> = {
+          NORMAL: '노말',
+          HARD: '하드',
+          NIGHTMARE: '나이트메어',
+        };
+
+        const diff = meta.difficulty;
+        const diffStyle =
+          diff === 'NORMAL'
+            ? {
+              borderColor: 'border-sky-200 dark:border-sky-900/50',
+              headerBg: 'bg-sky-50 dark:bg-sky-950/30',
+              badge: 'bg-sky-100 text-sky-700 dark:bg-sky-900 dark:text-sky-300',
+              dot: 'bg-sky-500', // ✅ 추가
+            }
+            : diff === 'HARD'
+              ? {
+                borderColor: 'border-rose-200 dark:border-rose-900/50',
+                headerBg: 'bg-rose-50 dark:bg-rose-950/30',
+                badge: 'bg-rose-100 text-rose-700 dark:bg-rose-900 dark:text-rose-300',
+                dot: 'bg-rose-500', // ✅ 추가
+              }
+              : {
+                borderColor: 'border-violet-200 dark:border-violet-900/50',
+                headerBg: 'bg-violet-50 dark:bg-violet-950/30',
+                badge: 'bg-violet-100 text-violet-700 dark:bg-violet-900 dark:text-violet-300',
+                dot: 'bg-violet-500', // ✅ 추가
+              };
+
+        const borderColor = diffStyle.borderColor;
+        const headerBg = diffStyle.headerBg;
+
+        const titleColor =
+          diff === 'NORMAL'
+            ? 'text-sky-900 dark:text-sky-100'
+            : diff === 'HARD'
+              ? 'text-rose-900 dark:text-rose-100'
+              : 'text-violet-900 dark:text-violet-100';
 
         const isRaidOpen = raidOpenState[raidId] ?? true;
         const excludedIdsForRaid = exclusions?.[raidId] ?? [];
@@ -107,7 +155,7 @@ export const RaidScheduleView: React.FC<Props> = ({
             >
               <div className="flex items-center gap-3">
                 <div
-                  className={`h-3 w-3 rounded-full shadow-sm ring-2 ring-white/50 ${meta.colorClass}`}
+                  className={`h-3 w-3 rounded-full shadow-sm ring-2 ring-white/50 ${diffStyle.dot}`}
                 />
                 <div>
                   <h4 className={`text-base font-bold ${titleColor}`}>
@@ -115,13 +163,9 @@ export const RaidScheduleView: React.FC<Props> = ({
                   </h4>
                   <div className="mt-0.5 flex items-center gap-2">
                     <span
-                      className={`rounded px-1.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wider ${
-                        isHard
-                          ? 'bg-rose-100 text-rose-700 dark:bg-rose-900 dark:text-rose-300'
-                          : 'bg-sky-100 text-sky-700 dark:bg-sky-900 dark:text-sky-300'
-                      }`}
+                      className={`rounded px-1.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wider ${diffStyle.badge}`}
                     >
-                      {meta.difficulty}
+                      {DIFF_LABEL[diff] ?? diff}
                     </span>
                     <span className="text-xs text-zinc-500 dark:text-zinc-400">
                       총 {runs.length}개 공대
@@ -130,14 +174,38 @@ export const RaidScheduleView: React.FC<Props> = ({
                 </div>
               </div>
               <div className="flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400">
+                {/* ✅ 랏폿 체크박스 (레이드명 옆) */}
+                {onToggleSupportShortage && (
+                  <div
+                    className="mr-2 flex items-center"
+                    onClick={(e) => e.stopPropagation()}
+                    onMouseDown={(e) => e.stopPropagation()}
+                  >
+                    <label
+                      className={`inline-flex select-none items-center gap-1 rounded-lg border px-2 py-1 text-xs font-semibold shadow-sm transition-colors ${(raidSettings?.[raidId] ?? false)
+                          ? 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200'
+                          : 'border-zinc-200 bg-white text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300'
+                        }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={Boolean(raidSettings?.[raidId])}
+                        onChange={(e) => onToggleSupportShortage(raidId as RaidId, e.target.checked)}
+                        disabled={isRaidSettingsLoading}
+                        className="h-3 w-3 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500"
+                      />
+                      <span className="whitespace-nowrap">랏폿</span>
+                    </label>
+                  </div>
+                )}
+
                 <span className="inline-block w-10 text-right">
                   {isRaidOpen ? '접기' : '펼치기'}
                 </span>
                 <ChevronDown
                   size={16}
-                  className={`transition-transform duration-200 ${
-                    isRaidOpen ? 'rotate-0' : '-rotate-90'
-                  }`}
+                  className={`transition-transform duration-200 ${isRaidOpen ? 'rotate-0' : '-rotate-90'
+                    }`}
                 />
               </div>
             </button>
@@ -162,31 +230,31 @@ export const RaidScheduleView: React.FC<Props> = ({
                   const avgDps =
                     dpsMembers.length > 0
                       ? Math.round(
-                          dpsMembers.reduce(
-                            (sum, m) => sum + m.combatPower,
-                            0,
-                          ) / dpsMembers.length,
-                        )
+                        dpsMembers.reduce(
+                          (sum, m) => sum + m.combatPower,
+                          0,
+                        ) / dpsMembers.length,
+                      )
                       : null;
 
                   const avgSup =
                     supMembers.length > 0
                       ? Math.round(
-                          supMembers.reduce(
-                            (sum, m) => sum + m.combatPower,
-                            0,
-                          ) / supMembers.length,
-                        )
+                        supMembers.reduce(
+                          (sum, m) => sum + m.combatPower,
+                          0,
+                        ) / supMembers.length,
+                      )
                       : null;
 
                   const overallAvg =
                     allVisibleMembers.length > 0
                       ? Math.round(
-                          allVisibleMembers.reduce(
-                            (sum, m) => sum + m.combatPower,
-                            0,
-                          ) / allVisibleMembers.length,
-                        )
+                        allVisibleMembers.reduce(
+                          (sum, m) => sum + m.combatPower,
+                          0,
+                        ) / allVisibleMembers.length,
+                      )
                       : null;
 
                   return (
@@ -265,9 +333,8 @@ export const RaidScheduleView: React.FC<Props> = ({
                             </span>
                             <ChevronDown
                               size={14}
-                              className={`transition-transform duration-200 ${
-                                isRunOpen ? 'rotate-0' : '-rotate-90'
-                              }`}
+                              className={`transition-transform duration-200 ${isRunOpen ? 'rotate-0' : '-rotate-90'
+                                }`}
                             />
                           </div>
                         </div>
@@ -308,11 +375,10 @@ export const RaidScheduleView: React.FC<Props> = ({
                                     >
                                       <div className="flex items-center gap-3">
                                         <div
-                                          className={`flex h-8 w-8 items-center justify-center rounded-lg ${
-                                            m.role === 'SUPPORT'
+                                          className={`flex h-8 w-8 items-center justify-center rounded-lg ${m.role === 'SUPPORT'
                                               ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400'
                                               : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400'
-                                          }`}
+                                            }`}
                                           title={m.role}
                                         >
                                           {m.role === 'SUPPORT' ? (

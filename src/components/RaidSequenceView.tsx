@@ -34,7 +34,42 @@ const RAID_ORDER: RaidId[] = [
   'ACT4_HARD',
   'FINAL_NORMAL',
   'FINAL_HARD',
+  'SERKA_NORMAL',
+  'SERKA_HARD',
+  'SERKA_NIGHTMARE',
 ];
+
+const DIFF_LABEL = {
+  NORMAL: '노말',
+  HARD: '하드',
+  NIGHTMARE: '나이트메어',
+} as const;
+
+function getDifficultyStyle(diff: string) {
+  if (diff === 'NORMAL') {
+    return {
+      btn: 'bg-sky-50 border-sky-200 text-sky-700 dark:bg-sky-950/30 dark:border-sky-900 dark:text-sky-200 shadow-sm',
+      dot: 'bg-sky-500',
+      borderActive: 'border-sky-500',
+      badge: 'bg-sky-100 text-sky-700 dark:bg-sky-900 dark:text-sky-300',
+    };
+  }
+  if (diff === 'HARD') {
+    return {
+      btn: 'bg-rose-50 border-rose-200 text-rose-700 dark:bg-rose-950/30 dark:border-rose-900 dark:text-rose-200 shadow-sm',
+      dot: 'bg-rose-500',
+      borderActive: 'border-rose-500',
+      badge: 'bg-rose-100 text-rose-700 dark:bg-rose-900 dark:text-rose-300',
+    };
+  }
+  // NIGHTMARE or 기타
+  return {
+    btn: 'bg-violet-50 border-violet-200 text-violet-700 dark:bg-violet-950/30 dark:border-violet-900 dark:text-violet-200 shadow-sm',
+    dot: 'bg-violet-500',
+    borderActive: 'border-violet-500',
+    badge: 'bg-violet-100 text-violet-700 dark:bg-violet-900 dark:text-violet-300',
+  };
+}
 
 interface GlobalStep {
   index: number;
@@ -205,7 +240,7 @@ function buildSequence(schedule: RaidSchedule): {
   totalCost: number;
 } {
   const flat: { raidId: RaidId; run: RaidRun }[] = [];
-  
+
   // RAID_ORDER 순서대로 순회하지만 schedule에 없는 키는 건너뜀
   RAID_ORDER.forEach((raidId) => {
     const runs = schedule[raidId] || [];
@@ -432,11 +467,10 @@ function StartRoster({
                   >
                     <div className="flex items-center gap-2.5">
                       <div
-                        className={`flex h-7 w-7 items-center justify-center rounded-lg ${
-                          resolveRole(m) === 'SUPPORT'
-                            ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-300'
-                            : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300'
-                        }`}
+                        className={`flex h-7 w-7 items-center justify-center rounded-lg ${resolveRole(m) === 'SUPPORT'
+                          ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-300'
+                          : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300'
+                          }`}
                       >
                         <RoleIcon role={resolveRole(m)} className="h-4 w-4" />
                       </div>
@@ -493,8 +527,14 @@ export const RaidSequenceView: React.FC<Props> = ({
   updatedBy,
   onExclusionsUpdated,
 }) => {
+
+  // ✅ 세르카 필터 버튼 숨김 토글 (출시 전에는 true로 두기)
+  // const SHOW_SERKA_FILTER = true;
+  const SHOW_SERKA_FILTER = false;
   // ✅ 1. 레이드 필터 상태 (기본값: 전체 선택)
-  const [selectedRaids, setSelectedRaids] = useState<Set<RaidId>>(new Set(RAID_ORDER));
+  const [selectedRaids, setSelectedRaids] = useState<Set<RaidId>>(
+    () => new Set(RAID_ORDER.filter((id) => SHOW_SERKA_FILTER || !id.startsWith('SERKA_'))),
+  );
 
   const [localExclusions, setLocalExclusions] = useState<RaidExclusionMap>(
     exclusions ?? {},
@@ -513,10 +553,13 @@ export const RaidSequenceView: React.FC<Props> = ({
       ACT3_HARD: [],
       ACT4_NORMAL: [],
       ACT4_HARD: [],
+      SERKA_NORMAL: [],
+      SERKA_HARD: [],
+      SERKA_NIGHTMARE: [],
       FINAL_NORMAL: [],
       FINAL_HARD: [],
     };
-    
+
     // 선택된 레이드 키의 데이터만 복사
     selectedRaids.forEach((raidId) => {
       if (schedule[raidId]) {
@@ -561,7 +604,7 @@ export const RaidSequenceView: React.FC<Props> = ({
 
   return (
     <div className="relative mx-auto w-full max-w-4xl space-y-4">
-      
+
       {/* ✅ Filter Controls UI */}
       <div className="sticky top-0 z-30 flex flex-col gap-3 rounded-2xl border border-zinc-200 bg-white/90 px-4 py-3 shadow-sm backdrop-blur-md dark:border-zinc-800 dark:bg-zinc-900/90">
         <div className="flex items-center gap-2 text-sm font-semibold text-zinc-600 dark:text-zinc-400">
@@ -569,34 +612,38 @@ export const RaidSequenceView: React.FC<Props> = ({
           <span>오늘 진행할 레이드 선택</span>
         </div>
         <div className="flex flex-wrap gap-2">
-          {RAID_ORDER.map((raidId) => {
-            const isActive = selectedRaids.has(raidId);
-            const meta = RAID_META[raidId];
-            const isHard = meta.difficulty === 'HARD';
-            
-            // 버튼 스타일 계산
-            let btnClass = 'flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-bold transition-all border ';
-            if (isActive) {
-              if (isHard) {
-                btnClass += 'bg-rose-50 border-rose-200 text-rose-700 dark:bg-rose-950/30 dark:border-rose-900 dark:text-rose-200 shadow-sm';
-              } else {
-                btnClass += 'bg-sky-50 border-sky-200 text-sky-700 dark:bg-sky-950/30 dark:border-sky-900 dark:text-sky-200 shadow-sm';
-              }
-            } else {
-              btnClass += 'bg-transparent border-zinc-200 text-zinc-400 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-800';
-            }
+          {RAID_ORDER
+            .filter((id) => SHOW_SERKA_FILTER || !id.startsWith('SERKA_'))
+            .map((raidId) => {
+              const isActive = selectedRaids.has(raidId);
+              const meta = RAID_META[raidId];
+              const diff = meta.difficulty;
+              const diffStyle = getDifficultyStyle(diff);
+              const isHard = diff !== 'NORMAL';
 
-            return (
-              <button
-                key={raidId}
-                onClick={() => toggleRaid(raidId)}
-                className={btnClass}
-              >
-                <div className={`h-2 w-2 rounded-full ${isActive ? (isHard ? 'bg-rose-500' : 'bg-sky-500') : 'bg-zinc-300 dark:bg-zinc-700'}`} />
-                {meta.label}
-              </button>
-            );
-          })}
+              // 버튼 스타일 계산
+              let btnClass = 'flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-bold transition-all border ';
+              if (isActive) {
+                if (isHard) {
+                  btnClass += diffStyle.btn;
+                } else {
+                  btnClass += diffStyle.btn;
+                }
+              } else {
+                btnClass += 'bg-transparent border-zinc-200 text-zinc-400 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-800';
+              }
+
+              return (
+                <button
+                  key={raidId}
+                  onClick={() => toggleRaid(raidId)}
+                  className={btnClass}
+                >
+                  <div className={`h-2 w-2 rounded-full ${diffStyle.dot}`} />
+                  {meta.label}
+                </button>
+              );
+            })}
         </div>
       </div>
 
@@ -660,17 +707,32 @@ export const RaidSequenceView: React.FC<Props> = ({
                 <div className="space-y-8 pl-4">
                   {group.steps.map((step) => {
                     const currentFlatIdx = flatIdx;
-                    const diff = diffs[currentFlatIdx];
+                    const transition = diffs[currentFlatIdx];
 
                     const isFirst = currentFlatIdx === 0;
                     const isGroupFirst = step === group.steps[0];
 
                     const meta = RAID_META[step.raidId];
-                    const isHard = meta.difficulty === 'HARD';
+                    const difficulty = meta.difficulty;       // ✅ 난이도는 difficulty로 분리
+                    const diffStyle = getDifficultyStyle(difficulty);
 
-                    const hasLeaving = diff && diff.leaving.length > 0;
-                    const hasEntering = diff && diff.entering.length > 0;
-                    const hasSwitching = diff && diff.switching.length > 0;
+                    const titleClass =
+                      difficulty === 'NORMAL'
+                        ? 'text-sky-600 dark:text-sky-400'
+                        : difficulty === 'HARD'
+                          ? 'text-rose-600 dark:text-rose-400'
+                          : 'text-violet-600 dark:text-violet-400';
+
+                    const labelClass =
+                      difficulty === 'NORMAL'
+                        ? 'text-sky-800/60 dark:text-sky-300/60'
+                        : difficulty === 'HARD'
+                          ? 'text-rose-800/60 dark:text-rose-300/60'
+                          : 'text-violet-800/60 dark:text-violet-300/60';
+
+                    const hasLeaving = transition && transition.leaving.length > 0;
+                    const hasEntering = transition && transition.entering.length > 0;
+                    const hasSwitching = transition && transition.switching.length > 0;
                     const hasChanges = hasLeaving || hasEntering || hasSwitching;
 
                     // 그룹이 바뀌는 지점에서는 입장/퇴장/교체 대신 시작 멤버만
@@ -678,16 +740,16 @@ export const RaidSequenceView: React.FC<Props> = ({
                     const prevKey =
                       currentFlatIdx > 0
                         ? Array.from(
-                            new Set(
-                              getVisibleMembers(
-                                flatSteps[currentFlatIdx - 1].raidId,
-                                flatSteps[currentFlatIdx - 1].run,
-                                localExclusions,
-                              ).map((m) => m.discordName),
-                            ),
-                          )
-                            .sort()
-                            .join('|')
+                          new Set(
+                            getVisibleMembers(
+                              flatSteps[currentFlatIdx - 1].raidId,
+                              flatSteps[currentFlatIdx - 1].run,
+                              localExclusions,
+                            ).map((m) => m.discordName),
+                          ),
+                        )
+                          .sort()
+                          .join('|')
                         : null;
 
                     const currentVisibleMembers = getVisibleMembers(
@@ -718,14 +780,14 @@ export const RaidSequenceView: React.FC<Props> = ({
                     );
 
                     const avgDps = dpsMembers.length > 0
-                        ? Math.round(dpsMembers.reduce((sum, m) => sum + m.combatPower, 0) / dpsMembers.length)
-                        : null;
+                      ? Math.round(dpsMembers.reduce((sum, m) => sum + m.combatPower, 0) / dpsMembers.length)
+                      : null;
                     const avgSup = supMembers.length > 0
-                        ? Math.round(supMembers.reduce((sum, m) => sum + m.combatPower, 0) / supMembers.length)
-                        : null;
+                      ? Math.round(supMembers.reduce((sum, m) => sum + m.combatPower, 0) / supMembers.length)
+                      : null;
                     const overallAvg = currentVisibleMembers.length > 0
-                        ? Math.round(currentVisibleMembers.reduce((sum, m) => sum + m.combatPower, 0) / currentVisibleMembers.length)
-                        : null;
+                      ? Math.round(currentVisibleMembers.reduce((sum, m) => sum + m.combatPower, 0) / currentVisibleMembers.length)
+                      : null;
 
                     flatIdx++;
 
@@ -737,9 +799,8 @@ export const RaidSequenceView: React.FC<Props> = ({
                         {/* Timeline Node */}
                         <div className="relative z-10 mt-1.5 flex h-3 w-3 shrink-0 items-center justify-center -translate-x-[2px]">
                           <div
-                            className={`h-3 w-3 rounded-full border-2 bg-white dark:bg-zinc-950 ${
-                              isHard ? 'border-rose-500' : 'border-sky-500'
-                            }`}
+                            className={`h-3 w-3 rounded-full border-2 bg-white dark:bg-zinc-950 ${diffStyle.borderActive
+                              }`}
                           />
                         </div>
 
@@ -753,11 +814,11 @@ export const RaidSequenceView: React.FC<Props> = ({
                               </span>
                               <div>
                                 <div className="flex items-center gap-2">
-                                  <h4 className={`font-bold ${isHard ? 'text-rose-600 dark:text-rose-400' : 'text-sky-600 dark:text-sky-400'}`}>
+                                  <h4 className={`font-bold ${titleClass}`}>
                                     {meta.label}
                                   </h4>
-                                  <span className={`text-[10px] font-extrabold uppercase tracking-wider ${isHard ? 'text-rose-800/60 dark:text-rose-300/60' : 'text-sky-800/60 dark:text-sky-300/60'}`}>
-                                    {meta.difficulty}
+                                  <span className={`text-[10px] font-extrabold uppercase tracking-wider ${labelClass}`}>
+                                    {DIFF_LABEL[difficulty] ?? difficulty}
                                   </span>
                                 </div>
                               </div>
@@ -848,7 +909,7 @@ export const RaidSequenceView: React.FC<Props> = ({
                                     <span>퇴장 (Leaving)</span>
                                   </div>
                                   <div className="grid gap-2 sm:grid-cols-2">
-                                    {diff!.leaving.map((m) => (
+                                    {transition!.leaving.map((m) => (
                                       <CharacterBadge key={m.id} char={m} type="leave" />
                                     ))}
                                   </div>
@@ -862,7 +923,7 @@ export const RaidSequenceView: React.FC<Props> = ({
                                     <span>캐릭터 교체</span>
                                   </div>
                                   <div className="flex flex-col gap-2">
-                                    {diff!.switching.map((s) => (
+                                    {transition!.switching.map((s) => (
                                       <div
                                         key={s.discordName}
                                         className="flex flex-col gap-2 rounded-xl bg-amber-50/50 p-2 dark:bg-amber-950/20 sm:flex-row sm:items-center sm:justify-between sm:p-1.5 sm:pr-2"
@@ -894,7 +955,7 @@ export const RaidSequenceView: React.FC<Props> = ({
                                     <span>입장 (Entering)</span>
                                   </div>
                                   <div className="grid gap-2 sm:grid-cols-2">
-                                    {diff!.entering.map((m) => (
+                                    {transition!.entering.map((m) => (
                                       <CharacterBadge key={m.id} char={m} type="enter" />
                                     ))}
                                   </div>

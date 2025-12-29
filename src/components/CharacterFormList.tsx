@@ -1,7 +1,7 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState } from 'react';
 import type { Character, Role } from '../types';
 import { JOB_OPTIONS, ROLE_OPTIONS } from '../constants';
-import { Trash2, Plus, Save, User, Shield, Swords, Loader2, Info, Download } from 'lucide-react';
+import { Trash2, Plus, Save, User, Shield, Swords, Loader2, Download } from 'lucide-react';
 
 interface CharacterFormRow {
   id?: string;
@@ -10,6 +10,9 @@ interface CharacterFormRow {
   role: Role;
   itemLevel: number | '';
   combatPower: number | '';
+  serkaNightmare: boolean;
+  /** 발키 서폿 가능(플렉스) 체크 */
+  valkyCanSupport: boolean;
 }
 
 interface Props {
@@ -37,9 +40,15 @@ export const CharacterFormList: React.FC<Props> = ({
   useEffect(() => {
     setLocalDiscord(discordName);
     if (characters.length > 0) {
-      setRows(characters.map(c => ({ ...c })));
+      setRows(characters.map(c => ({
+        ...c,
+        // ✅ 하위 호환: 기존 데이터는 1740+면 기본 true로 간주
+        serkaNightmare: c.serkaNightmare ?? (c.itemLevel >= 1740),
+        // ✅ 하위 호환: 기존 데이터는 기본 false
+        valkyCanSupport: c.valkyCanSupport ?? false,
+      })));
     } else {
-      setRows([{ discordName, jobCode: '', role: 'DPS', itemLevel: 1700, combatPower: '' }]);
+      setRows([{ discordName, jobCode: '', role: 'DPS', itemLevel: 1700, combatPower: '', serkaNightmare: false, valkyCanSupport: false }]);
     }
   }, [discordName, characters]);
 
@@ -53,7 +62,7 @@ export const CharacterFormList: React.FC<Props> = ({
 
     try {
       setIsFetching(true);
-      
+
       // App.tsx가 이미 가지고 있는 전체 데이터에서 필터링
       const myCharacters = onLoadByDiscordName(trimmedName);
 
@@ -64,7 +73,11 @@ export const CharacterFormList: React.FC<Props> = ({
           jobCode: c.jobCode,
           role: c.role,
           itemLevel: c.itemLevel,
-          combatPower: c.combatPower
+          combatPower: c.combatPower,
+          // ✅ 하위 호환: 기존 데이터는 1740+면 기본 true로 간주
+          serkaNightmare: c.serkaNightmare ?? (c.itemLevel >= 1740),
+          // ✅ 하위 호환: 기존 데이터는 기본 false
+          valkyCanSupport: c.valkyCanSupport ?? false,
         })));
         alert(`${trimmedName}님의 캐릭터 ${myCharacters.length}개를 불러왔습니다.`);
       } else {
@@ -89,14 +102,46 @@ export const CharacterFormList: React.FC<Props> = ({
   // }, [localDiscord, rows, discordName, characters]);
 
   const handleChangeRow = (index: number, field: keyof CharacterFormRow, value: any) => {
-    setRows(prev => prev.map((row, i) => i === index ? {
-      ...row, [field]: (field === 'itemLevel' || field === 'combatPower') 
-      ? (value === '' ? '' : Number(value)) : value
-    } : row));
+    setRows(prev => prev.map((row, i) => {
+      if (i !== index) return row;
+
+      // ✅ 직업이 발키가 아니면 플렉스 체크는 강제로 해제
+      if (field === 'jobCode') {
+        const nextJob = String(value);
+        return {
+          ...row,
+          jobCode: nextJob,
+          valkyCanSupport: nextJob === '발키' ? (row.valkyCanSupport ?? false) : false,
+        } as CharacterFormRow;
+      }
+
+      // 숫자 필드 처리
+      if (field === 'itemLevel' || field === 'combatPower') {
+        const numValue = value === '' ? '' : Number(value);
+
+        // ✅ 아이템 레벨이 1740+로 올라가는 순간: 세르카 나이트메어 기본 체크
+        // ✅ 1740 미만으로 내려가면: 체크 해제 및 UI 숨김
+        if (field === 'itemLevel') {
+          const prevIl = typeof row.itemLevel === 'number' ? row.itemLevel : 0;
+          const nextIl = typeof numValue === 'number' ? numValue : 0;
+
+          if (prevIl < 1740 && nextIl >= 1740) {
+            return { ...row, itemLevel: numValue, serkaNightmare: true };
+          }
+          if (prevIl >= 1740 && nextIl < 1740) {
+            return { ...row, itemLevel: numValue, serkaNightmare: false };
+          }
+        }
+
+        return { ...row, [field]: numValue } as CharacterFormRow;
+      }
+
+      return { ...row, [field]: value } as CharacterFormRow;
+    }));
   };
 
   const handleAddRow = () => {
-    setRows(prev => [...prev, { discordName: localDiscord, jobCode: '', role: 'DPS', itemLevel: 1700, combatPower: '' }]);
+    setRows(prev => [...prev, { discordName: localDiscord, jobCode: '', role: 'DPS', itemLevel: 1700, combatPower: '', serkaNightmare: false, valkyCanSupport: false }]);
   };
 
   const handleRemoveRow = (index: number) => {
@@ -110,7 +155,10 @@ export const CharacterFormList: React.FC<Props> = ({
       .map((r, idx) => ({
         id: r.id ?? `${trimmedName}-${idx}-${Date.now()}`,
         discordName: trimmedName, jobCode: r.jobCode, role: r.role,
-        itemLevel: Number(r.itemLevel), combatPower: Number(r.combatPower)
+        itemLevel: Number(r.itemLevel),
+        combatPower: Number(r.combatPower),
+        serkaNightmare: Boolean(r.serkaNightmare),
+        valkyCanSupport: r.jobCode === '발키' ? Boolean(r.valkyCanSupport) : false,
       }));
 
     if (cleaned.length === 0) {
@@ -172,13 +220,17 @@ export const CharacterFormList: React.FC<Props> = ({
           </h3>
         </div>
 
+        <p className="px-1 text-[11px] text-zinc-500">
+          아이템 레벨이 <b>1740+</b>인 캐릭터는 <b>세르카 나이트메어</b> 배정 여부를 체크로 선택할 수 있어요.
+        </p>
+
         <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900/50">
           {/* 테이블 헤더 */}
           <div className="hidden grid-cols-12 gap-4 border-b border-zinc-100 bg-zinc-50/50 px-4 py-2 text-xs font-medium text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 sm:grid">
             <div className="col-span-3">직업</div>
             <div className="col-span-3">역할</div>
-            <div className="col-span-2">아이템 레벨</div>
-            <div className="col-span-3">전투력</div>
+            <div className="col-span-3">아이템 레벨</div>
+            <div className="col-span-2">전투력</div>
             <div className="col-span-1 text-center">삭제</div>
           </div>
 
@@ -199,37 +251,64 @@ export const CharacterFormList: React.FC<Props> = ({
                 </div>
 
                 <div className="sm:col-span-3">
-                  <div className="relative">
-                    <div className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400">
-                      {row.role === 'SUPPORT' ? <Shield size={14} /> : <Swords size={14} />}
+                  <div className="flex items-center gap-2">
+                    <div className="relative flex-1">
+                      <div className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400">
+                        {row.role === 'SUPPORT' ? <Shield size={14} /> : <Swords size={14} />}
+                      </div>
+                      <select
+                        className={`w-full appearance-none rounded-lg border px-3 py-2 pl-9 text-sm font-medium ${row.role === 'SUPPORT'
+                            ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/30'
+                            : 'border-zinc-200 bg-zinc-50 text-zinc-700 dark:border-zinc-700 dark:bg-zinc-800'
+                          }`}
+                        value={row.role}
+                        onChange={(e) => handleChangeRow(index, 'role', e.target.value as Role)}
+                        disabled={isLoading || isFetching}
+                      >
+                        {ROLE_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                      </select>
                     </div>
-                    <select
-                      className={`w-full appearance-none rounded-lg border px-3 py-2 pl-9 text-sm font-medium ${
-                        row.role === 'SUPPORT'
-                          ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/30'
-                          : 'border-zinc-200 bg-zinc-50 text-zinc-700 dark:border-zinc-700 dark:bg-zinc-800'
-                      }`}
-                      value={row.role}
-                      onChange={(e) => handleChangeRow(index, 'role', e.target.value as Role)}
-                      disabled={isLoading || isFetching}
-                    >
-                      {ROLE_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-                    </select>
+
+                    {/* ✅ 발키는 딜/서폿 플렉스 가능 여부 체크 */}
+                    {row.jobCode === '발키' && (
+                      <label className="inline-flex select-none items-center gap-1 rounded-lg border border-zinc-200 bg-white px-2 py-2 text-[11px] font-semibold text-zinc-600 shadow-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
+                        <input
+                          type="checkbox"
+                          checked={row.valkyCanSupport}
+                          onChange={(e) => handleChangeRow(index, 'valkyCanSupport', e.target.checked)}
+                          disabled={isLoading || isFetching}
+                          className="h-4 w-4 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500"
+                        />
+                        <span className="whitespace-nowrap">서폿 가능</span>
+                      </label>
+                    )}
                   </div>
                 </div>
 
                 <div className="flex gap-3 sm:contents">
-                  <div className="flex-1 sm:col-span-2">
-                    <input
-                      type="number"
-                      className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm font-medium dark:border-zinc-700 dark:bg-zinc-900"
-                      value={row.itemLevel}
-                      onChange={(e) => handleChangeRow(index, 'itemLevel', e.target.value)}
-                      placeholder="Lv"
-                      disabled={isLoading || isFetching}
-                    />
-                  </div>
                   <div className="flex-1 sm:col-span-3">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-2">
+                      <input
+                        type="number"
+                        className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm font-medium dark:border-zinc-700 dark:bg-zinc-900 sm:min-w-[110px]"
+                        value={row.itemLevel}
+                        onChange={(e) => handleChangeRow(index, 'itemLevel', e.target.value)}
+                        placeholder="Lv"
+                        disabled={isLoading || isFetching}
+                      />
+
+                      {typeof row.itemLevel === 'number' && row.itemLevel >= 1740 && (
+                          <input
+                            type="checkbox"
+                            checked={row.serkaNightmare}
+                            onChange={(e) => handleChangeRow(index, 'serkaNightmare', e.target.checked)}
+                            disabled={isLoading || isFetching}
+                            className="h-4 w-4 shrink-0 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500"
+                          />
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex-1 sm:col-span-2">
                     <input
                       type="number"
                       className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm font-medium dark:border-zinc-700 dark:bg-zinc-900"

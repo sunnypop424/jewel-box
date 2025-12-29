@@ -1,10 +1,15 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import type { Character, RaidId, RaidExclusionMap } from './types';
+import type { Character, RaidId, RaidExclusionMap, RaidSettingsMap } from './types';
 import { buildRaidSchedule } from './raidLogic';
 import { CharacterFormList } from './components/CharacterFormList';
 import { RaidScheduleView } from './components/RaidScheduleView';
 import { RaidSequenceView } from './components/RaidSequenceView';
-import { fetchCharacters, saveCharacters } from './api/sheetApi';
+import {
+  fetchCharacters,
+  saveCharacters,
+  fetchRaidSettings,
+  setRaidSetting,
+} from './api/sheetApi';
 import {
   fetchRaidExclusions,
   excludeCharacterOnRaid,
@@ -58,8 +63,12 @@ const App: React.FC = () => {
   const [raidExclusions, setRaidExclusions] = useState<RaidExclusionMap>({});
   const [loadingExclusions, setLoadingExclusions] = useState(false);
 
+  // 🔹 레이드별 랏폿(서폿 부족) 설정 (모든 사람이 공유)
+  const [raidSettings, setRaidSettings] = useState<RaidSettingsMap>({});
+  const [loadingRaidSettings, setLoadingRaidSettings] = useState(false);
+
   // 🔹 전투력 밸런싱 모드 (기본값: 전체 평균 스피드 모드)
-  const [balanceMode, setBalanceMode] = useState<BalanceMode>('speed');
+  const [balanceMode, _setBalanceMode] = useState<BalanceMode>('speed');
 
   // 테마 설정
   const [theme, setTheme] = useState<Theme>(() => {
@@ -139,10 +148,24 @@ const App: React.FC = () => {
     }
   };
 
+  // 랏폿 설정 새로고침
+  const refreshRaidSettings = async () => {
+    try {
+      setLoadingRaidSettings(true);
+      const rs = await fetchRaidSettings();
+      setRaidSettings(rs);
+    } catch (e) {
+      console.error('load raid settings error', e);
+    } finally {
+      setLoadingRaidSettings(false);
+    }
+  };
+
   // 앱 시작 시 캐릭터 + 제외 목록 로드
   useEffect(() => {
     refreshAllCharacters().catch(console.error);
     refreshExclusions().catch(console.error);
+    refreshRaidSettings().catch(console.error);
   }, []);
 
   // 내 원정대 반영한 전체 캐릭터
@@ -156,9 +179,25 @@ const App: React.FC = () => {
 
   // ✅ 모드 + 제외 내역을 반영한 레이드 스케줄
   const schedule = useMemo(
-    () => buildRaidSchedule(effectiveCharacters, raidExclusions, balanceMode),
-    [effectiveCharacters, raidExclusions, balanceMode],
+    () => buildRaidSchedule(effectiveCharacters, raidExclusions, balanceMode, raidSettings),
+    [effectiveCharacters, raidExclusions, balanceMode, raidSettings],
   );
+
+  // 🔹 레이드별 랏폿 토글
+  const handleToggleSupportShortage = async (raidId: RaidId, next: boolean) => {
+    try {
+      setStatus('랏폿 설정 저장 중...');
+      const updatedBy = localSquad.discordName || '';
+      const rs = await setRaidSetting(raidId, next, updatedBy);
+      setRaidSettings(rs);
+      setStatus('랏폿 설정이 저장되었습니다.');
+    } catch (e) {
+      console.error(e);
+      alert('랏폿 설정 저장에 실패했습니다. 잠시 후 다시 시도해주세요.');
+      // 실패 시 최신 값으로 롤백
+      refreshRaidSettings().catch(console.error);
+    }
+  };
 
   // 저장 & 동기화
   const handleSaveAndSync = async (
@@ -383,6 +422,9 @@ const App: React.FC = () => {
                 exclusions={raidExclusions}
                 onExcludeCharacter={handleExcludeCharacterFromRaid}
                 balanceMode={balanceMode}
+                raidSettings={raidSettings}
+                isRaidSettingsLoading={loadingRaidSettings}
+                onToggleSupportShortage={handleToggleSupportShortage}
               />
 
               {/* ✅ 기존 본문 렌더 제거: Modal로만 확인 */}

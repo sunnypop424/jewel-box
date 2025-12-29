@@ -39,7 +39,7 @@ export const ROLE_OPTIONS = [
 
 export const RAID_META: Record<
   RaidId,
-  { label: string; difficulty: 'HARD' | 'NORMAL'; colorClass: string }
+  { label: string; difficulty: 'HARD' | 'NORMAL' | 'NIGHTMARE'; colorClass: string }
 > = {
   ACT3_HARD: {
     label: '3막 하드',
@@ -55,6 +55,21 @@ export const RAID_META: Record<
     label: '4막 하드',
     difficulty: 'HARD',
     colorClass: 'bg-amber-500'
+  },
+  SERKA_NORMAL: {
+    label: '세르카 노말 (1/7)',
+    difficulty: 'NORMAL',
+    colorClass: 'bg-violet-300'
+  },
+  SERKA_HARD: {
+    label: '세르카 하드 (1/7)',
+    difficulty: 'HARD',
+    colorClass: 'bg-violet-500'
+  },
+  SERKA_NIGHTMARE: {
+    label: '세르카 나이트메어 (1/7)',
+    difficulty: 'NIGHTMARE',
+    colorClass: 'bg-violet-700'
   },
   FINAL_NORMAL: {
     label: '종막 노말',
