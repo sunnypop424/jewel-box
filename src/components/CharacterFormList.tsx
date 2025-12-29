@@ -271,15 +271,15 @@ export const CharacterFormList: React.FC<Props> = ({
 
                     {/* ✅ 발키는 딜/서폿 플렉스 가능 여부 체크 */}
                     {row.jobCode === '발키' && (
-                      <label className="inline-flex select-none items-center gap-1 rounded-lg border border-zinc-200 bg-white px-2 py-2 text-[11px] font-semibold text-zinc-600 shadow-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
+                      <label className="inline-flex select-none items-center gap-1 rounded-lg border border-zinc-200 bg-white px-2 py-2 text-xs font-semibold text-zinc-600 shadow-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
                         <input
                           type="checkbox"
                           checked={row.valkyCanSupport}
                           onChange={(e) => handleChangeRow(index, 'valkyCanSupport', e.target.checked)}
                           disabled={isLoading || isFetching}
-                          className="h-4 w-4 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500"
+                          className="h-3 w-3 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500"
                         />
-                        <span className="whitespace-nowrap">서폿 가능</span>
+                        <span className="whitespace-nowrap">서폿</span>
                       </label>
                     )}
                   </div>
@@ -290,7 +290,7 @@ export const CharacterFormList: React.FC<Props> = ({
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-2">
                       <input
                         type="number"
-                        className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm font-medium dark:border-zinc-700 dark:bg-zinc-900 sm:min-w-[110px]"
+                        className="w-full flex-1 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm font-medium dark:border-zinc-700 dark:bg-zinc-900"
                         value={row.itemLevel}
                         onChange={(e) => handleChangeRow(index, 'itemLevel', e.target.value)}
                         placeholder="Lv"
@@ -298,13 +298,16 @@ export const CharacterFormList: React.FC<Props> = ({
                       />
 
                       {typeof row.itemLevel === 'number' && row.itemLevel >= 1740 && (
+                        <label className="inline-flex select-none items-center gap-1 rounded-lg border border-zinc-200 bg-white px-2 py-2 text-xs font-semibold text-zinc-600 shadow-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
                           <input
                             type="checkbox"
                             checked={row.serkaNightmare}
                             onChange={(e) => handleChangeRow(index, 'serkaNightmare', e.target.checked)}
                             disabled={isLoading || isFetching}
-                            className="h-4 w-4 shrink-0 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500"
+                            className="h-3 w-3 shrink-0 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500"
                           />
+                          <span className="whitespace-nowrap">나메</span>
+                        </label>
                       )}
                     </div>
                   </div>
