@@ -376,87 +376,14 @@ function optimizeRunsByStdDev(
 }
 
 /**
- * 🧹 마지막 공대에 같은 직업 DPS가 남아 있으면
- *    앞 공대로 옮길 수 있는 만큼 옮겨서,
- *    마지막 공대 직업 구성을 최대한 다양하게 만든다.
- */
-function minimizeSameJobInLastRun(
-  runsMembers: Character[][],
-  maxPerRun: number,
-  maxSupportsPerRun: number,
-): Character[][] {
-  const runs = runsMembers.map((r) => [...r]);
-  const runCount = runs.length;
-  if (runCount <= 1) return runs;
-
-  // 1️⃣ 마지막 "비어 있지 않은" 공대 인덱스 찾기
-  let lastIdx = -1;
-  for (let i = runCount - 1; i >= 0; i--) {
-    if (runs[i].length > 0) {
-      lastIdx = i;
-      break;
-    }
-  }
-  if (lastIdx <= 0) return runs;
-
-  const lastRun = runs[lastIdx];
-
-  // 2️⃣ 마지막 공대에서 DPS 직업별 인원 수 세기
-  const jobCounts: Record<string, number> = {};
-  lastRun.forEach((c) => {
-    if (c.role !== 'DPS') return;
-    jobCounts[c.jobCode] = (jobCounts[c.jobCode] || 0) + 1;
-  });
-
-  // 2명 이상 있는 직업들만 신경쓴다
-  const duplicatedJobCodes = Object.keys(jobCounts).filter(
-    (job) => jobCounts[job] >= 2,
-  );
-  if (duplicatedJobCodes.length === 0) return runs;
-
-  const buildPlayerCounts = (members: Character[]) => {
-    const counts: Record<string, number> = {};
-    members.forEach((m) => {
-      counts[m.discordName] = (counts[m.discordName] || 0) + 1;
-    });
-    return counts;
-  };
-
-  // 3️⃣ 마지막 공대의 "중복 직업 DPS"들을 앞 공대로 한 명씩 밀어보기
-  for (const ch of [...lastRun]) {
-    if (ch.role !== 'DPS') continue;
-    if (!duplicatedJobCodes.includes(ch.jobCode)) continue;
-
-    // 앞 공대 0 ~ lastIdx-1까지 순회
-    for (let ri = 0; ri < lastIdx; ri++) {
-      const targetRun = runs[ri];
-      const targetCounts = buildPlayerCounts(targetRun);
-
-      // canAddToRunGreedy 조건(인원 제한, 1인1캐릭, 직업2중복, 서폿제한) 안 깨면 이동
-      if (!canAddToRunGreedy(targetRun, targetCounts, ch, maxPerRun, maxSupportsPerRun)) {
-        continue;
-      }
-
-      const idxInLast = lastRun.findIndex((m) => m.id === ch.id);
-      if (idxInLast === -1) break;
-
-      // 실제 이동
-      lastRun.splice(idxInLast, 1);
-      targetRun.push(ch);
-
-      // 다음 중복 DPS로 진행
-      break;
-    }
-  }
-
-  return runs;
-}
-
-/**
- * 🧍 마지막 공대에 혼자 남는 경우,
- *    그 유저가 가진 캐릭터들 중에서
- *    "다른 공대 평균 전투력보다 높은 캐릭터"들 중
- *    가장 낮은 전투력의 캐릭터가 혼자 가도록 스왑한다.
+ * 🧍 공대에 혼자 남은 경우에만 사용하는 로직
+ *
+ * - runsMembers: 공대별 캐릭터 리스트
+ * - 어떤 공대든 인원이 딱 1명인 경우, 그 유저의 캐릭터 풀에서
+ *   "다른 공대 평균 전투력 이상인 캐릭터"들 중
+ *   가장 약한 캐릭터를 그 공대에 보내고, 기존 솔로캐는 그 공대로 보내는 스왑.
+ *
+ *   → 혼자 가야 하는 공대에, 그 유저의 '제일 어울리는 쎈 캐릭터'를 보내는 느낌
  */
 function adjustSoloLastRunStrongCharacter(
   runsMembers: Character[][],
@@ -468,60 +395,161 @@ function adjustSoloLastRunStrongCharacter(
   const runCount = runs.length;
   if (runCount <= 1) return runs;
 
-  // 1️⃣ 마지막 "비어 있지 않은" 공대 찾기
-  let lastIdx = -1;
-  for (let i = runCount - 1; i >= 0; i--) {
-    if (runs[i].length > 0) {
-      lastIdx = i;
+  const buildPlayerCounts = (members: Character[]) => {
+    const counts: Record<string, number> = {};
+    members.forEach((m) => {
+      counts[m.discordName] = (counts[m.discordName] || 0) + 1;
+    });
+    return counts;
+  };
+
+  // 미리 각 공대 평균 전투력 계산
+  const runAverages: number[] = runs.map((members) => {
+    if (members.length === 0) return 0;
+    const total = members.reduce((sum, c) => sum + c.combatPower, 0);
+    return total / members.length;
+  });
+
+  // 🔁 모든 공대를 보면서 "인원 1명짜리 공대"만 처리
+  for (let soloRunIdx = 0; soloRunIdx < runCount; soloRunIdx++) {
+    const soloRun = runs[soloRunIdx];
+    if (soloRun.length !== 1) continue; // 혼자 아닌 공대는 패스
+
+    const solo = soloRun[0];
+    if (lockIds.has(solo.id)) continue; // 고정 멤버면 건드리지 않음
+
+    // 1️⃣ 나머지 공대들의 평균 전투력 모으기
+    const otherAverages: number[] = [];
+    for (let i = 0; i < runCount; i++) {
+      if (i === soloRunIdx) continue;
+      const members = runs[i];
+      if (members.length === 0) continue;
+      otherAverages.push(runAverages[i]);
+    }
+    if (otherAverages.length === 0) continue;
+
+    // 🔹 "다른 공대들의 평균 전투력"의 평균값을 기준(threshold)으로 사용
+    const threshold =
+      otherAverages.reduce((sum, v) => sum + v, 0) / otherAverages.length;
+
+    type Candidate = { runIndex: number; charIndex: number; ch: Character };
+    const candidates: Candidate[] = [];
+
+    // 2️⃣ 같은 유저의 '다른 공대 캐릭' 중에서
+    //    combatPower >= threshold 인 애들만 후보로 수집
+    for (let ri = 0; ri < runCount; ri++) {
+      if (ri === soloRunIdx) continue;
+      const members = runs[ri];
+
+      for (let ci = 0; ci < members.length; ci++) {
+        const ch = members[ci];
+        if (lockIds.has(ch.id)) continue;
+        if (ch.discordName !== solo.discordName) continue;
+
+        // 👉 "평균 전투력 이상"인 캐릭만 후보
+        if (ch.combatPower >= threshold) {
+          candidates.push({ runIndex: ri, charIndex: ci, ch });
+        }
+      }
+    }
+
+    // 기준 이상인 캐릭이 없으면 이 솔로 공대는 그냥 둔다
+    if (candidates.length === 0) {
+      continue;
+    }
+
+    // 🔹 "평균 이상인 애들" 중에서 제일 낮은 애부터 스왑 시도
+    //    = 너무 오버 스펙인 애는 뒤로 밀고, 딱 기준 갓 넘는 애를 먼저 씀
+    candidates.sort((a, b) => a.ch.combatPower - b.ch.combatPower);
+
+    // 3️⃣ 각 후보에 대해 "해당 캐릭 ↔ 현재 솔로" 스왑 시도
+    for (const cand of candidates) {
+      const { runIndex: donorRunIdx, charIndex: donorCharIdx, ch: donorChar } = cand;
+
+      const soloRunMembers = runs[soloRunIdx];
+      const donorRunMembers = runs[donorRunIdx];
+
+      // 혹시 중간에 상태가 바뀌어 인덱스가 유효하지 않으면 스킵
+      if (soloRunMembers.length !== 1 || donorCharIdx >= donorRunMembers.length) {
+        continue;
+      }
+
+      const originalSolo = soloRunMembers[0];
+
+      // 🔹 스왑 전 상태에서 "제거된 상태"를 가정하고 canAdd 체크
+      const soloRunWithoutSolo: Character[] = []; // 솔로 공대는 솔로만 있으니 제거하면 빈 배열
+      const donorRunWithoutDonor = donorRunMembers.filter(
+        (_, idx) => idx !== donorCharIdx,
+      );
+
+      const soloCountsAfter = buildPlayerCounts(soloRunWithoutSolo);
+      const donorCountsAfter = buildPlayerCounts(donorRunWithoutDonor);
+
+      // 솔로 공대에 donorChar를 넣을 수 있는지
+      const canPlaceDonorInSolo = canAddToRunGreedy(
+        soloRunWithoutSolo,
+        soloCountsAfter,
+        donorChar,
+        maxPerRun,
+        maxSupportsPerRun,
+      );
+
+      // donorRun에 originalSolo를 넣을 수 있는지
+      const canPlaceSoloInDonor = canAddToRunGreedy(
+        donorRunWithoutDonor,
+        donorCountsAfter,
+        originalSolo,
+        maxPerRun,
+        maxSupportsPerRun,
+      );
+
+      if (!canPlaceDonorInSolo || !canPlaceSoloInDonor) {
+        continue;
+      }
+
+      // ✅ 실제 스왑 수행
+      // 솔로 공대: 기존 솔로 빼고 donorChar 넣기
+      soloRunMembers.length = 0;
+      soloRunMembers.push(donorChar);
+
+      // donor 공대: donorChar 자리에 originalSolo 넣기
+      donorRunMembers.splice(donorCharIdx, 1, originalSolo);
+
+      // 평균 전투력 갱신 (다음 솔로 공대 처리에 영향 줄 수 있음)
+      runAverages[soloRunIdx] = donorChar.combatPower; // length=1 이라서 그대로
+      const donorTotal = donorRunMembers.reduce(
+        (sum, c) => sum + c.combatPower,
+        0,
+      );
+      runAverages[donorRunIdx] = donorTotal / donorRunMembers.length;
+
+      // 이 솔로 공대는 처리 끝 → 다음 솔로 공대로 넘어감
       break;
     }
   }
-  if (lastIdx <= 0) return runs;
 
-  const lastRun = runs[lastIdx];
-  if (lastRun.length !== 1) return runs; // 혼자 있는 공대가 아니면 패스
+  return runs;
+}
 
-  const solo = lastRun[0];
-  if (lockIds.has(solo.id)) return runs; // 고정 멤버면 건드리지 않음
 
-  // 2️⃣ 나머지 공대들의 평균 전투력 계산
-  const otherAverages: number[] = [];
-  for (let i = 0; i < runCount; i++) {
-    if (i === lastIdx) continue;
-    const members = runs[i];
-    if (members.length === 0) continue;
-    const avg =
-      members.reduce((sum, c) => sum + c.combatPower, 0) / members.length;
-    otherAverages.push(avg);
-  }
-  if (otherAverages.length === 0) return runs;
-
-  const threshold = Math.max(...otherAverages);
-
-  // 3️⃣ 이 유저가 가진 캐릭터들 중에서 기준 이상인 후보 찾기
-  type Candidate = { runIndex: number; charIndex: number; ch: Character };
-
-  const candidates: Candidate[] = [];
-
-  for (let ri = 0; ri < runCount; ri++) {
-    const members = runs[ri];
-    for (let ci = 0; ci < members.length; ci++) {
-      const ch = members[ci];
-      if (lockIds.has(ch.id)) continue;
-      if (ch.discordName !== solo.discordName) continue;
-      if (ch.combatPower >= threshold) {
-        candidates.push({ runIndex: ri, charIndex: ci, ch });
-      }
-    }
-  }
-
-  if (candidates.length === 0) {
-    // 기준 이상인 캐릭터가 없으면 그냥 현 상태 유지
-    return runs;
-  }
-
-  // 전투력이 낮은 순으로 정렬 (기준 이상 중에서 가장 낮은 캐릭터를 우선 시도)
-  candidates.sort((a, b) => a.ch.combatPower - b.ch.combatPower);
+/**
+ * 🧹 공대 안에서 "같은 직업 DPS가 2명 이상"인 경우 최대한 줄이기
+ *
+ * - 각 공대(run)를 하나씩 본다.
+ * - 그 공대 안에서 jobCode 기준으로 DPS가 2명 이상인 직업만 대상으로,
+ *   그 직업 DPS 캐릭터들을 다른 공대로 옮길 수 있으면 옮긴다.
+ * - 옮길 타겟:
+ *   - 같은 직업 DPS가 없는 공대
+ *   - canAddToRunGreedy(인원, 같은 디코, 서폿 제한 등) 통과하는 공대
+ */
+function minimizeSameJobInRuns(
+  runsMembers: Character[][],
+  maxPerRun: number,
+  maxSupportsPerRun: number,
+): Character[][] {
+  const runs = runsMembers.map((r) => [...r]);
+  const runCount = runs.length;
+  if (runCount <= 1) return runs;
 
   const buildPlayerCounts = (members: Character[]) => {
     const counts: Record<string, number> = {};
@@ -531,54 +559,64 @@ function adjustSoloLastRunStrongCharacter(
     return counts;
   };
 
-  // 4️⃣ 각 후보에 대해 "솔로 자리에 보내고, 기존 솔로는 그 공대로 보내는" 스왑 시도
-  for (const cand of candidates) {
-    const { runIndex: ri, charIndex: ci } = cand;
+  for (let ri = 0; ri < runCount; ri++) {
+    const run = runs[ri];
+    if (!run.length) continue;
 
-    if (ri === lastIdx && ci === 0) {
-      // 이미 마지막 공대에 그 캐릭터가 혼자 있다면 더 할게 없음
-      return runs;
-    }
+    // 1️⃣ 이 공대에서 DPS 직업별 인원 수
+    const jobCounts: Record<string, number> = {};
+    run.forEach((c) => {
+      if (c.role !== 'DPS') return;
+      jobCounts[c.jobCode] = (jobCounts[c.jobCode] || 0) + 1;
+    });
 
-    const lastRunMembers = runs[lastIdx];
-    const targetRunMembers = runs[ri];
-
-    const originalSolo = solo;
-
-    // 임시로 빼기
-    const [removedCandidate] = targetRunMembers.splice(ci, 1);
-    lastRunMembers.pop(); // 기존 솔로 제거
-
-    // 마지막 공대에 후보를 넣을 수 있는지 확인
-    const lastCounts = buildPlayerCounts(lastRunMembers);
-    const canPlaceCandidateInLast = canAddToRunGreedy(
-      lastRunMembers,
-      lastCounts,
-      removedCandidate,
-      maxPerRun,
-      maxSupportsPerRun,
+    const duplicatedJobCodes = Object.keys(jobCounts).filter(
+      (job) => jobCounts[job] >= 2,
     );
+    if (duplicatedJobCodes.length === 0) continue;
 
-    // 후보를 넣고 난 뒤, 기존 솔로를 target 공대로 넣을 수 있는지 확인
-    const targetCounts = buildPlayerCounts(targetRunMembers);
-    const canPlaceSoloInTarget = canAddToRunGreedy(
-      targetRunMembers,
-      targetCounts,
-      originalSolo,
-      maxPerRun,
-      maxSupportsPerRun,
-    );
+    // 2️⃣ 이 공대 안의 "중복 직업 DPS"들만 대상으로, 다른 공대로 이동 시도
+    for (const ch of [...run]) {
+      if (ch.role !== 'DPS') continue;
+      if (!duplicatedJobCodes.includes(ch.jobCode)) continue;
+      if (jobCounts[ch.jobCode] <= 1) continue;
 
-    if (canPlaceCandidateInLast && canPlaceSoloInTarget) {
-      // 실제 스왑 수행
-      lastRunMembers.push(removedCandidate);
-      targetRunMembers.push(originalSolo);
-      return runs;
+      for (let targetIdx = 0; targetIdx < runCount; targetIdx++) {
+        if (targetIdx === ri) continue;
+
+        const targetRun = runs[targetIdx];
+
+        // 이미 타겟 공대에 같은 직업 DPS가 있으면 직업 다양성 개선이 안되니 스킵
+        const hasSameJobInTarget = targetRun.some(
+          (m) => m.role === 'DPS' && m.jobCode === ch.jobCode,
+        );
+        if (hasSameJobInTarget) continue;
+
+        const targetCounts = buildPlayerCounts(targetRun);
+
+        if (
+          !canAddToRunGreedy(
+            targetRun,
+            targetCounts,
+            ch,
+            maxPerRun,
+            maxSupportsPerRun,
+          )
+        ) {
+          continue;
+        }
+
+        // 실제 이동
+        const idxInSrc = run.findIndex((m) => m.id === ch.id);
+        if (idxInSrc === -1) break;
+
+        run.splice(idxInSrc, 1);
+        targetRun.push(ch);
+
+        jobCounts[ch.jobCode]--;
+        break; // 이 캐릭은 한 번만 옮기고 끝
+      }
     }
-
-    // 실패하면 되돌리기
-    lastRunMembers.push(originalSolo);
-    targetRunMembers.splice(ci, 0, removedCandidate);
   }
 
   return runs;
@@ -1108,20 +1146,27 @@ function distributeCharactersIntoRuns(
       lockIds,
     );
 
-  // ✅ 1단계: 마지막 공대에서 같은 직업 DPS 최소화
-  const afterJobAdjust = minimizeSameJobInLastRun(
-    optimizedRunsMembersRaw,
-    maxPerRun,
-    maxSupportsPerRun,
-  );
+  let optimizedRunsMembers: Character[][];
 
-  // ✅ 2단계: 마지막 공대가 혼자 남는 경우, 가장 적절한(전투력 기준) 캐릭터를 혼자로 배치
-  const optimizedRunsMembers = adjustSoloLastRunStrongCharacter(
-    afterJobAdjust,
-    maxPerRun,
-    maxSupportsPerRun,
-    lockIds,
-  );
+  // 🔸 3막 하드는 "인원 꽉꽉 채우기"가 최우선 → 후처리 스킵
+  if (raidId === 'ACT3_HARD') {
+    optimizedRunsMembers = optimizedRunsMembersRaw;
+  } else {
+    // 1️⃣ 먼저 직업 중복 정리 (발키 몰린 공대 등 정리)
+    const afterJobAdjust = minimizeSameJobInRuns(
+      optimizedRunsMembersRaw,
+      maxPerRun,
+      maxSupportsPerRun,
+    );
+
+    // 2️⃣ 그리고 나서 "혼자 남은 공대"만 평균 기준으로 스왑
+    optimizedRunsMembers = adjustSoloLastRunStrongCharacter(
+      afterJobAdjust,
+      maxPerRun,
+      maxSupportsPerRun,
+      lockIds,
+    );
+  }
 
   const runs: RaidRun[] = [];
   optimizedRunsMembers.forEach((members, idx) => {
@@ -1414,7 +1459,6 @@ export function buildRaidSchedule(
       supportShortage,
     );
   });
-
 
   return schedule;
 }
