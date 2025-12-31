@@ -1325,6 +1325,14 @@ function rebalanceSupportsGlobal(runs: RaidRun[]): RaidRun[] {
   const computeRunAverages = (): number[] =>
     result.map((_, idx) => getRunAverageCombatPower(idx));
 
+  // 🔹 해당 run에 특정 유저(discordName)가 이미 있는지 확인
+  const runHasUser = (runIndex: number, discordName: string): boolean => {
+    return result[runIndex].parties.some(p =>
+      p.members.some(m => m.discordName === discordName),
+    );
+  };
+
+
   // 1️⃣ 전체 파티 수집
   const allParties: Array<{
     runIndex: number;
@@ -1363,21 +1371,22 @@ function rebalanceSupportsGlobal(runs: RaidRun[]): RaidRun[] {
     const runAvgs = computeRunAverages();
     const nonZeroAvgs = runAvgs.filter(v => v > 0);
     const globalMedian =
-      nonZeroAvgs.length > 0 ? median(nonZeroAvgs) : 0; // 상단에 이미 정의된 median 사용
+      nonZeroAvgs.length > 0 ? median(nonZeroAvgs) : 0;
 
     const targetRunAvg = runAvgs[target.runIndex];
 
-    // 🔍 이번 타겟 파티에 넣을 donor 선택 기준:
-    // - targetRunAvg가 전체 중앙값보다 낮으면 → "평균 전투력이 높은 공대" 위주로
-    // - targetRunAvg가 높으면 → "평균 전투력이 낮은 공대" 위주로
     let bestDonorIdx = -1;
 
     if (targetRunAvg <= globalMedian) {
-      // 타겟 공대가 상대적으로 약함 → 더 강한 공대에서 서폿을 빼옴
+      // 타겟 공대가 상대적으로 약함 → 더 강한 공대에서 서폿을 뽑아옴
       let bestAvg = -Infinity;
       donors.forEach((donor, idx) => {
         const sup = donor.party.members.find(m => m.role === 'SUPPORT');
         if (!sup) return;
+
+        // ✅ 같은 공대에 이미 이 유저가 있으면 스킵
+        if (runHasUser(target.runIndex, sup.discordName)) return;
+
         const donorAvg = runAvgs[donor.runIndex];
         if (donorAvg > bestAvg) {
           bestAvg = donorAvg;
@@ -1385,11 +1394,15 @@ function rebalanceSupportsGlobal(runs: RaidRun[]): RaidRun[] {
         }
       });
     } else {
-      // 타겟 공대가 상대적으로 강함 → 더 약한 공대에서 서폿을 빼옴
+      // 타겟 공대가 상대적으로 강함 → 더 약한 공대에서 서폿을 뽑아옴
       let bestAvg = Infinity;
       donors.forEach((donor, idx) => {
         const sup = donor.party.members.find(m => m.role === 'SUPPORT');
         if (!sup) return;
+
+        // ✅ 같은 공대에 이미 이 유저가 있으면 스킵
+        if (runHasUser(target.runIndex, sup.discordName)) return;
+
         const donorAvg = runAvgs[donor.runIndex];
         if (donorAvg < bestAvg) {
           bestAvg = donorAvg;
@@ -1413,6 +1426,7 @@ function rebalanceSupportsGlobal(runs: RaidRun[]): RaidRun[] {
     const sup = donor.party.members.splice(supIndex, 1)[0];
     target.party.members.push(sup);
   }
+
 
   return result;
 }
