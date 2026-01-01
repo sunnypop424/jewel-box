@@ -530,7 +530,7 @@ export const RaidSequenceView: React.FC<Props> = ({
 
   // ✅ 세르카 필터 버튼 숨김 토글 (출시 전에는 true로 두기)
   // const SHOW_SERKA_FILTER = true;
-  const SHOW_SERKA_FILTER = false;
+  const SHOW_SERKA_FILTER = true;
   // ✅ 1. 레이드 필터 상태 (기본값: 전체 선택)
   const [selectedRaids, setSelectedRaids] = useState<Set<RaidId>>(
     () => new Set(RAID_ORDER.filter((id) => SHOW_SERKA_FILTER || !id.startsWith('SERKA_'))),

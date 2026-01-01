@@ -867,7 +867,7 @@ function groupCharactersByRaid(
 
     // ✅ (세르카 미출시 임시) 1710+도 3막 하드 필수
     // 세르카 출시 이후엔 아래 한 줄만 주석처리하면, 다시 상위 3개 로직으로 돌아감
-    if (serka.length > 0) raids = base;
+    // if (serka.length > 0) raids = base;
 
     raids.slice(0, 3).forEach((raidId) => {
       const excludedList = exclusions[raidId];
