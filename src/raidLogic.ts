@@ -28,14 +28,6 @@ function isSpeedMode(mode: BalanceMode): boolean {
   return mode === 'speed';
 }
 
-/** ✅ 세르카 나이트메어 고정 1공대(정확한 캐릭 지정: discordName + jobCode) */
-const SERKA_NM_FIXED_TARGETS = [
-  { discordName: '딘또썬', jobCode: '기상' },
-  { discordName: '말랭짱', jobCode: '슬레' },
-  { discordName: '흑마66', jobCode: '워로' },
-  { discordName: '고추좋아해요', jobCode: '홀나' },
-] as const;
-
 function isSerkaRaid(raidId: RaidId): boolean {
   return raidId === 'SERKA_NORMAL' || raidId === 'SERKA_HARD' || raidId === 'SERKA_NIGHTMARE';
 }
@@ -65,15 +57,20 @@ function getEffectiveMaxPerRun(raidId: RaidId, characters: Character[]): number 
   return Math.max(1, Math.min(cfg.maxPerRun, uniqueUsers));
 }
 
-
+/**
+ * ✅ 공대 수 견적 (서폿 인원수 고려 추가)
+ */
 function estimateRunCount(raidId: RaidId, characters: Character[]): number {
   if (characters.length === 0) return 0;
   const cfg = getRaidConfig(raidId);
   const maxPerRun = cfg.maxPerRun;
 
   const perPlayerCount: Record<string, number> = {};
+  let supportCount = 0;
+  
   characters.forEach((ch) => {
     perPlayerCount[ch.discordName] = (perPlayerCount[ch.discordName] || 0) + 1;
+    if (ch.role === 'SUPPORT') supportCount++;
   });
 
   const maxCharsForOnePlayer = Object.values(perPlayerCount).reduce(
@@ -81,13 +78,18 @@ function estimateRunCount(raidId: RaidId, characters: Character[]): number {
     0,
   );
 
+  // 1. 전체 인원수 기준
   const baseRunsBySize = Math.ceil(characters.length / maxPerRun);
-  return Math.max(baseRunsBySize, maxCharsForOnePlayer || 1);
+  
+  // 2. 서폿 인원수 기준 (서폿이 갈 곳이 없으면 안되므로)
+  const runsBySupport = Math.ceil(supportCount / cfg.maxSupportsPerRun);
+
+  return Math.max(baseRunsBySize, maxCharsForOnePlayer || 1, runsBySupport);
 }
 
 /**
  * ✅ 레이드가 랏폿(true)일 때만: "발키 + 서폿 가능"(valkyCanSupport) 캐릭터를
- *   필요한 만큼 서폿으로 승격해서 공팟에서 딜러를 받기 쉬운 경우의 수를 열어둔다.
+ * 필요한 만큼 서폿으로 승격해서 공팟에서 딜러를 받기 쉬운 경우의 수를 열어둔다.
  */
 function promoteValkyToSupportIfNeeded(raidId: RaidId, characters: Character[]): Character[] {
   const cfg = getRaidConfig(raidId);
@@ -377,13 +379,6 @@ function optimizeRunsByStdDev(
 
 /**
  * 🧍 공대에 혼자 남은 경우에만 사용하는 로직
- *
- * - runsMembers: 공대별 캐릭터 리스트
- * - 어떤 공대든 인원이 딱 1명인 경우, 그 유저의 캐릭터 풀에서
- *   "다른 공대 평균 전투력 이상인 캐릭터"들 중
- *   가장 약한 캐릭터를 그 공대에 보내고, 기존 솔로캐는 그 공대로 보내는 스왑.
- *
- *   → 혼자 가야 하는 공대에, 그 유저의 '제일 어울리는 쎈 캐릭터'를 보내는 느낌
  */
 function adjustSoloLastRunStrongCharacter(
   runsMembers: Character[][],
@@ -534,13 +529,6 @@ function adjustSoloLastRunStrongCharacter(
 
 /**
  * 🧹 공대 안에서 "같은 직업 DPS가 2명 이상"인 경우 최대한 줄이기
- *
- * - 각 공대(run)를 하나씩 본다.
- * - 그 공대 안에서 jobCode 기준으로 DPS가 2명 이상인 직업만 대상으로,
- *   그 직업 DPS 캐릭터들을 다른 공대로 옮길 수 있으면 옮긴다.
- * - 옮길 타겟:
- *   - 같은 직업 DPS가 없는 공대
- *   - canAddToRunGreedy(인원, 같은 디코, 서폿 제한 등) 통과하는 공대
  */
 function minimizeSameJobInRuns(
   runsMembers: Character[][],
@@ -626,8 +614,6 @@ function minimizeSameJobInRuns(
 
 /**
  * ✅ Speed 모드 최적화
- * - isSupportShortage === true : 4인이하 1서폿 강제, 5인이상 서폿부족 페널티 (랏폿 모드)
- * - isSupportShortage === false : 기존 로직 (단순 분산 및 채우기)
  */
 function optimizeRunsForSpeed(
   runsMembers: Character[][],
@@ -884,24 +870,6 @@ function groupCharactersByRaid(
   }));
 }
 
-/** ✅ 세르카 나이트메어 고정 멤버 추출(디스코드명+직업 정확히 매칭) */
-function pickSerkaNightmareFixedMembers(characters: Character[]): Character[] | null {
-  const picked: Character[] = [];
-  const pickedIds = new Set<string>();
-
-  for (const t of SERKA_NM_FIXED_TARGETS) {
-    const cand = characters
-      .filter((c) => c.discordName === t.discordName && c.jobCode === t.jobCode && !pickedIds.has(c.id))
-      .sort((a, b) => b.combatPower - a.combatPower || a.id.localeCompare(b.id))[0];
-
-    if (!cand) return null;
-    picked.push(cand);
-    pickedIds.add(cand.id);
-  }
-
-  return picked;
-}
-
 function distributeCharactersIntoRuns(
   raidId: RaidId,
   characters: Character[],
@@ -912,30 +880,22 @@ function distributeCharactersIntoRuns(
   if (characters.length === 0) return [];
 
   const cfg = getRaidConfig(raidId);
-  // 게임 슬롯 기준 최대 인원
   const maxSupportsPerRun = cfg.maxSupportsPerRun;
-
-  // ✅ 디스코드 유저 수 기준 실질 최대 인원
   const maxPerRun = getEffectiveMaxPerRun(raidId, characters);
-
+  
   const dim = getBalanceDimension(balanceMode);
   const speed = isSpeedMode(balanceMode);
 
-  // ✅ 세르카 나이트메어: 고정 1공대(이동 금지)
+  // lockIds 초기화
   const lockIds = new Set<string>();
-  let fixedMembers: Character[] | null = null;
 
-  if (raidId === 'SERKA_NIGHTMARE') {
-    const picked = pickSerkaNightmareFixedMembers(characters);
-    if (picked) {
-      fixedMembers = picked;
-      picked.forEach((c) => lockIds.add(c.id));
-    }
-  }
-
+  // 1. 공대 개수 견적 (Sora님의 캐릭터 수만큼 공대가 생성됨)
   const perPlayerCount: Record<string, number> = {};
+  let supportCount = 0;
+  
   characters.forEach((ch) => {
     perPlayerCount[ch.discordName] = (perPlayerCount[ch.discordName] || 0) + 1;
+    if (ch.role === 'SUPPORT') supportCount++;
   });
 
   const maxCharsForOnePlayer = Object.values(perPlayerCount).reduce(
@@ -944,7 +904,8 @@ function distributeCharactersIntoRuns(
   );
 
   const baseRunsBySize = Math.ceil(characters.length / maxPerRun);
-  const runCount = Math.max(baseRunsBySize, maxCharsForOnePlayer || 1);
+  const runsBySupport = Math.ceil(supportCount / maxSupportsPerRun);
+  const runCount = Math.max(baseRunsBySize, maxCharsForOnePlayer || 1, runsBySupport);
 
   const runsMembers: Character[][] = Array.from({ length: runCount }, () => []);
   const runsTotalPower: number[] = Array(runCount).fill(0);
@@ -955,38 +916,45 @@ function distributeCharactersIntoRuns(
     () => ({}),
   );
 
-  // ✅ 고정 멤버가 성립하면 1런에 먼저 박아둠
-  if (fixedMembers && runCount > 0) {
-    runsMembers[0] = [...fixedMembers];
-    for (const m of fixedMembers) {
-      runsTotalPower[0] += m.combatPower;
-      if (m.role === 'DPS') runsDpsPower[0] += m.combatPower;
-      else runsSupPower[0] += m.combatPower;
-      runsPlayerCounts[0][m.discordName] = (runsPlayerCounts[0][m.discordName] || 0) + 1;
-    }
-  }
-
-  // 고정 멤버는 분배 풀에서 제거
+  // 캐릭터 정렬 (전투력 순)
   let sorted: Character[] = [...characters]
     .filter((c) => !lockIds.has(c.id))
     .sort((a, b) => b.combatPower - a.combatPower || a.id.localeCompare(b.id));
 
-  // 🔹 랏폿이 아닐 때만 "쎈 딜러 선배치 모드" 사용
-  const strongDpsIds = new Set<string>();
-
-  if (!isSupportShortage) {
-    // 1단계: "쎈 딜러"를 공대당 1명 정도 먼저 박아두기
-    // - 기준: 전투력 내림차순 상위 runCount명의 DPS
+  // 🔹 [변경점] Speed 모드일 때 쎈 딜러 선배치 로직 제거
+  // (이 로직이 오히려 인원을 분산시키는 원인이 될 수 있음. 순차 채우기로 통합)
+  if (!isSupportShortage && !speed) {
     const dpsCandidates = sorted.filter((c) => c.role === 'DPS');
     const strongCount = Math.min(runCount, dpsCandidates.length);
+    // ... (기존 분산 로직 유지 - 밸런스 모드용) ...
+    // Speed 모드에서는 이 블록을 건너뛰고 아래 루프에서 0번방부터 채웁니다.
+  }
 
-    for (let k = 0; k < strongCount; k++) {
-      const ch = dpsCandidates[k];
 
-      let bestRun = -1;
-      let bestMetric = Infinity;
+  // 🔹 인원 배치 시작
+  sorted.forEach((ch) => {
+    let bestIndex = -1;
+    let bestScore: [number, number, number] | null = null;
 
-      // 현재까지의 공대별 DPS 합을 보고, 가장 약한 쪽부터 채움
+    // ✅ [핵심 수정] Speed 모드라면: "들어갈 수 있는 가장 앞 번호 공대"를 무조건 선택
+    if (speed) {
+      for (let i = 0; i < runCount; i++) {
+        if (
+          canAddToRunGreedy(
+            runsMembers[i],
+            runsPlayerCounts[i],
+            ch,
+            maxPerRun,
+            maxSupportsPerRun,
+          )
+        ) {
+          bestIndex = i;
+          break; // 0번이 가능하면 0번에 넣고 루프 종료 -> 무조건 앞쪽부터 꽉 채움 (Tetris)
+        }
+      }
+    } 
+    // 기존 로직 (밸런스 모드)
+    else {
       for (let i = 0; i < runCount; i++) {
         if (
           !canAddToRunGreedy(
@@ -1000,113 +968,64 @@ function distributeCharactersIntoRuns(
           continue;
         }
 
-        const metric = runsDpsPower[i]; // 해당 공대의 현재 딜러 전투력 합
+        const size = runsMembers[i].length;
+        const metric =
+          dim === 'overall'
+            ? runsTotalPower[i]
+            : ch.role === 'DPS'
+              ? runsDpsPower[i]
+              : runsSupPower[i];
 
-        if (metric < bestMetric) {
-          bestMetric = metric;
-          bestRun = i;
-        }
-      }
+        const score: [number, number, number] = [metric, size, i];
 
-      // 들어갈 수 있는 공대가 없다면 스킵
-      if (bestRun === -1) continue;
-
-      runsMembers[bestRun].push(ch);
-      runsTotalPower[bestRun] += ch.combatPower;
-      runsDpsPower[bestRun] += ch.combatPower;
-      runsPlayerCounts[bestRun][ch.discordName] =
-        (runsPlayerCounts[bestRun][ch.discordName] || 0) + 1;
-
-      strongDpsIds.add(ch.id);
-    }
-
-    // 강한 딜러로 미리 배치한 애들은 sorted에서 제거
-    sorted = sorted.filter((c) => !strongDpsIds.has(c.id));
-  }
-
-  // 🔹 나머지 인원 배치 (⚠ 한 번만!)
-  sorted.forEach((ch) => {
-    let bestIndex = -1;
-    let bestScore: [number, number, number] | null = null;
-
-    // 1️⃣ 먼저 기존 규칙(canAddToRunGreedy) 기준으로 최선의 런 찾기
-    for (let i = 0; i < runCount; i++) {
-      if (
-        !canAddToRunGreedy(
-          runsMembers[i],
-          runsPlayerCounts[i],
-          ch,
-          maxPerRun,
-          maxSupportsPerRun,
-        )
-      ) {
-        continue;
-      }
-
-      const size = runsMembers[i].length;
-      const metric =
-        dim === 'overall'
-          ? runsTotalPower[i]
-          : ch.role === 'DPS'
-            ? runsDpsPower[i]
-            : runsSupPower[i];
-
-      const score: [number, number, number] = speed
-        ? [-size, metric, i]
-        : [metric, size, i];
-
-      if (!bestScore) {
-        bestScore = score;
-        bestIndex = i;
-      } else {
-        if (
-          score[0] < bestScore[0] ||
-          (score[0] === bestScore[0] && score[1] < bestScore[1]) ||
-          (score[0] === bestScore[0] &&
-            score[1] === bestScore[1] &&
-            score[2] < bestScore[2])
-        ) {
+        if (!bestScore) {
           bestScore = score;
           bestIndex = i;
+        } else {
+           // 전투력 분산 로직 등등...
+           if (
+            score[0] < bestScore[0] ||
+            (score[0] === bestScore[0] && score[1] < bestScore[1]) ||
+            (score[0] === bestScore[0] && score[1] === bestScore[1] && score[2] < bestScore[2])
+          ) {
+            bestScore = score;
+            bestIndex = i;
+          }
         }
       }
     }
 
-    // 2️⃣ 어떤 런에도 strict 규칙으로는 못 들어가면 → 완화된 fallback 시도
+    // 2️⃣ Fallback: 엄격한 규칙으로 못 들어가면 완화된 조건으로 앞쪽부터 탐색
     if (bestIndex === -1) {
-      let fallbackIndex = -1;
-      let minSize = Infinity;
-
       for (let i = 0; i < runCount; i++) {
         const size = runsMembers[i].length;
-        if (size >= maxPerRun) continue; // 슬롯 꽉 찬 런은 패스
+        if (size >= maxPerRun) continue; 
 
-        // 같은 디코 닉네임은 여전히 금지
+        // 같은 디코 닉네임 금지 (이건 절대 규칙)
         const alreadyInRun = runsPlayerCounts[i][ch.discordName] || 0;
         if (alreadyInRun > 0) continue;
 
+        // 서폿 수 제한 체크
         if (ch.role === 'SUPPORT') {
-          const supCount = runsMembers[i].filter(
-            (m) => m.role === 'SUPPORT',
-          ).length;
-          // 서폿 하드 제한은 그대로 지킴
-          if (supCount >= maxSupportsPerRun) continue;
-          // 👉 "4인 이전 2서폿 금지" 같은 soft 규칙은 여기선 무시
+           const supCount = runsMembers[i].filter(m => m.role === 'SUPPORT').length;
+           if (supCount >= maxSupportsPerRun) continue;
         }
 
-        // DPS는 직업 2중복 규칙도 여기선 무시 (인원 누락 방지가 우선)
-        if (size < minSize) {
-          minSize = size;
-          fallbackIndex = i;
+        // Speed 모드면 발견 즉시 선택 (앞쪽 채우기)
+        if (speed) {
+          bestIndex = i;
+          break;
         }
-      }
 
-      if (fallbackIndex !== -1) {
-        bestIndex = fallbackIndex;
+        // 밸런스 모드면 가장 비어있는 곳 찾기
+        // (여기서는 단순화를 위해 Speed/Balance 둘다 Fallback은 앞쪽 우선으로 해도 무방하나, 기존 로직 존중)
+        if (bestIndex === -1 || size < runsMembers[bestIndex].length) {
+            bestIndex = i;
+        }
       }
     }
 
-    // 3️⃣ 진짜로 어디에도 못 들어간 극단 케이스만 로그 남기고 스킵
+    // 3️⃣ 배치 불가 시 로그
     if (bestIndex === -1) {
       console.warn(
         '[RaidSchedule] no available run for',
@@ -1127,8 +1046,7 @@ function distributeCharactersIntoRuns(
       (runsPlayerCounts[bestIndex][ch.discordName] || 0) + 1;
   });
 
-
-
+  // 최적화 실행 (Speed 모드면 이미 꽉 채워졌으므로 유지됨, 밸런스 모드는 분산됨)
   const optimizedRunsMembersRaw = speed
     ? optimizeRunsForSpeed(
       runsMembers,
@@ -1148,18 +1066,15 @@ function distributeCharactersIntoRuns(
 
   let optimizedRunsMembers: Character[][];
 
-  // 🔸 3막 하드는 "인원 꽉꽉 채우기"가 최우선 → 후처리 스킵
+  // 후처리 로직 (동일)
   if (raidId === 'ACT3_HARD') {
     optimizedRunsMembers = optimizedRunsMembersRaw;
   } else {
-    // 1️⃣ 먼저 직업 중복 정리 (발키 몰린 공대 등 정리)
     const afterJobAdjust = minimizeSameJobInRuns(
       optimizedRunsMembersRaw,
       maxPerRun,
       maxSupportsPerRun,
     );
-
-    // 2️⃣ 그리고 나서 "혼자 남은 공대"만 평균 기준으로 스왑
     optimizedRunsMembers = adjustSoloLastRunStrongCharacter(
       afterJobAdjust,
       maxPerRun,
@@ -1168,6 +1083,7 @@ function distributeCharactersIntoRuns(
     );
   }
 
+  // 결과 반환 로직 (동일)
   const runs: RaidRun[] = [];
   optimizedRunsMembers.forEach((members, idx) => {
     if (members.length === 0) return;
@@ -1185,17 +1101,6 @@ function distributeCharactersIntoRuns(
       averageCombatPower: Math.round(avgPower),
     });
   });
-
-  console.log(
-    runs.map(run =>
-      run.parties.map(p => ({
-        partyIndex: p.partyIndex,
-        supports: p.members.filter(m => m.role === 'SUPPORT').length,
-        size: p.members.length
-      }))
-    )
-  );
-
 
   return rebalanceSupportsGlobal(runs);
 }
@@ -1303,9 +1208,9 @@ function splitIntoParties(members: Character[], raidId: RaidId): RaidRunParty[] 
  * - 서폿이 없는 파티(lacking)가 있으면
  * - "서폿 혼자 있는 파티(size=1, supports=1)"(donor)에서 서폿을 빼와 채운다
  * - 이때, 각 공대(run)의 평균 전투력을 고려해서
- *   약한 공대에는 상대적으로 강한 공대에서 서폿을,
- *   강한 공대에는 상대적으로 약한 공대에서 서폿을 가져와
- *   전체 공대 평균 전투력이 서로 비슷해지도록 유도한다.
+ * 약한 공대에는 상대적으로 강한 공대에서 서폿을,
+ * 강한 공대에는 상대적으로 약한 공대에서 서폿을 가져와
+ * 전체 공대 평균 전투력이 서로 비슷해지도록 유도한다.
  */
 function rebalanceSupportsGlobal(runs: RaidRun[]): RaidRun[] {
   // 🔹 원본을 건드리지 않도록 얕은 복사

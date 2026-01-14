@@ -57,17 +57,17 @@ export const RAID_META: Record<
     colorClass: 'bg-amber-500'
   },
   SERKA_NORMAL: {
-    label: '세르카 노말 (1/7)',
+    label: '세르카 노말',
     difficulty: 'NORMAL',
     colorClass: 'bg-violet-300'
   },
   SERKA_HARD: {
-    label: '세르카 하드 (1/7)',
+    label: '세르카 하드',
     difficulty: 'HARD',
     colorClass: 'bg-violet-500'
   },
   SERKA_NIGHTMARE: {
-    label: '세르카 나이트메어 (1/7)',
+    label: '세르카 나이트메어',
     difficulty: 'NIGHTMARE',
     colorClass: 'bg-violet-700'
   },
