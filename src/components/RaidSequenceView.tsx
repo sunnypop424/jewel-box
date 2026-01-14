@@ -603,10 +603,10 @@ export const RaidSequenceView: React.FC<Props> = ({
   let flatIdx = 0;
 
   return (
-    <div className="relative mx-auto w-full max-w-4xl space-y-4">
+    <div className="relative mx-auto w-full space-y-4">
 
       {/* ✅ Filter Controls UI */}
-      <div className="sticky top-0 z-30 flex flex-col gap-3 rounded-2xl border border-zinc-200 bg-white/90 px-4 py-3 shadow-sm backdrop-blur-md dark:border-zinc-800 dark:bg-zinc-900/90">
+      <div className="sticky top-20 z-30 flex flex-col gap-3 rounded-2xl border border-zinc-200 bg-white/90 px-4 py-3 shadow-sm backdrop-blur-md dark:border-zinc-800 dark:bg-zinc-900/90">
         <div className="flex items-center gap-2 text-sm font-semibold text-zinc-600 dark:text-zinc-400">
           <Filter className="h-4 w-4" />
           <span>오늘 진행할 레이드 선택</span>
@@ -929,7 +929,7 @@ export const RaidSequenceView: React.FC<Props> = ({
                                         className="flex flex-col gap-2 rounded-xl bg-amber-50/50 p-2 dark:bg-amber-950/20 sm:flex-row sm:items-center sm:justify-between sm:p-1.5 sm:pr-2"
                                       >
                                         <div className="flex items-center gap-2 pl-1">
-                                          <span className="text-xs font-bold text-zinc-700 dark:text-zinc-300">
+                                          <span className="text-sm font-bold text-zinc-700 dark:text-zinc-300">
                                             {s.discordName}
                                           </span>
                                         </div>
