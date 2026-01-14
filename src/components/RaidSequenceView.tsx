@@ -143,12 +143,6 @@ function areParticipantsDisjoint(groupA: string[], groupB: string[]): boolean {
 // [SEQUENCE BUILDING LOGIC]
 // ----------------------------------------------------------------------
 
-function computeDiff(prevRun: RaidRun, nextRun: RaidRun): TransitionDiff {
-  const prevMembers = getRunMembers(prevRun);
-  const nextMembers = getRunMembers(nextRun);
-  return computeDiffByMembers(prevMembers, nextMembers);
-}
-
 interface OrderedRun {
   raidId: RaidId;
   run: RaidRun;
