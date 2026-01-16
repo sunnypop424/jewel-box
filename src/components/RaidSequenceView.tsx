@@ -20,6 +20,8 @@ import {
   Filter,
   Split,
   GripVertical,
+  UserCheck, // 아이콘 추가
+  UserX,     // 아이콘 추가
 } from 'lucide-react';
 import { excludeCharactersOnRaid } from '../api/exclusionApi';
 
@@ -148,13 +150,10 @@ interface OrderedRun {
   run: RaidRun;
 }
 
-// 그룹 내부 레이드 순서 정렬 (소분류: 드래그 앤 드랍 순서)
 function orderRunsInsideParticipantGroup(group: ParticipantGroup, currentOrder: RaidId[]): OrderedRun[] {
   return [...group.runs].sort((a, b) => {
     const idxA = currentOrder.indexOf(a.raidId);
     const idxB = currentOrder.indexOf(b.raidId);
-    
-    // 레이드 종류가 같으면 런 인덱스로 정렬
     if (idxA === idxB) {
       return a.run.runIndex - b.run.runIndex;
     }
@@ -162,13 +161,11 @@ function orderRunsInsideParticipantGroup(group: ParticipantGroup, currentOrder: 
   });
 }
 
-// 시퀀스 생성 함수
 function buildSequence(schedule: RaidSchedule, order: RaidId[]): {
   groups: { size: number; participants: string[]; steps: GlobalStep[] }[];
 } {
   const flat: { raidId: RaidId; run: RaidRun }[] = [];
 
-  // order 순서대로 데이터 수집
   order.forEach((raidId) => {
     const runs = schedule[raidId] || [];
     runs.forEach((run) => flat.push({ raidId, run }));
@@ -192,22 +189,14 @@ function buildSequence(schedule: RaidSchedule, order: RaidId[]): {
     groupMap.get(key)!.runs.push({ raidId, run });
   });
 
-  // [수정된 정렬 로직]
-  // 1순위(대분류): 인원 수 (내림차순)
-  // 2순위(소분류): 드래그 앤 드랍 레이드 순서 (오름차순)
   const participantGroups = Array.from(groupMap.values()).sort((a, b) => {
-    // 1. 인원 수 비교 (많은 순)
     if (b.size !== a.size) {
       return b.size - a.size; 
     }
-
-    // 2. 인원 수가 같다면 -> 해당 그룹이 가진 레이드 중 '우선순위가 높은 것'이 먼저 오도록
     const minIndexA = Math.min(...a.runs.map(r => order.indexOf(r.raidId)));
     const minIndexB = Math.min(...b.runs.map(r => order.indexOf(r.raidId)));
 
     if (minIndexA !== minIndexB) return minIndexA - minIndexB;
-
-    // 3. 그것도 같다면 닉네임 순 (일관성 유지용)
     return a.participants.join(',').localeCompare(b.participants.join(','));
   });
 
@@ -532,6 +521,24 @@ export const RaidSequenceView: React.FC<Props> = ({
     () => new Set(INITIAL_RAID_ORDER.filter((id) => SHOW_SERKA_FILTER || !id.startsWith('SERKA_'))),
   );
 
+  // ✅ [NEW] 2-1. 참여 유저 필터 상태
+  const [selectedUsers, setSelectedUsers] = useState<Set<string>>(new Set());
+
+  // 전체 유저 목록 추출 (스케줄이 바뀌면 갱신)
+  const allUsers = useMemo(() => {
+    if (!schedule) return [];
+    const users = new Set<string>();
+    Object.values(schedule).flat().forEach(run => {
+        run.parties.flatMap(p => p.members).forEach(m => users.add(m.discordName));
+    });
+    return Array.from(users).sort();
+  }, [schedule]);
+
+  // 초기 유저 선택 (전체 선택)
+  useEffect(() => {
+    setSelectedUsers(new Set(allUsers));
+  }, [allUsers.length]); // allUsers 배열 길이가 바뀔 때만 (너무 잦은 리렌더링 방지)
+
   const [localExclusions, setLocalExclusions] = useState<RaidExclusionMap>(
     exclusions ?? {},
   );
@@ -542,7 +549,6 @@ export const RaidSequenceView: React.FC<Props> = ({
   const [completingKey, setCompletingKey] = useState<string | null>(null);
   const isBlocking = completingKey !== null;
 
-  // DnD Sensors
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
@@ -565,7 +571,7 @@ export const RaidSequenceView: React.FC<Props> = ({
     }
   };
 
-  // ✅ 3. 필터 적용된 스케줄
+  // ✅ 3. 필터 적용된 스케줄 (레이드 종류 + 유저 참여 여부 필터링)
   const filteredSchedule = useMemo(() => {
     if (!schedule) return null;
     const fs: RaidSchedule = {
@@ -580,14 +586,26 @@ export const RaidSequenceView: React.FC<Props> = ({
     };
 
     selectedRaids.forEach((raidId) => {
-      if (schedule[raidId]) {
-        fs[raidId] = schedule[raidId];
+      const runs = schedule[raidId];
+      if (runs) {
+        // [NEW] 해당 공대에 참여하는 모든 멤버가 'selectedUsers'에 포함되어 있는지 확인
+        // 한 명이라도 선택 해제된 유저가 있다면 그 공대 전체를 숨김 (invalid run)
+        const validRuns = runs.filter(run => {
+            const members = getRunMembers(run);
+            // 만약 공대가 비어있다면(멤버 0명) 보여줄지 말지 결정 -> 여기선 보여줌
+            if (members.length === 0) return true; 
+            return members.every(m => selectedUsers.has(m.discordName));
+        });
+        
+        if (validRuns.length > 0) {
+            fs[raidId] = validRuns;
+        }
       }
     });
     return fs;
-  }, [schedule, selectedRaids]);
+  }, [schedule, selectedRaids, selectedUsers]);
 
-  // ✅ 4. 시퀀스 생성 (raidOrder 반영 - 대분류: 인원수, 소분류: 순서)
+  // ✅ 4. 시퀀스 생성
   const { groups } = useMemo(() => {
     if (!filteredSchedule) return { groups: [] };
     return buildSequence(filteredSchedule, raidOrder);
@@ -601,7 +619,6 @@ export const RaidSequenceView: React.FC<Props> = ({
       const current = groups[i];
       const next = groups[i + 1];
 
-      // 다음 그룹이 있고, 참여자가 겹치지 않으면 묶음
       if (next && areParticipantsDisjoint(current.participants, next.participants)) {
         bundles.push([current, next]);
         i += 2;
@@ -622,6 +639,14 @@ export const RaidSequenceView: React.FC<Props> = ({
     setSelectedRaids(next);
   };
 
+  // [NEW] 유저 토글 함수
+  const toggleUser = (name: string) => {
+      const next = new Set(selectedUsers);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      setSelectedUsers(next);
+  };
+
   const flatSteps: GlobalStep[] = groups.flatMap((g) => g.steps);
   const diffs: (TransitionDiff | null)[] = [];
   flatSteps.forEach((step, idx) => {
@@ -635,7 +660,7 @@ export const RaidSequenceView: React.FC<Props> = ({
     diffs.push(computeDiffByMembers(prevMembers, nextMembers));
   });
 
-  const renderStep = (step: GlobalStep, group: typeof groups[0]) => {
+  const renderStep = (step: GlobalStep, group: typeof groups[0], hideTimeline: boolean = false) => {
     const currentFlatIdx = flatSteps.indexOf(step);
     const transition = diffs[currentFlatIdx];
 
@@ -717,6 +742,143 @@ export const RaidSequenceView: React.FC<Props> = ({
       ? Math.round(currentVisibleMembers.reduce((sum, m) => sum + m.combatPower, 0) / currentVisibleMembers.length)
       : null;
 
+    // hideTimeline이 true면 Dot와 라인을 렌더링하지 않음 (왼쪽 컬럼용)
+    if (hideTimeline) {
+      return (
+        <div key={`${step.raidId}-${step.run.runIndex}`} className="relative">
+          <div className="min-w-0 flex-1 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm transition-shadow hover:shadow-md dark:border-zinc-800 dark:bg-zinc-900/50">
+             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-zinc-100 text-sm font-bold text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
+                    {step.index}
+                  </span>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h4 className={`font-bold ${titleClass}`}>{meta.label}</h4>
+                      <span className={`text-[10px] font-extrabold uppercase tracking-wider ${labelClass}`}>{DIFF_LABEL[difficulty] ?? difficulty}</span>
+                    </div>
+                  </div>
+                </div>
+                {/* Stats & Actions */}
+                <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {balanceMode === 'role' ? (
+                      <>
+                        <span className="inline-flex items-center gap-1.5 rounded-md bg-white px-2 py-1 text-[11px] font-medium text-zinc-500 shadow-sm ring-1 ring-zinc-100 dark:bg-zinc-900 dark:text-zinc-400 dark:ring-zinc-700">
+                          <Swords className="h-3 w-3 text-zinc-600 dark:text-zinc-300" />
+                          <span className="uppercase tracking-wide">DPS</span>
+                          <strong className="ml-1 text-zinc-800 dark:text-zinc-100">{avgDps !== null ? avgDps.toLocaleString() : '없음'}</strong>
+                        </span>
+                        <span className="inline-flex items-center gap-1.5 rounded-md bg-white px-2 py-1 text-[11px] font-medium text-zinc-500 shadow-sm ring-1 ring-zinc-100 dark:bg-zinc-900 dark:text-zinc-400 dark:ring-zinc-700">
+                          <Shield className="h-3 w-3 text-emerald-600 dark:text-emerald-300" />
+                          <span className="uppercase tracking-wide">SUP</span>
+                          <strong className="ml-1 text-zinc-800 dark:text-zinc-100">{avgSup !== null ? avgSup.toLocaleString() : '없음'}</strong>
+                        </span>
+                      </>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 rounded-md bg-white px-2 py-1 text-[11px] font-medium text-zinc-500 shadow-sm ring-1 ring-zinc-100 dark:bg-zinc-900 dark:text-zinc-400 dark:ring-zinc-700">
+                        <Swords className="h-3 w-3 text-zinc-600 dark:text-zinc-300" />
+                        <span className="tracking-wide whitespace-nowrap">평균 전투력</span>
+                        <strong className="ml-1 text-zinc-800 dark:text-zinc-100">{overallAvg !== null ? overallAvg.toLocaleString() : '없음'}</strong>
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="shrink-0 whitespace-nowrap rounded-md bg-zinc-50 px-2 py-1 text-xs font-medium text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
+                      #{step.run.runIndex} 공대
+                    </div>
+                    <button
+                      type="button"
+                      disabled={completeTargetIds.length === 0 || isCompleting}
+                      onClick={async () => {
+                        const ok = window.confirm(`${meta.label} #${step.run.runIndex} 공대를 완료 처리할까요?\n\n이 공대의 멤버들이 이 레이드에서 제외됩니다.`);
+                        if (!ok) return;
+                        try {
+                          setCompletingKey(completeBtnKey);
+                          const next = await excludeCharactersOnRaid(step.raidId, completeTargetIds, updatedBy);
+                          setLocalExclusions(next);
+                          onExclusionsUpdated?.(next);
+                        } catch (e) {
+                          console.error(e);
+                          alert('레이드 완료 처리 실패');
+                        } finally {
+                          setCompletingKey(null);
+                        }
+                      }}
+                      className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-bold border border-emerald-200 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-900/50 dark:text-emerald-200 dark:hover:bg-emerald-950/40 disabled:cursor-not-allowed disabled:opacity-40 whitespace-nowrap"
+                      title="레이드 완료"
+                    >
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                      레이드 완료
+                    </button>
+                  </div>
+                </div>
+             </div>
+
+             {/* Roster & Changes */}
+             {showStartRoster ? (
+                <StartRoster raidId={step.raidId} run={step.run} exclusions={localExclusions} />
+             ) : !hasChanges ? (
+                <div className="flex items-center gap-2 rounded-xl border border-dashed border-zinc-200 p-3 text-sm text-zinc-400 dark:border-zinc-800 dark:text-zinc-500">
+                  <X className="h-4 w-4" />
+                  <span>캐릭터 변동 없음 (Same Members)</span>
+                </div>
+             ) : (
+                <div className="flex flex-col gap-3">
+                  {hasLeaving && (
+                    <div className="flex flex-col gap-2">
+                      <div className="flex items-center gap-2 text-xs font-semibold text-red-600 dark:text-red-400">
+                        <UserMinus className="h-3.5 w-3.5" />
+                        <span>퇴장 (Leaving)</span>
+                      </div>
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        {transition!.leaving.map((m) => (<CharacterBadge key={m.id} char={m} type="leave" />))}
+                      </div>
+                    </div>
+                  )}
+                  {hasSwitching && (
+                    <div className="flex flex-col gap-2">
+                      <div className="flex items-center gap-2 text-xs font-semibold text-amber-600 dark:text-amber-400">
+                        <Repeat2 className="h-3.5 w-3.5" />
+                        <span>캐릭터 교체</span>
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        {transition!.switching.map((s) => (
+                          <div key={s.discordName} className="flex flex-col gap-2 rounded-xl bg-amber-50/50 p-2 dark:bg-amber-950/20 sm:flex-row sm:items-center sm:justify-between sm:p-1.5 sm:pr-2">
+                            <div className="flex items-center gap-2 pl-1">
+                              <span className="text-xs font-bold text-zinc-700 dark:text-zinc-300">{s.discordName}</span>
+                            </div>
+                            <div className="flex flex-1 items-center gap-2 sm:justify-end">
+                              <div className="hidden items-center gap-2 sm:flex">
+                                <CharacterBadge char={s.from} type="switch-from" />
+                                <ArrowRight className="h-3 w-3 text-amber-400" />
+                              </div>
+                              <div className="w-full sm:w-auto"><CharacterBadge char={s.to} type="switch-to" /></div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {hasEntering && (
+                    <div className="flex flex-col gap-2">
+                      <div className="flex items-center gap-2 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+                        <UserPlus className="h-3.5 w-3.5" />
+                        <span>입장 (Entering)</span>
+                      </div>
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        {transition!.entering.map((m) => (<CharacterBadge key={m.id} char={m} type="enter" />))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+             )}
+          </div>
+        </div>
+      );
+    }
+
+    // Default Render (With Dot & Gap)
     return (
       <div
         key={`${step.raidId}-${step.run.runIndex}`}
@@ -736,84 +898,69 @@ export const RaidSequenceView: React.FC<Props> = ({
               </span>
               <div>
                 <div className="flex items-center gap-2">
-                  <h4 className={`font-bold ${titleClass}`}>
-                    {meta.label}
-                  </h4>
-                  <span className={`text-[10px] font-extrabold uppercase tracking-wider ${labelClass}`}>
-                    {DIFF_LABEL[difficulty] ?? difficulty}
-                  </span>
+                  <h4 className={`font-bold ${titleClass}`}>{meta.label}</h4>
+                  <span className={`text-[10px] font-extrabold uppercase tracking-wider ${labelClass}`}>{DIFF_LABEL[difficulty] ?? difficulty}</span>
                 </div>
               </div>
             </div>
-
+            {/* Stats & Actions */}
             <div className="flex items-center gap-2">
-              <div className="flex flex-wrap items-center gap-2">
-                {balanceMode === 'role' ? (
-                  <>
-                    <span className="inline-flex items-center gap-1.5 rounded-md bg-white px-2 py-1 text-[11px] font-medium text-zinc-500 shadow-sm ring-1 ring-zinc-100 dark:bg-zinc-900 dark:text-zinc-400 dark:ring-zinc-700">
-                      <Swords className="h-3 w-3 text-zinc-600 dark:text-zinc-300" />
-                      <span className="uppercase tracking-wide">DPS</span>
-                      <strong className="ml-1 text-zinc-800 dark:text-zinc-100">
-                        {avgDps !== null ? avgDps.toLocaleString() : '없음'}
-                      </strong>
-                    </span>
-                    <span className="inline-flex items-center gap-1.5 rounded-md bg-white px-2 py-1 text-[11px] font-medium text-zinc-500 shadow-sm ring-1 ring-zinc-100 dark:bg-zinc-900 dark:text-zinc-400 dark:ring-zinc-700">
-                      <Shield className="h-3 w-3 text-emerald-600 dark:text-emerald-300" />
-                      <span className="uppercase tracking-wide">SUP</span>
-                      <strong className="ml-1 text-zinc-800 dark:text-zinc-100">
-                        {avgSup !== null ? avgSup.toLocaleString() : '없음'}
-                      </strong>
-                    </span>
-                  </>
-                ) : (
-                  <span className="inline-flex items-center gap-1.5 rounded-md bg-white px-2 py-1 text-[11px] font-medium text-zinc-500 shadow-sm ring-1 ring-zinc-100 dark:bg-zinc-900 dark:text-zinc-400 dark:ring-zinc-700">
-                    <Swords className="h-3 w-3 text-zinc-600 dark:text-zinc-300" />
-                    <span className="tracking-wide whitespace-nowrap">평균 전투력</span>
-                    <strong className="ml-1 text-zinc-800 dark:text-zinc-100">
-                      {overallAvg !== null ? overallAvg.toLocaleString() : '없음'}
-                    </strong>
-                  </span>
-                )}
-              </div>
-
-              <div className="flex items-center gap-2">
-                <div className="shrink-0 whitespace-nowrap rounded-md bg-zinc-50 px-2 py-1 text-xs font-medium text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
-                  #{step.run.runIndex} 공대
+                  <div className="flex flex-wrap items-center gap-2">
+                    {balanceMode === 'role' ? (
+                      <>
+                        <span className="inline-flex items-center gap-1.5 rounded-md bg-white px-2 py-1 text-[11px] font-medium text-zinc-500 shadow-sm ring-1 ring-zinc-100 dark:bg-zinc-900 dark:text-zinc-400 dark:ring-zinc-700">
+                          <Swords className="h-3 w-3 text-zinc-600 dark:text-zinc-300" />
+                          <span className="uppercase tracking-wide">DPS</span>
+                          <strong className="ml-1 text-zinc-800 dark:text-zinc-100">{avgDps !== null ? avgDps.toLocaleString() : '없음'}</strong>
+                        </span>
+                        <span className="inline-flex items-center gap-1.5 rounded-md bg-white px-2 py-1 text-[11px] font-medium text-zinc-500 shadow-sm ring-1 ring-zinc-100 dark:bg-zinc-900 dark:text-zinc-400 dark:ring-zinc-700">
+                          <Shield className="h-3 w-3 text-emerald-600 dark:text-emerald-300" />
+                          <span className="uppercase tracking-wide">SUP</span>
+                          <strong className="ml-1 text-zinc-800 dark:text-zinc-100">{avgSup !== null ? avgSup.toLocaleString() : '없음'}</strong>
+                        </span>
+                      </>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 rounded-md bg-white px-2 py-1 text-[11px] font-medium text-zinc-500 shadow-sm ring-1 ring-zinc-100 dark:bg-zinc-900 dark:text-zinc-400 dark:ring-zinc-700">
+                        <Swords className="h-3 w-3 text-zinc-600 dark:text-zinc-300" />
+                        <span className="tracking-wide whitespace-nowrap">평균 전투력</span>
+                        <strong className="ml-1 text-zinc-800 dark:text-zinc-100">{overallAvg !== null ? overallAvg.toLocaleString() : '없음'}</strong>
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="shrink-0 whitespace-nowrap rounded-md bg-zinc-50 px-2 py-1 text-xs font-medium text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
+                      #{step.run.runIndex} 공대
+                    </div>
+                    <button
+                      type="button"
+                      disabled={completeTargetIds.length === 0 || isCompleting}
+                      onClick={async () => {
+                        const ok = window.confirm(`${meta.label} #${step.run.runIndex} 공대를 완료 처리할까요?\n\n이 공대의 멤버들이 이 레이드에서 제외됩니다.`);
+                        if (!ok) return;
+                        try {
+                          setCompletingKey(completeBtnKey);
+                          const next = await excludeCharactersOnRaid(step.raidId, completeTargetIds, updatedBy);
+                          setLocalExclusions(next);
+                          onExclusionsUpdated?.(next);
+                        } catch (e) {
+                          console.error(e);
+                          alert('레이드 완료 처리 실패');
+                        } finally {
+                          setCompletingKey(null);
+                        }
+                      }}
+                      className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-bold border border-emerald-200 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-900/50 dark:text-emerald-200 dark:hover:bg-emerald-950/40 disabled:cursor-not-allowed disabled:opacity-40 whitespace-nowrap"
+                      title="레이드 완료"
+                    >
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                      레이드 완료
+                    </button>
+                  </div>
                 </div>
-                <button
-                  type="button"
-                  disabled={completeTargetIds.length === 0 || isCompleting}
-                  onClick={async () => {
-                    const ok = window.confirm(`${meta.label} #${step.run.runIndex} 공대를 완료 처리할까요?\n\n이 공대의 멤버들이 이 레이드에서 제외됩니다.`);
-                    if (!ok) return;
-                    try {
-                      setCompletingKey(completeBtnKey);
-                      const next = await excludeCharactersOnRaid(step.raidId, completeTargetIds, updatedBy);
-                      setLocalExclusions(next);
-                      onExclusionsUpdated?.(next);
-                    } catch (e) {
-                      console.error(e);
-                      alert('레이드 완료 처리 실패');
-                    } finally {
-                      setCompletingKey(null);
-                    }
-                  }}
-                  className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-bold border border-emerald-200 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-900/50 dark:text-emerald-200 dark:hover:bg-emerald-950/40 disabled:cursor-not-allowed disabled:opacity-40 whitespace-nowrap"
-                  title="레이드 완료"
-                >
-                  <CheckCircle2 className="h-3.5 w-3.5" />
-                  레이드 완료
-                </button>
-              </div>
-            </div>
           </div>
 
           {showStartRoster ? (
-            <StartRoster
-              raidId={step.raidId}
-              run={step.run}
-              exclusions={localExclusions}
-            />
+            <StartRoster raidId={step.raidId} run={step.run} exclusions={localExclusions} />
           ) : !hasChanges ? (
             <div className="flex items-center gap-2 rounded-xl border border-dashed border-zinc-200 p-3 text-sm text-zinc-400 dark:border-zinc-800 dark:text-zinc-500">
               <X className="h-4 w-4" />
@@ -892,8 +1039,39 @@ export const RaidSequenceView: React.FC<Props> = ({
   return (
     <div className="relative mx-auto w-full space-y-4">
 
-      {/* Drag & Drop Filter Controls */}
+      {/* ✅ [NEW] User Filter Controls */}
       <div className="sticky top-20 z-30 flex flex-col gap-3 rounded-2xl border border-zinc-200 bg-white/90 px-4 py-3 shadow-sm backdrop-blur-md dark:border-zinc-800 dark:bg-zinc-900/90">
+        
+        {/* 유저 필터 섹션 */}
+        <div className="flex flex-col gap-2">
+            <div className="flex items-center gap-2 text-sm font-semibold text-zinc-600 dark:text-zinc-400">
+                <Users className="h-4 w-4" />
+                <span>오늘 참여하는 인원 (제외 시 해당 인원 포함 레이드 숨김)</span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+                {allUsers.map(name => {
+                    const isSelected = selectedUsers.has(name);
+                    return (
+                        <button
+                            key={name}
+                            onClick={() => toggleUser(name)}
+                            className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-bold transition-all border ${
+                                isSelected 
+                                ? 'bg-indigo-50 border-indigo-200 text-indigo-700 dark:bg-indigo-950/30 dark:border-indigo-900 dark:text-indigo-200' 
+                                : 'bg-transparent border-zinc-200 text-zinc-400 decoration-zinc-400 line-through dark:border-zinc-800 dark:text-zinc-600'
+                            }`}
+                        >
+                            {isSelected ? <UserCheck className="h-3 w-3" /> : <UserX className="h-3 w-3" />}
+                            {name}
+                        </button>
+                    )
+                })}
+            </div>
+        </div>
+
+        <div className="h-px w-full bg-zinc-100 dark:bg-zinc-800" />
+
+        {/* 레이드 필터 섹션 */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 text-sm font-semibold text-zinc-600 dark:text-zinc-400">
             <Filter className="h-4 w-4" />
@@ -936,7 +1114,7 @@ export const RaidSequenceView: React.FC<Props> = ({
       {flatSteps.length === 0 && (
         <div className="flex flex-col items-center justify-center py-20 text-zinc-400">
           <Filter className="mb-2 h-8 w-8 opacity-20" />
-          <p>선택된 레이드가 없습니다.</p>
+          <p>선택된 레이드가 없거나, 참여 가능한 인원이 없습니다.</p>
         </div>
       )}
 
@@ -951,6 +1129,11 @@ export const RaidSequenceView: React.FC<Props> = ({
 
             return (
               <div key={`bundle-${bundleIdx}`} className="relative">
+
+                {/* Timeline Line (For Single Group) */}
+                {!isConcurrent && (
+                   <div className="absolute top-8 bottom-[-32px] left-[19px] w-0.5 bg-zinc-200 dark:bg-zinc-800" />
+                )}
 
                 {/* Group Header */}
                 <div className={`relative mb-8 flex items-start gap-4 ${isConcurrent ? 'flex-col xl:flex-row xl:items-center' : 'items-center'}`}>
@@ -983,14 +1166,18 @@ export const RaidSequenceView: React.FC<Props> = ({
                 {/* Timeline Steps */}
                 <div className="pl-4">
                   <div className={`grid gap-x-12 gap-y-8 ${isConcurrent ? 'grid-cols-1 xl:grid-cols-2' : 'grid-cols-1'}`}>
+                    
+                    {/* Left Column (No Dot/Line if Concurrent) */}
                     <div className="space-y-8">
                       {bundle[0].steps.map(step => renderStep(step, bundle[0]))}
                     </div>
+
+                    {/* Right Column */}
                     {bundle[1] && (
                       <div className="relative">
                         <div className="absolute bottom-0 left-[3px] top-4 hidden w-0.5 bg-zinc-200 dark:bg-zinc-800 xl:block" />
                         <div className="space-y-8">
-                          {bundle[1].steps.map(step => renderStep(step, bundle[1]))}
+                          {bundle[1].steps.map(step => renderStep(step, bundle[1], false))}
                         </div>
                       </div>
                     )}

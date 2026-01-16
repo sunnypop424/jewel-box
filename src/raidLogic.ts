@@ -1123,3 +1123,76 @@ export function buildRaidSchedule(
 
   return schedule;
 }
+
+// ==============================
+// ✅ [NEW] 레이드별 후보풀(대상자) 생성
+// - "완료(제외)" 표시를 위해, 기본적으로는 "현재 제외 여부와 무관하게" 해당 레이드 대상자에 포함
+// - 다만 랏폿(발키 플렉스 서폿 승격) 옵션은 "남은 사람(=제외되지 않은 인원)" 기준으로 계산한 뒤
+//   후보풀에도 승격된 role이 반영되도록 합니다.
+// ==============================
+export function buildRaidCandidatesMap(
+  characters: Character[],
+  exclusions: RaidExclusionMap = {},
+  raidSettings: RaidSettingsMap = {},
+): Record<RaidId, Character[]> {
+  const filtered = characters.filter((c) => c.itemLevel >= 1700);
+
+  // 🔹 제외를 무시한 '원래 계획' 기준으로 레이드 대상자 편성
+  //    (세르카 난이도 선택도 제외 내역을 무시한 상태에서 결정)
+  const map: Record<RaidId, Character[]> = {
+    ACT3_HARD: [],
+    ACT4_NORMAL: [],
+    ACT4_HARD: [],
+    SERKA_NORMAL: [],
+    SERKA_HARD: [],
+    SERKA_NIGHTMARE: [],
+    FINAL_NORMAL: [],
+    FINAL_HARD: [],
+  };
+
+  filtered.forEach((ch) => {
+    const base = getBaseRaidPlanForCharacter(ch.itemLevel);
+    // ✅ exclusions 무시 (원래 계획)
+    const serka = getSerkaPlanForCharacter(ch, {});
+
+    const raids =
+      serka.length > 0
+        ? [...base.filter((r) => r !== 'ACT3_HARD'), ...serka]
+        : base;
+
+    raids.slice(0, 3).forEach((raidId) => {
+      map[raidId].push(ch);
+    });
+  });
+
+  // 🔹 후보풀 중복 제거 + 랏폿 승격 반영
+  (Object.keys(map) as RaidId[]).forEach((raidId) => {
+    const list = map[raidId];
+    if (list.length === 0) return;
+
+    // 중복 제거(id 기준)
+    const byId = new Map<string, Character>();
+    list.forEach((c) => {
+      if (!byId.has(c.id)) byId.set(c.id, c);
+    });
+    const unique = Array.from(byId.values()).sort(
+      (a, b) => b.combatPower - a.combatPower || a.id.localeCompare(b.id),
+    );
+
+    // ✅ 랏폿 옵션이 켜져 있으면 "남은 사람"(제외되지 않은 인원) 기준으로 승격 계산
+    const supportShortage = Boolean(raidSettings?.[raidId]);
+    if (supportShortage) {
+      const excludedIds = new Set(exclusions?.[raidId] ?? []);
+      const remaining = unique.filter((c) => !excludedIds.has(c.id));
+      const promotedRemaining = promoteValkyToSupportIfNeeded(raidId, remaining);
+
+      // 승격 결과를 후보풀에도 반영(완료/제외자는 그대로)
+      const promotedById = new Map(promotedRemaining.map((c) => [c.id, c]));
+      map[raidId] = unique.map((c) => promotedById.get(c.id) ?? c);
+    } else {
+      map[raidId] = unique;
+    }
+  });
+
+  return map;
+}

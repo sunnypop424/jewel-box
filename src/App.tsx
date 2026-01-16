@@ -1,6 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import type { Character, RaidId, RaidExclusionMap, RaidSettingsMap } from './types';
-import { buildRaidSchedule } from './raidLogic';
+import type {
+  Character,
+  RaidId,
+  RaidExclusionMap,
+  RaidSchedule,
+  RaidSettingsMap,
+} from './types';
+import { buildRaidCandidatesMap, buildRaidSchedule } from './raidLogic';
 import { CharacterFormList } from './components/CharacterFormList';
 import { RaidScheduleView } from './components/RaidScheduleView';
 import { RaidSequenceView } from './components/RaidSequenceView';
@@ -16,6 +22,7 @@ import {
   resetRaidExclusions,
 } from './api/exclusionApi';
 import { Modal } from './components/Modal';
+import { RAID_META } from './constants';
 import {
   Swords,
   Sun,
@@ -27,6 +34,10 @@ import {
   ClipboardClock,
   ChartGantt,
   ArrowLeft,
+  ChevronDown,
+  Shield,
+  Check,
+  User,
 } from 'lucide-react';
 
 // ✅ 라우팅 추가
@@ -43,6 +54,255 @@ interface Squad {
 
 const LOCAL_SQUAD_KEY = 'raidSquad_v1';
 const THEME_KEY = 'raidTheme_v1';
+
+// ==============================
+// ✅ [NEW] 유저별 진행 현황판 (App 상단에 배치)
+// - 유저(디코명)별 캐릭터 목록
+// - 캐릭터별 "가야하는 레이드" + 상태(완료/배치/대기)
+// - 후보풀(raidCandidates) 기준으로 "대기(미배치)"까지 정확히 표시
+// ==============================
+
+type RaidProgressState = 'DONE' | 'ASSIGNED' | 'UNASSIGNED';
+
+const RAID_ORDER_FOR_PROGRESS: RaidId[] = [
+  'ACT3_HARD',
+  'ACT4_NORMAL',
+  'FINAL_NORMAL',
+  'SERKA_NORMAL',
+  'ACT4_HARD',
+  'FINAL_HARD',
+  'SERKA_HARD',
+  'SERKA_NIGHTMARE',
+];
+
+function buildAssignedIndex(schedule: RaidSchedule | null) {
+  const assignedByRaid: Partial<Record<RaidId, Set<string>>> = {};
+  if (!schedule) return assignedByRaid;
+
+  (Object.keys(schedule) as RaidId[]).forEach((raidId) => {
+    const runs = schedule[raidId] ?? [];
+    const set = new Set<string>();
+    runs
+      .flatMap((r) => r.parties.flatMap((p) => p.members))
+      .forEach((m) => set.add(m.id));
+    assignedByRaid[raidId] = set;
+  });
+
+  return assignedByRaid;
+}
+
+
+function UserRaidProgressPanel(props: {
+  characters: Character[];
+  raidCandidates?: Partial<Record<RaidId, Character[]>>;
+  exclusions?: RaidExclusionMap;
+  schedule: RaidSchedule | null;
+}) {
+  const { characters, raidCandidates, exclusions, schedule } = props;
+
+  // ✅ [NEW] 패널 토글 상태 (기본값 false = 접힘)
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  // 1. 데이터 가공 (기존 로직 유지)
+  const assignedByRaid = useMemo(() => buildAssignedIndex(schedule), [schedule]);
+
+  const users = useMemo(() => {
+    const byUser = new Map<string, Character[]>();
+    characters.forEach((c) => {
+      const key = c.discordName || '(이름 없음)';
+      if (!byUser.has(key)) byUser.set(key, []);
+      byUser.get(key)!.push(c);
+    });
+
+    const arr = Array.from(byUser.entries()).map(([discordName, chars]) => ({
+      discordName,
+      chars: chars.slice().sort((a, b) => b.combatPower - a.combatPower),
+    }));
+
+    arr.sort(
+      (a, b) =>
+        b.chars.length - a.chars.length ||
+        a.discordName.localeCompare(b.discordName),
+    );
+    return arr;
+  }, [characters]);
+
+  // 2. 상태 판단 로직 (기존 유지)
+  const getState = (raidId: RaidId, charId: string): RaidProgressState => {
+    const done = (exclusions?.[raidId] ?? []).includes(charId);
+    if (done) return 'DONE';
+    const assignedSet = assignedByRaid[raidId];
+    if (assignedSet?.has(charId)) return 'ASSIGNED';
+    return 'UNASSIGNED';
+  };
+
+  const candidatesByRaid = raidCandidates ?? {};
+
+  // 3. 스타일 헬퍼 (기존 유지)
+  const getStatusStyles = (state: RaidProgressState) => {
+    switch (state) {
+      case 'DONE':
+        return 'bg-zinc-100 text-zinc-400 decoration-zinc-400 line-through dark:bg-zinc-800 dark:text-zinc-500';
+      case 'ASSIGNED':
+        return 'bg-blue-50 text-blue-600 ring-1 ring-blue-100 dark:bg-blue-900/20 dark:text-blue-300 dark:ring-blue-900/40';
+      case 'UNASSIGNED':
+      default:
+        return 'bg-amber-50 text-amber-700 ring-1 ring-amber-200 dark:bg-amber-900/20 dark:text-amber-300 dark:ring-amber-900/40';
+    }
+  };
+
+  return (
+    <section className="rounded-3xl bg-white shadow-sm ring-1 ring-zinc-900/5 transition-all dark:bg-zinc-900 dark:ring-zinc-800">
+      {/* ✅ [NEW] 토글 헤더 버튼 */}
+      <button
+        type="button"
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="flex w-full items-center justify-between px-6 py-5 text-left transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-800/50 rounded-3xl"
+      >
+        <div className="flex items-center gap-4">
+          <div>
+            <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">
+              개인별 진행 현황
+            </h3>
+            <p className="text-sm text-zinc-500 dark:text-zinc-400">
+              {isExpanded 
+                ? '유저별 상세 진행 상황을 확인합니다.' 
+                : '클릭하여 유저별 상세 진행 상황을 확인하세요.'}
+            </p>
+          </div>
+        </div>
+
+        <ChevronDown
+          className={`text-zinc-400 transition-transform duration-300 ${
+            isExpanded ? 'rotate-180' : 'rotate-0'
+          }`}
+          size={24}
+        />
+      </button>
+
+      {/* ✅ [NEW] 펼쳐졌을 때만 보이는 내용 */}
+      {isExpanded && (
+        <div className="border-t border-zinc-100 px-6 py-6 dark:border-zinc-800">
+          
+          {/* 범례 (Legend) - 펼쳤을 때 노출 */}
+          <div className="mb-4 flex justify-end gap-3 text-xs font-medium text-zinc-500 dark:text-zinc-400">
+            <span className="flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-full bg-amber-400 ring-1 ring-amber-400/50"></span>
+              대기
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-full bg-blue-500 ring-1 ring-blue-500/50"></span>
+              배치
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-full bg-zinc-300 ring-1 ring-zinc-300/50"></span>
+              완료
+            </span>
+          </div>
+
+          {/* Masonry-like Grid Layout */}
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {users.map(({ discordName, chars }) => (
+              <div
+                key={discordName}
+                className="flex flex-col gap-2 rounded-xl border border-zinc-200 bg-zinc-50/50 p-3 dark:border-zinc-800 dark:bg-zinc-900/50"
+              >
+                {/* 유저 헤더 */}
+                <div className="flex items-center justify-between border-b border-zinc-200/60 pb-2 dark:border-zinc-700/60">
+                  <div className="flex items-center gap-2">
+                    <div className="flex h-6 w-6 items-center justify-center rounded bg-white text-zinc-500 shadow-sm dark:bg-zinc-800 dark:text-zinc-400">
+                      <User size={14} />
+                    </div>
+                    <span className="text-sm font-bold text-zinc-900 dark:text-zinc-100">
+                      {discordName}
+                    </span>
+                  </div>
+                  <span className="text-[10px] font-medium text-zinc-400">
+                    {chars.length} Characters
+                  </span>
+                </div>
+
+                {/* 캐릭터 리스트 */}
+                <div className="flex flex-col gap-1.5">
+                  {chars.map((c) => {
+                    const raidsForChar = RAID_ORDER_FOR_PROGRESS.filter((raidId) =>
+                      (candidatesByRaid[raidId] ?? []).some((m) => m.id === c.id),
+                    );
+
+                    const isSup = c.role === 'SUPPORT';
+
+                    return (
+                      <div
+                        key={c.id}
+                        className="group flex items-center justify-between gap-2 rounded-lg bg-white p-1.5 shadow-sm ring-1 ring-zinc-900/5 dark:bg-zinc-900 dark:ring-zinc-800"
+                      >
+                        {/* 좌측: 직업 아이콘 + 이름 + 스펙 */}
+                        <div className="flex min-w-0 items-center gap-2">
+                          {/* 직업 아이콘 (작게) */}
+                          <div
+                            className={`flex h-6 w-6 shrink-0 items-center justify-center rounded text-[10px] ${
+                              isSup
+                                ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20 dark:text-emerald-400'
+                                : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400'
+                            }`}
+                            title={`${c.jobCode} (${c.role})`}
+                          >
+                            {isSup ? <Shield size={12} /> : <Swords size={12} />}
+                          </div>
+
+                          <div className="flex flex-col leading-none">
+                            <div className="flex items-center gap-1">
+                              <span className="truncate text-xs font-bold text-zinc-800 dark:text-zinc-200">
+                                {c.jobCode}
+                              </span>
+                            </div>
+                            <div className="mt-0.5 text-[9px] text-zinc-400">
+                              {c.itemLevel} · {c.combatPower.toLocaleString()}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* 우측: 레이드 상태 배지들 */}
+                        <div className="flex flex-wrap justify-end gap-1 text-right">
+                          {raidsForChar.length === 0 ? (
+                            <span className="text-[9px] text-zinc-300 px-1">-</span>
+                          ) : (
+                            raidsForChar.map((raidId) => {
+                              const state = getState(raidId, c.id);
+                              const meta = RAID_META[raidId];
+                              const style = getStatusStyles(state);
+
+                              return (
+                                <span
+                                  key={raidId}
+                                  className={`inline-flex items-center rounded px-1.5 py-0.5 text-[9px] font-bold ${style}`}
+                                >
+                                  {state === 'DONE' && (
+                                    <Check size={8} className="mr-0.5" />
+                                  )}
+                                  {meta.label}
+                                </span>
+                              );
+                            })
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+
+// ==============================
+// App
+// ==============================
 
 const App: React.FC = () => {
   const navigate = useNavigate();
@@ -194,6 +454,17 @@ const App: React.FC = () => {
     [effectiveCharacters, raidExclusions, balanceMode, raidSettings],
   );
 
+  // ✅ 레이드별 후보풀(대상자) — "미배치/대기" 계산용
+  const raidCandidates = useMemo(
+    () =>
+      buildRaidCandidatesMap(
+        effectiveCharacters,
+        raidExclusions,
+        raidSettings,
+      ),
+    [effectiveCharacters, raidExclusions, raidSettings],
+  );
+
   // 🔹 레이드별 랏폿 토글
   const handleToggleSupportShortage = async (raidId: RaidId, next: boolean) => {
     try {
@@ -316,8 +587,6 @@ const App: React.FC = () => {
       </nav>
 
       <main className="mx-auto flex max-w-7xl flex-col gap-6 px-4 py-8 sm:px-6">
-        {/* ✅ 기존 화면 */}
-
         {/* 컨트롤 패널 */}
         <section className="flex flex-col gap-4 rounded-3xl bg-white p-6 shadow-sm ring-1 ring-zinc-900/5 transition-all dark:bg-zinc-900 dark:ring-zinc-800 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-start gap-4">
@@ -351,8 +620,9 @@ const App: React.FC = () => {
             >
               <RefreshCw
                 size={18}
-                className={`text-zinc-400 transition-all group-hover:text-zinc-600 dark:group-hover:text-zinc-200 ${loading ? 'animate-spin' : ''
-                  }`}
+                className={`text-zinc-400 transition-all group-hover:text-zinc-600 dark:group-hover:text-zinc-200 ${
+                  loading ? 'animate-spin' : ''
+                }`}
               />
               <span>새로고침</span>
             </button>
@@ -365,13 +635,22 @@ const App: React.FC = () => {
             >
               <Eraser
                 size={18}
-                className={`text-zinc-400 transition-all group-hover:text-zinc-700 dark:group-hover:text-zinc-100 ${loadingExclusions ? 'animate-spin' : ''
-                  }`}
+                className={`text-zinc-400 transition-all group-hover:text-zinc-700 dark:group-hover:text-zinc-100 ${
+                  loadingExclusions ? 'animate-spin' : ''
+                }`}
               />
               <span>제외 내역 초기화</span>
             </button>
           </div>
         </section>
+
+        {/* ✅ 여기(요청한 위치)에 유저별 진행 현황판 추가 */}
+        <UserRaidProgressPanel
+          characters={effectiveCharacters}
+          raidCandidates={raidCandidates}
+          exclusions={raidExclusions}
+          schedule={schedule}
+        />
 
         <div className="h-px bg-zinc-200 dark:bg-zinc-800" />
 
@@ -380,7 +659,6 @@ const App: React.FC = () => {
             path="/"
             element={
               <>
-
                 {/* 메인 컨텐츠: 레이드 스케줄 */}
                 <section>
                   {effectiveCharacters.length === 0 && !loading ? (
@@ -400,11 +678,13 @@ const App: React.FC = () => {
                       {!loading && (
                         <div className="flex items-center justify-between px-1">
                           <h3 className="flex items-center gap-2 text-lg font-bold text-zinc-900 dark:text-zinc-100">
-                            <ClipboardClock size={20} className="text-indigo-500" />
+                            <ClipboardClock
+                              size={20}
+                              className="text-indigo-500"
+                            />
                             레이드 배정 결과
                           </h3>
 
-                          {/* ✅ 기존 모달 버튼 → 페이지 이동 버튼 */}
                           <button
                             type="button"
                             onClick={() => navigate('/sequence')}
@@ -425,6 +705,7 @@ const App: React.FC = () => {
                         raidSettings={raidSettings}
                         isRaidSettingsLoading={loadingRaidSettings}
                         onToggleSupportShortage={handleToggleSupportShortage}
+                        raidCandidates={raidCandidates}
                       />
                     </div>
                   )}
@@ -443,7 +724,9 @@ const App: React.FC = () => {
                     onSubmit={handleSaveAndSync}
                     onCancel={() => setIsModalOpen(false)}
                     onLoadByDiscordName={(targetName: string) => {
-                      return allCharacters.filter((c) => c.discordName === targetName);
+                      return allCharacters.filter(
+                        (c) => c.discordName === targetName,
+                      );
                     }}
                   />
                 </Modal>
@@ -472,7 +755,7 @@ const App: React.FC = () => {
                   </button>
                 </div>
 
-                  <RaidSequenceView schedule={schedule} balanceMode={balanceMode} />
+                <RaidSequenceView schedule={schedule} balanceMode={balanceMode} />
               </section>
             }
           />
