@@ -41,11 +41,6 @@ export const RAID_META: Record<
   RaidId,
   { label: string; difficulty: 'HARD' | 'NORMAL' | 'NIGHTMARE'; colorClass: string }
 > = {
-  ACT3_HARD: {
-    label: '3막 하드',
-    difficulty: 'HARD',
-    colorClass: 'bg-orange-400'
-  },
   ACT4_NORMAL: {
     label: '4막 노말',
     difficulty: 'NORMAL',

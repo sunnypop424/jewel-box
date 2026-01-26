@@ -1,7 +1,6 @@
 export type Role = 'DPS' | 'SUPPORT';
 
 export type RaidId =
-  | 'ACT3_HARD' // 1700
   | 'ACT4_NORMAL' // 1700
   | 'FINAL_NORMAL' // 1710
   | 'SERKA_NORMAL' // 1710 (4인)
@@ -43,3 +42,11 @@ export type RaidExclusionMap = Partial<Record<RaidId, string[]>>;
 
 /** 레이드별 랏폿 설정 (true면: 발키 플렉스를 서폿으로 승격할 수 있음) */
 export type RaidSettingsMap = Partial<Record<RaidId, boolean>>;
+
+// ✅ [NEW] 교체(Swap) 정보 타입 추가
+export interface RaidSwap {
+  raidId: string;
+  charId1: string;
+  charId2: string;
+  timestamp?: string;
+}

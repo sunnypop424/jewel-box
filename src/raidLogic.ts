@@ -6,6 +6,7 @@ import type {
   RaidSchedule,
   RaidExclusionMap,
   RaidSettingsMap,
+  RaidSwap,
 } from './types';
 
 // ==============================
@@ -49,7 +50,7 @@ function getRaidConfig(raidId: RaidId): RaidConfig {
   if (isSerkaRaid(raidId)) {
     return { maxPerRun: 4, maxSupportsPerRun: 1, maxParties: 1 };
   }
-  // ✅ 그 외: 8인(4+4), 2파티
+  // ✅ 그 외(4막, 종막): 8인(4+4), 2파티
   return { maxPerRun: 8, maxSupportsPerRun: 2, maxParties: 2 };
 }
 
@@ -111,52 +112,41 @@ function promoteValkyToSupportIfNeeded(raidId: RaidId, characters: Character[]):
   return characters.map((c) => (promoteIds.has(c.id) ? { ...c, role: 'SUPPORT' } : c));
 }
 
-export function getBaseRaidPlanForCharacter(itemLevel: number): RaidId[] {
-  if (itemLevel >= 1730) return ['ACT3_HARD', 'ACT4_HARD', 'FINAL_HARD'];
-  if (itemLevel >= 1720) return ['ACT3_HARD', 'ACT4_HARD', 'FINAL_NORMAL'];
-  if (itemLevel >= 1710) return ['ACT3_HARD', 'ACT4_NORMAL', 'FINAL_NORMAL'];
-  if (itemLevel >= 1700) return ['ACT3_HARD', 'ACT4_NORMAL'];
-  return [];
-}
-
-function getSerkaPlanForCharacter(
-  ch: Character,
-  exclusions: RaidExclusionMap,
-): RaidId[] {
+// ==========================================
+// ✅ [MODIFIED] 레이드 선택 로직 변경
+// 3막 삭제, 각 레이드(4막, 종막, 세르카)별로 단 하나의 난이도만 선택
+// ==========================================
+function getTargetRaidsForCharacter(ch: Character): RaidId[] {
   const il = ch.itemLevel;
-  const id = ch.id;
+  const raids: RaidId[] = [];
 
-  const isExcluded = (raidId: RaidId) =>
-    (exclusions?.[raidId] || []).includes(id);
-
-  const pick = (raidId: RaidId | null) => (raidId ? [raidId] : []);
-
-  if (il >= 1740) {
-    const wantsNightmare = ch.serkaNightmare ?? true;
-    const candidates: RaidId[] = wantsNightmare
-      ? ['SERKA_NIGHTMARE', 'SERKA_HARD', 'SERKA_NORMAL']
-      : ['SERKA_HARD', 'SERKA_NORMAL'];
-
-    for (const raidId of candidates) {
-      if (raidId === 'SERKA_NIGHTMARE' && il < 1740) continue;
-      if (raidId === 'SERKA_HARD' && il < 1730) continue;
-      if (raidId === 'SERKA_NORMAL' && il < 1710) continue;
-      if (!isExcluded(raidId)) return pick(raidId);
-    }
-    return [];
+  // 1. 세르카 (Serka)
+  // - 1740+ & 나이트메어 체크: 나이트메어
+  // - 1730+: 하드 (나이트메어 미체크 시 하드로 감)
+  // - 1710+: 노말
+  if (il >= 1740 && (ch.serkaNightmare === true)) {
+    raids.push('SERKA_NIGHTMARE');
+  } else if (il >= 1730) {
+    raids.push('SERKA_HARD');
+  } else if (il >= 1710) {
+    raids.push('SERKA_NORMAL');
   }
 
+  // 2. 종막 (Final / Echidna?)
   if (il >= 1730) {
-    if (!isExcluded('SERKA_HARD')) return pick('SERKA_HARD');
-    if (il >= 1710 && !isExcluded('SERKA_NORMAL')) return pick('SERKA_NORMAL');
-    return [];
+    raids.push('FINAL_HARD');
+  } else if (il >= 1710) {
+    raids.push('FINAL_NORMAL');
   }
 
-  if (il >= 1710) {
-    if (!isExcluded('SERKA_NORMAL')) return pick('SERKA_NORMAL');
+  // 3. 4막 (Act 4)
+  if (il >= 1720) {
+    raids.push('ACT4_HARD');
+  } else if (il >= 1700) {
+    raids.push('ACT4_NORMAL');
   }
 
-  return [];
+  return raids;
 }
 
 interface RaidBucket {
@@ -687,12 +677,15 @@ function swapSameUserCharactersToFixDuplicates(
 }
 
 
+// ✅ [MODIFIED] 3막 하드 삭제 및 새 로직 적용
+// - exclusions에 해당 레이드ID가 있으면 아예 제외(완료 처리)
+// - 하위 난이도로 자동 이동하지 않음
 function groupCharactersByRaid(
   characters: Character[],
   exclusions: RaidExclusionMap = {},
 ): RaidBucket[] {
+  // 3막 하드(ACT3_HARD) 제거됨
   const map: Record<RaidId, Character[]> = {
-    ACT3_HARD: [],
     ACT4_NORMAL: [],
     ACT4_HARD: [],
     SERKA_NORMAL: [],
@@ -703,18 +696,16 @@ function groupCharactersByRaid(
   };
 
   characters.forEach((ch) => {
-    const base = getBaseRaidPlanForCharacter(ch.itemLevel);
-    const serka = getSerkaPlanForCharacter(ch, exclusions);
+    const targetRaids = getTargetRaidsForCharacter(ch);
 
-    const raids =
-      serka.length > 0
-        ? [...base.filter((r) => r !== 'ACT3_HARD'), ...serka]
-        : base;
-
-    raids.slice(0, 3).forEach((raidId) => {
+    targetRaids.forEach((raidId) => {
+      // ✅ 제외 로직: 해당 레이드에 제외 이력이 있으면 그냥 스킵 (완료 처리)
       const excludedList = exclusions[raidId];
       if (excludedList && excludedList.includes(ch.id)) return;
-      map[raidId].push(ch);
+      
+      if (map[raidId]) {
+        map[raidId].push(ch);
+      }
     });
   });
 
@@ -886,11 +877,10 @@ function distributeCharactersIntoRuns(
     );
   }
 
-  if (raidId !== 'ACT3_HARD') {
-    let afterJobAdjust = minimizeSameJobInRuns(optimizedRunsMembers, maxPerRun, maxSupportsPerRun);
-    afterJobAdjust = swapSameUserCharactersToFixDuplicates(afterJobAdjust);
-    optimizedRunsMembers = adjustSoloLastRunStrongCharacter(afterJobAdjust, maxPerRun, maxSupportsPerRun, lockIds);
-  }
+  // ACT3_HARD가 삭제되었으므로 제외 조건 없이 로직 수행
+  let afterJobAdjust = minimizeSameJobInRuns(optimizedRunsMembers, maxPerRun, maxSupportsPerRun);
+  afterJobAdjust = swapSameUserCharactersToFixDuplicates(afterJobAdjust);
+  optimizedRunsMembers = adjustSoloLastRunStrongCharacter(afterJobAdjust, maxPerRun, maxSupportsPerRun, lockIds);
 
   const runs: RaidRun[] = [];
   optimizedRunsMembers.forEach((members, idx) => {
@@ -1082,12 +1072,70 @@ function rebalanceSupportsGlobal(runs: RaidRun[]): RaidRun[] {
   return result;
 }
 
-// ✅ 메인 함수
+
+// ✅ [NEW] 교체(Swap) 적용 함수
+function applySwaps(
+  schedule: RaidSchedule,
+  swaps: RaidSwap[],
+  allCharacters: Character[]
+): RaidSchedule {
+  const raidIds = Object.keys(schedule) as RaidId[];
+
+  raidIds.forEach((raidId) => {
+    const raidSwaps = swaps.filter((s) => s.raidId === raidId);
+    if (raidSwaps.length === 0) return;
+
+    const runs = schedule[raidId];
+    if (!runs) return;
+
+    // 편의를 위해 Run/Party 구조를 Flatten 해서 탐색
+    const findMemberLocation = (targetId: string) => {
+      for (const run of runs) {
+        for (const party of run.parties) {
+          const idx = party.members.findIndex((m) => m.id === targetId);
+          if (idx !== -1) {
+            return { list: party.members, idx };
+          }
+        }
+      }
+      return null;
+    };
+
+    raidSwaps.forEach(({ charId1, charId2 }) => {
+      const loc1 = findMemberLocation(charId1);
+      const loc2 = findMemberLocation(charId2);
+
+      // Case 1: 둘 다 현재 스케줄(Run)에 포함되어 있는 경우 -> 서로 위치 교환
+      if (loc1 && loc2) {
+        const temp = loc1.list[loc1.idx];
+        loc1.list[loc1.idx] = loc2.list[loc2.idx];
+        loc2.list[loc2.idx] = temp;
+      }
+      // Case 2: 하나는 Run에 있고, 하나는 없는 경우 (대기/미배치 캐릭터와 교체)
+      else if (loc1 && !loc2) {
+        const char2 = allCharacters.find((c) => c.id === charId2);
+        if (char2) {
+          loc1.list[loc1.idx] = char2;
+        }
+      } else if (!loc1 && loc2) {
+        const char1 = allCharacters.find((c) => c.id === charId1);
+        if (char1) {
+          loc2.list[loc2.idx] = char1;
+        }
+      }
+    });
+  });
+
+  return schedule;
+}
+
+// ✅ [MODIFIED] 메인 함수 수정 (swaps 인자 추가)
 export function buildRaidSchedule(
   characters: Character[],
   exclusions: RaidExclusionMap = {},
   balanceMode: BalanceMode = 'speed',
   raidSettings: RaidSettingsMap = {},
+  swaps: RaidSwap[] = [] // ✅ 추가됨
 ): RaidSchedule {
   const filtered = characters.filter((c) => c.itemLevel >= 1700);
   const buckets = groupCharactersByRaid(filtered, exclusions);
@@ -1095,8 +1143,8 @@ export function buildRaidSchedule(
   const SEED = 123456789;
   const seededRng = createSeededRandom(SEED);
 
+  // ✅ [MODIFIED] ACT3_HARD 삭제됨
   const schedule: RaidSchedule = {
-    ACT3_HARD: [],
     ACT4_NORMAL: [],
     ACT4_HARD: [],
     SERKA_NORMAL: [],
@@ -1113,22 +1161,23 @@ export function buildRaidSchedule(
       ? promoteValkyToSupportIfNeeded(raidId, characters)
       : characters;
 
-    schedule[raidId] = distributeCharactersIntoRuns(
-      raidId,
-      pool,
-      balanceMode,
-      seededRng,
-    );
+    // schedule에 해당 키가 존재할 때만 실행
+    if (schedule[raidId] !== undefined) {
+      schedule[raidId] = distributeCharactersIntoRuns(
+        raidId,
+        pool,
+        balanceMode,
+        seededRng,
+      );
+    }
   });
 
-  return schedule;
+  // ✅ 생성된 스케줄에 교체 내역 적용
+  return applySwaps(schedule, swaps, characters);
 }
 
 // ==============================
 // ✅ [NEW] 레이드별 후보풀(대상자) 생성
-// - "완료(제외)" 표시를 위해, 기본적으로는 "현재 제외 여부와 무관하게" 해당 레이드 대상자에 포함
-// - 다만 랏폿(발키 플렉스 서폿 승격) 옵션은 "남은 사람(=제외되지 않은 인원)" 기준으로 계산한 뒤
-//   후보풀에도 승격된 role이 반영되도록 합니다.
 // ==============================
 export function buildRaidCandidatesMap(
   characters: Character[],
@@ -1138,9 +1187,7 @@ export function buildRaidCandidatesMap(
   const filtered = characters.filter((c) => c.itemLevel >= 1700);
 
   // 🔹 제외를 무시한 '원래 계획' 기준으로 레이드 대상자 편성
-  //    (세르카 난이도 선택도 제외 내역을 무시한 상태에서 결정)
   const map: Record<RaidId, Character[]> = {
-    ACT3_HARD: [],
     ACT4_NORMAL: [],
     ACT4_HARD: [],
     SERKA_NORMAL: [],
@@ -1151,17 +1198,14 @@ export function buildRaidCandidatesMap(
   };
 
   filtered.forEach((ch) => {
-    const base = getBaseRaidPlanForCharacter(ch.itemLevel);
-    // ✅ exclusions 무시 (원래 계획)
-    const serka = getSerkaPlanForCharacter(ch, {});
+    // ✅ [MODIFIED] 신규 단일 선택 로직 사용
+    const targetRaids = getTargetRaidsForCharacter(ch);
 
-    const raids =
-      serka.length > 0
-        ? [...base.filter((r) => r !== 'ACT3_HARD'), ...serka]
-        : base;
-
-    raids.slice(0, 3).forEach((raidId) => {
-      map[raidId].push(ch);
+    targetRaids.forEach((raidId) => {
+      // 키가 존재하는지 확인 (3막하드 등 필터링)
+      if (map[raidId]) {
+        map[raidId].push(ch);
+      }
     });
   });
 

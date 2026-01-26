@@ -5,6 +5,7 @@ import type {
   RaidExclusionMap,
   RaidSchedule,
   RaidSettingsMap,
+  RaidSwap, // ✅ 추가
 } from './types';
 import { buildRaidCandidatesMap, buildRaidSchedule } from './raidLogic';
 import { CharacterFormList } from './components/CharacterFormList';
@@ -20,7 +21,12 @@ import {
   fetchRaidExclusions,
   excludeCharacterOnRaid,
   resetRaidExclusions,
+  excludeCharactersOnRaid, // ✅ 추가 (일괄 제외)
 } from './api/exclusionApi';
+import {
+  fetchSwaps, // ✅ 추가
+  addSwap,    // ✅ 추가
+} from './api/swapApi';
 import { Modal } from './components/Modal';
 import { RAID_META } from './constants';
 import {
@@ -57,15 +63,11 @@ const THEME_KEY = 'raidTheme_v1';
 
 // ==============================
 // ✅ [NEW] 유저별 진행 현황판 (App 상단에 배치)
-// - 유저(디코명)별 캐릭터 목록
-// - 캐릭터별 "가야하는 레이드" + 상태(완료/배치/대기)
-// - 후보풀(raidCandidates) 기준으로 "대기(미배치)"까지 정확히 표시
 // ==============================
 
 type RaidProgressState = 'DONE' | 'ASSIGNED' | 'UNASSIGNED';
 
 const RAID_ORDER_FOR_PROGRESS: RaidId[] = [
-  'ACT3_HARD',
   'ACT4_NORMAL',
   'FINAL_NORMAL',
   'SERKA_NORMAL',
@@ -90,7 +92,6 @@ function buildAssignedIndex(schedule: RaidSchedule | null) {
 
   return assignedByRaid;
 }
-
 
 function UserRaidProgressPanel(props: {
   characters: Character[];
@@ -157,7 +158,7 @@ function UserRaidProgressPanel(props: {
       <button
         type="button"
         onClick={() => setIsExpanded(!isExpanded)}
-        className="flex w-full items-center justify-between px-6 py-5 text-left transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-800/50 rounded-3xl"
+        className="flex w-full items-center justify-between rounded-3xl px-6 py-5 text-left transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
       >
         <div className="flex items-center gap-4">
           <div>
@@ -165,8 +166,8 @@ function UserRaidProgressPanel(props: {
               개인별 진행 현황
             </h3>
             <p className="text-sm text-zinc-500 dark:text-zinc-400">
-              {isExpanded 
-                ? '유저별 상세 진행 상황을 확인합니다.' 
+              {isExpanded
+                ? '유저별 상세 진행 상황을 확인합니다.'
                 : '클릭하여 유저별 상세 진행 상황을 확인하세요.'}
             </p>
           </div>
@@ -332,6 +333,9 @@ const App: React.FC = () => {
   const [raidSettings, setRaidSettings] = useState<RaidSettingsMap>({});
   const [loadingRaidSettings, setLoadingRaidSettings] = useState(false);
 
+  // ✅ [NEW] 교체(Swap) 데이터 상태
+  const [raidSwaps, setRaidSwaps] = useState<RaidSwap[]>([]);
+
   // 🔹 전투력 밸런싱 모드 (기본값: 전체 평균 스피드 모드)
   const [balanceMode, _setBalanceMode] = useState<BalanceMode>('speed');
 
@@ -426,11 +430,22 @@ const App: React.FC = () => {
     }
   };
 
-  // 앱 시작 시 캐릭터 + 제외 목록 로드
+  // ✅ [NEW] 교체 내역 새로고침
+  const refreshSwaps = async () => {
+    try {
+      const s = await fetchSwaps();
+      setRaidSwaps(s);
+    } catch (e) {
+      console.error('load swaps error', e);
+    }
+  };
+
+  // 앱 시작 시 모든 데이터 로드
   useEffect(() => {
     refreshAllCharacters().catch(console.error);
     refreshExclusions().catch(console.error);
     refreshRaidSettings().catch(console.error);
+    refreshSwaps().catch(console.error); // ✅ 추가
   }, []);
 
   // 내 원정대 반영한 전체 캐릭터
@@ -442,7 +457,7 @@ const App: React.FC = () => {
     return [...others, ...localSquad.characters];
   }, [allCharacters, localSquad]);
 
-  // ✅ 모드 + 제외 내역을 반영한 레이드 스케줄
+  // ✅ 모드 + 제외 + 교체(Swap) 내역을 반영한 레이드 스케줄
   const schedule = useMemo(
     () =>
       buildRaidSchedule(
@@ -450,11 +465,12 @@ const App: React.FC = () => {
         raidExclusions,
         balanceMode,
         raidSettings,
+        raidSwaps // ✅ 교체 내역 전달
       ),
-    [effectiveCharacters, raidExclusions, balanceMode, raidSettings],
+    [effectiveCharacters, raidExclusions, balanceMode, raidSettings, raidSwaps],
   );
 
-  // ✅ 레이드별 후보풀(대상자) — "미배치/대기" 계산용
+  // ✅ 레이드별 후보풀(대상자)
   const raidCandidates = useMemo(
     () =>
       buildRaidCandidatesMap(
@@ -476,7 +492,6 @@ const App: React.FC = () => {
     } catch (e) {
       console.error(e);
       alert('랏폿 설정 저장에 실패했습니다. 잠시 후 다시 시도해주세요.');
-      // 실패 시 최신 값으로 롤백
       refreshRaidSettings().catch(console.error);
     }
   };
@@ -488,13 +503,15 @@ const App: React.FC = () => {
   ) => {
     try {
       setSaving(true);
-
       await saveCharacters(discordName, characters);
-
       const newSquad: Squad = { discordName, characters };
       setLocalSquad(newSquad);
-
-      await refreshAllCharacters();
+      
+      // 전체 다시 로드
+      await Promise.all([
+        refreshAllCharacters(),
+        refreshSwaps() // 캐릭터 변경 시 Swap 내역에 영향 있을 수 있으므로 체크 (선택사항)
+      ]);
 
       setIsModalOpen(false);
       setStatus(`${discordName}님의 정보가 저장되고 동기화되었습니다.`);
@@ -519,25 +536,59 @@ const App: React.FC = () => {
     }
   };
 
-  // 🔹 제외 내역 초기화
+  // ✅ [NEW] 공격대 일괄 완료 (Batch Exclude)
+  const handleExcludeRun = async (raidId: RaidId, charIds: string[]) => {
+    try {
+      setStatus('공격대 완료 처리 중...');
+      const updatedBy = localSquad.discordName || 'User';
+      const next = await excludeCharactersOnRaid(raidId, charIds, updatedBy);
+      setRaidExclusions(next);
+      setStatus('공격대가 완료 처리되었습니다.');
+    } catch (e) {
+      console.error(e);
+      alert('공격대 완료 처리 실패');
+    }
+  };
+
+  // ✅ [NEW] 캐릭터 교체 (Swap)
+  const handleSwapCharacter = async (raidId: RaidId, charId1: string, charId2: string) => {
+    try {
+      setStatus('캐릭터 교체 중...');
+      const updatedBy = localSquad.discordName || 'User';
+      const nextSwaps = await addSwap(raidId, charId1, charId2, updatedBy);
+      setRaidSwaps(nextSwaps);
+      setStatus('캐릭터 교체가 완료되었습니다.');
+    } catch (e) {
+      console.error(e);
+      alert('캐릭터 교체 실패');
+    }
+  };
+
+  // 🔹 제외 및 교체 내역 초기화
   const handleResetExclusions = async () => {
-    const ok = window.confirm('모든 레이드의 제외 내역을 초기화하시겠습니까?');
+    const ok = window.confirm('모든 제외 내역과 캐릭터 변경(Swap) 내역을 초기화하시겠습니까?');
     if (!ok) return;
 
     try {
-      setStatus('제외 내역 초기화 중...');
-      const next = await resetRaidExclusions();
-      setRaidExclusions(next);
-      setStatus('제외 내역이 초기화되었습니다.');
+      setStatus('내역 초기화 중...');
+      // 서버에서 resetRaidExclusions 호출 시 Swap 내역도 같이 초기화하도록 Apps Script 수정됨
+      await resetRaidExclusions(); 
+      
+      // 프론트 상태 동기화
+      await Promise.all([
+        refreshExclusions(),
+        refreshSwaps()
+      ]);
+      
+      setStatus('모든 내역이 초기화되었습니다.');
     } catch (e) {
       console.error(e);
-      alert('제외 내역 초기화에 실패했습니다. 잠시 후 다시 시도해주세요.');
+      alert('초기화 실패');
     }
   };
 
   return (
     <div className="font-['Paperozi'] min-h-screen bg-zinc-50 text-zinc-900 transition-colors duration-300 dark:bg-zinc-950 dark:text-zinc-100">
-      {/* 네비게이션 바 */}
       <nav className="sticky top-0 z-30 w-full border-b border-zinc-200 bg-white/80 backdrop-blur-md transition-colors dark:border-zinc-800 dark:bg-zinc-950/80">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6">
           <div className="flex items-center gap-3">
@@ -553,7 +604,6 @@ const App: React.FC = () => {
               </h1>
             </div>
 
-            {/* ✅ 테마 버튼 왼쪽에 "진행순서" 페이지 이동 버튼 */}
             {!isSequencePage ? (
               <button
                 type="button"
@@ -587,7 +637,6 @@ const App: React.FC = () => {
       </nav>
 
       <main className="mx-auto flex max-w-7xl flex-col gap-6 px-4 py-8 sm:px-6">
-        {/* 컨트롤 패널 */}
         <section className="flex flex-col gap-4 rounded-3xl bg-white p-6 shadow-sm ring-1 ring-zinc-900/5 transition-all dark:bg-zinc-900 dark:ring-zinc-800 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-start gap-4">
             <div className="hidden rounded-2xl bg-zinc-50 p-3 dark:bg-zinc-800 sm:block">
@@ -614,7 +663,12 @@ const App: React.FC = () => {
             </button>
 
             <button
-              onClick={refreshAllCharacters}
+              onClick={() => {
+                refreshAllCharacters();
+                refreshExclusions();
+                refreshRaidSettings();
+                refreshSwaps();
+              }}
               disabled={loading || saving}
               className="group inline-flex items-center gap-2 rounded-xl border border-zinc-200 bg-white px-5 py-2.5 text-sm font-semibold text-zinc-700 transition-colors hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
             >
@@ -627,7 +681,6 @@ const App: React.FC = () => {
               <span>새로고침</span>
             </button>
 
-            {/* 제외 내역 초기화 버튼 */}
             <button
               onClick={handleResetExclusions}
               disabled={loadingExclusions}
@@ -639,12 +692,11 @@ const App: React.FC = () => {
                   loadingExclusions ? 'animate-spin' : ''
                 }`}
               />
-              <span>제외 내역 초기화</span>
+              <span>제외/변경 초기화</span>
             </button>
           </div>
         </section>
 
-        {/* ✅ 여기(요청한 위치)에 유저별 진행 현황판 추가 */}
         <UserRaidProgressPanel
           characters={effectiveCharacters}
           raidCandidates={raidCandidates}
@@ -659,7 +711,6 @@ const App: React.FC = () => {
             path="/"
             element={
               <>
-                {/* 메인 컨텐츠: 레이드 스케줄 */}
                 <section>
                   {effectiveCharacters.length === 0 && !loading ? (
                     <div className="flex min-h-[300px] flex-col items-center justify-center rounded-3xl border-2 border-dashed border-zinc-200 bg-zinc-50/50 p-8 text-center dark:border-zinc-800 dark:bg-zinc-900/50">
@@ -706,12 +757,15 @@ const App: React.FC = () => {
                         isRaidSettingsLoading={loadingRaidSettings}
                         onToggleSupportShortage={handleToggleSupportShortage}
                         raidCandidates={raidCandidates}
+                        // ✅ [NEW] Props 전달
+                        onSwapCharacter={handleSwapCharacter}
+                        onExcludeRun={handleExcludeRun}
+                        allCharacters={effectiveCharacters}
                       />
                     </div>
                   )}
                 </section>
 
-                {/* 내 원정대 관리 모달 */}
                 <Modal
                   open={isModalOpen}
                   title="내 원정대 관리"
@@ -734,7 +788,6 @@ const App: React.FC = () => {
             }
           />
 
-          {/* ✅ 진행 순서 페이지 */}
           <Route
             path="/sequence"
             element={

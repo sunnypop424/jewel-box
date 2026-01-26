@@ -51,7 +51,6 @@ type BalanceMode = 'overall' | 'role' | 'speed';
 // ----------------------------------------------------------------------
 
 const INITIAL_RAID_ORDER: RaidId[] = [
-  'ACT3_HARD',
   'ACT4_NORMAL',
   'ACT4_HARD',
   'FINAL_NORMAL',
@@ -575,7 +574,6 @@ export const RaidSequenceView: React.FC<Props> = ({
   const filteredSchedule = useMemo(() => {
     if (!schedule) return null;
     const fs: RaidSchedule = {
-      ACT3_HARD: [],
       ACT4_NORMAL: [],
       ACT4_HARD: [],
       SERKA_NORMAL: [],
@@ -588,11 +586,11 @@ export const RaidSequenceView: React.FC<Props> = ({
     selectedRaids.forEach((raidId) => {
       const runs = schedule[raidId];
       if (runs) {
-        // [NEW] 해당 공대에 참여하는 모든 멤버가 'selectedUsers'에 포함되어 있는지 확인
-        // 한 명이라도 선택 해제된 유저가 있다면 그 공대 전체를 숨김 (invalid run)
+        // [NEW] 해당 공격대에 참여하는 모든 멤버가 'selectedUsers'에 포함되어 있는지 확인
+        // 한 명이라도 선택 해제된 유저가 있다면 그 공격대 전체를 숨김 (invalid run)
         const validRuns = runs.filter(run => {
             const members = getRunMembers(run);
-            // 만약 공대가 비어있다면(멤버 0명) 보여줄지 말지 결정 -> 여기선 보여줌
+            // 만약 공격대가 비어있다면(멤버 0명) 보여줄지 말지 결정 -> 여기선 보여줌
             if (members.length === 0) return true; 
             return members.every(m => selectedUsers.has(m.discordName));
         });
@@ -785,13 +783,13 @@ export const RaidSequenceView: React.FC<Props> = ({
                   </div>
                   <div className="flex items-center gap-2">
                     <div className="shrink-0 whitespace-nowrap rounded-md bg-zinc-50 px-2 py-1 text-xs font-medium text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
-                      #{step.run.runIndex} 공대
+                      #{step.run.runIndex} 공격대
                     </div>
                     <button
                       type="button"
                       disabled={completeTargetIds.length === 0 || isCompleting}
                       onClick={async () => {
-                        const ok = window.confirm(`${meta.label} #${step.run.runIndex} 공대를 완료 처리할까요?\n\n이 공대의 멤버들이 이 레이드에서 제외됩니다.`);
+                        const ok = window.confirm(`${meta.label} #${step.run.runIndex} 공격대를 완료 처리할까요?\n이 공격대의멤버들이 이 레이드에서 제외됩니다.`);
                         if (!ok) return;
                         try {
                           setCompletingKey(completeBtnKey);
@@ -929,13 +927,13 @@ export const RaidSequenceView: React.FC<Props> = ({
                   </div>
                   <div className="flex items-center gap-2">
                     <div className="shrink-0 whitespace-nowrap rounded-md bg-zinc-50 px-2 py-1 text-xs font-medium text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
-                      #{step.run.runIndex} 공대
+                      #{step.run.runIndex} 공격대
                     </div>
                     <button
                       type="button"
                       disabled={completeTargetIds.length === 0 || isCompleting}
                       onClick={async () => {
-                        const ok = window.confirm(`${meta.label} #${step.run.runIndex} 공대를 완료 처리할까요?\n\n이 공대의 멤버들이 이 레이드에서 제외됩니다.`);
+                        const ok = window.confirm(`${meta.label} #${step.run.runIndex} 공격대를 완료 처리할까요?\n이 공격대의멤버들이 이 레이드에서 제외됩니다.`);
                         if (!ok) return;
                         try {
                           setCompletingKey(completeBtnKey);
