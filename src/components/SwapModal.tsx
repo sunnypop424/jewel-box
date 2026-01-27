@@ -107,7 +107,7 @@ export const SwapModal: React.FC<SwapModalProps> = ({
                   </div>
                   <div className="text-right">
                     <div className="text-xs font-bold dark:text-zinc-300">Lv.{c.itemLevel}</div>
-                    <div className="text-[10px] text-zinc-400">{c.combatPower.toLocaleString()}</div>
+                    <div className="text-[10px] text-zinc-400">CP {c.combatPower.toLocaleString()}</div>
                   </div>
                 </button>
               ))
