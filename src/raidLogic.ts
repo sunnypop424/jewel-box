@@ -90,7 +90,7 @@ function promoteValkyToSupportIfNeeded(raidId: RaidId, characters: Character[]):
   const candidates = characters
     .filter(
       (c) =>
-        c.jobCode === '발키' &&
+        c.jobCode === '발키리' &&
         c.role === 'DPS' &&
         c.valkyCanSupport === true,
     )

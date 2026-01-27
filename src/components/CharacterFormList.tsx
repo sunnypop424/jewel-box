@@ -111,7 +111,7 @@ export const CharacterFormList: React.FC<Props> = ({
         return {
           ...row,
           jobCode: nextJob,
-          valkyCanSupport: nextJob === '발키' ? (row.valkyCanSupport ?? false) : false,
+          valkyCanSupport: nextJob === '발키리' ? (row.valkyCanSupport ?? false) : false,
         } as CharacterFormRow;
       }
 
@@ -158,7 +158,7 @@ export const CharacterFormList: React.FC<Props> = ({
         itemLevel: Number(r.itemLevel),
         combatPower: Number(r.combatPower),
         serkaNightmare: Boolean(r.serkaNightmare),
-        valkyCanSupport: r.jobCode === '발키' ? Boolean(r.valkyCanSupport) : false,
+        valkyCanSupport: r.jobCode === '발키리' ? Boolean(r.valkyCanSupport) : false,
       }));
 
     if (cleaned.length === 0) {
@@ -270,7 +270,7 @@ export const CharacterFormList: React.FC<Props> = ({
                     </div>
 
                     {/* ✅ 발키는 딜/서폿 플렉스 가능 여부 체크 */}
-                    {row.jobCode === '발키' && (
+                    {row.jobCode === '발키리' && (
                       <label className="inline-flex select-none items-center gap-1 rounded-lg border border-zinc-200 bg-white px-2 py-2 text-xs font-semibold text-zinc-600 shadow-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
                         <input
                           type="checkbox"
