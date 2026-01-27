@@ -5,6 +5,7 @@ import {
   Shield, Swords, Users, User, ChevronDown, CircleDashed, CheckCircle2,
   ArrowLeftRight, Check
 } from 'lucide-react';
+import { SwapModal } from './SwapModal';
 
 type BalanceMode = 'overall' | 'role' | 'speed';
 
@@ -248,7 +249,7 @@ export const RaidScheduleView: React.FC<Props> = ({
                                       <div className="flex items-center gap-2">
                                          <div className="text-right">
                                             <div className="text-xs font-bold dark:text-zinc-300">Lv.{m.itemLevel}</div>
-                                            <div className="text-[10px] text-zinc-400">{m.combatPower.toLocaleString()}</div>
+                                            <div className="text-[10px] text-zinc-400">CP {m.combatPower.toLocaleString()}</div>
                                          </div>
                                          
                                          {/* ✅ [변경] 버튼 - 호박색 */}
@@ -297,18 +298,20 @@ export const RaidScheduleView: React.FC<Props> = ({
         );
       })}
 
+      // 컴포넌트 내부에서 SwapModal 사용 부분 수정
       {swapTarget && (
-         <SwapModal
-            isOpen={!!swapTarget}
-            onClose={() => setSwapTarget(null)}
-            target={swapTarget}
-            candidates={allCharacters.filter(c => c.discordName === swapTarget.char.discordName)}
-            onConfirm={(targetCharId: string) => {
-               onSwapCharacter?.(swapTarget.raidId, swapTarget.char.id, targetCharId);
-               setSwapTarget(null);
-            }}
-         />
+        <SwapModal
+          isOpen={!!swapTarget}
+          onClose={() => setSwapTarget(null)}
+          target={swapTarget}
+          allCharacters={allCharacters} // props로 전달받은 전체 캐릭터 목록 사용
+          onConfirm={(targetCharId: string) => {
+            onSwapCharacter?.(swapTarget.raidId, swapTarget.char.id, targetCharId);
+            setSwapTarget(null);
+          }}
+        />
       )}
+
     </div>
   );
 };
@@ -383,7 +386,7 @@ function RaidMemberCard({ member, canExclude, onExclude, isReadOnly }: any) {
          <div className="flex items-center gap-3">
             <div className="text-right">
                <div className="text-xs font-bold dark:text-zinc-300">Lv.{member.itemLevel}</div>
-               <div className="text-[10px] text-zinc-400">{member.combatPower.toLocaleString()}</div>
+               <div className="text-[10px] text-zinc-400">CP {member.combatPower.toLocaleString()}</div>
             </div>
             {!isReadOnly && canExclude && (
                <button onClick={() => onExclude(member)} className="inline-flex items-center gap-1 rounded bg-white px-2 py-1 text-xs font-bold text-zinc-600 shadow-sm ring-1 ring-zinc-200 hover:bg-emerald-50 hover:text-emerald-700 hover:ring-emerald-200 dark:bg-zinc-800 dark:text-zinc-400 dark:ring-zinc-700 dark:hover:bg-emerald-900/30 dark:hover:text-emerald-300 dark:hover:ring-emerald-800">
@@ -394,54 +397,4 @@ function RaidMemberCard({ member, canExclude, onExclude, isReadOnly }: any) {
          </div>
       </div>
    );
-}
-
-function SwapModal({ isOpen, onClose, target, candidates, onConfirm }: any) {
-    if (!isOpen) return null;
-    
-    // 교체 후보 필터링: "같은 유저" & "자기 자신 제외" (candidates에 이미 같은 유저 필터링된 리스트가 들어옴)
-    const myCandidates = candidates.filter((c: Character) => 
-        c.id !== target.char.id
-    );
-
-    return (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
-            <div className="w-full max-w-sm overflow-hidden rounded-2xl bg-white shadow-xl dark:bg-zinc-900">
-                <div className="border-b bg-zinc-50 px-4 py-3 font-bold dark:border-zinc-800 dark:bg-zinc-800 dark:text-zinc-100">
-                    캐릭터 변경
-                </div>
-                <div className="p-4">
-                    <p className="mb-4 text-sm text-zinc-600 dark:text-zinc-400">
-                        <span className="font-bold text-zinc-900 dark:text-zinc-100">{target.char.jobCode}</span>
-                        ({target.char.discordName}) 캐릭터를 아래 캐릭터와 교체합니다.
-                    </p>
-                    
-                    <div className="flex max-h-[300px] flex-col gap-2 overflow-y-auto">
-                        {myCandidates.length === 0 ? (
-                            <div className="py-4 text-center text-xs text-zinc-400">교체 가능한 캐릭터가 없습니다.</div>
-                        ) : (
-                            myCandidates.map((c: Character) => (
-                                <button
-                                    key={c.id}
-                                    onClick={() => onConfirm(c.id)}
-                                    className="flex items-center justify-between rounded-xl border border-zinc-200 p-3 text-left hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
-                                >
-                                    <div className="flex items-center gap-2">
-                                        <span className={`flex h-6 w-6 items-center justify-center rounded text-[10px] ${c.role === 'SUPPORT' ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400'}`}>
-                                            {c.role === 'SUPPORT' ? <Shield size={12}/> : <Swords size={12}/>}
-                                        </span>
-                                        <span className="text-sm font-bold dark:text-zinc-200">{c.jobCode}</span>
-                                    </div>
-                                    <div className="text-xs text-zinc-400">Lv.{c.itemLevel}</div>
-                                </button>
-                            ))
-                        )}
-                    </div>
-                </div>
-                <div className="flex items-center justify-end gap-2 border-t bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-900">
-                    <button onClick={onClose} className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-500 hover:bg-zinc-200 dark:text-zinc-400 dark:hover:bg-zinc-800">취소</button>
-                </div>
-            </div>
-        </div>
-    );
 }

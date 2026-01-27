@@ -808,7 +808,13 @@ const App: React.FC = () => {
                   </button>
                 </div>
 
-                <RaidSequenceView schedule={schedule} balanceMode={balanceMode} />
+                <RaidSequenceView 
+                  schedule={schedule} 
+                  balanceMode={balanceMode} 
+                  onSwapCharacter={handleSwapCharacter} // 추가
+                  allCharacters={effectiveCharacters}   // 추가
+                  onExclusionsUpdated={(next) => setRaidExclusions(next)} // 상태 동기화용
+                />
               </section>
             }
           />
