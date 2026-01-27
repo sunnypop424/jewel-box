@@ -298,7 +298,6 @@ export const RaidScheduleView: React.FC<Props> = ({
         );
       })}
 
-      // 컴포넌트 내부에서 SwapModal 사용 부분 수정
       {swapTarget && (
         <SwapModal
           isOpen={!!swapTarget}
