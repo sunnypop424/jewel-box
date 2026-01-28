@@ -40,9 +40,9 @@ function isSerkaRaid(raidId: RaidId): boolean {
 }
 
 type RaidConfig = {
-  maxPerRun: number;          // 한 런의 총 인원
-  maxSupportsPerRun: number;  // 한 런에서 서폿 최대
-  maxParties: number;         // 런 내 파티 수
+  maxPerRun: number; // 한 런의 총 인원
+  maxSupportsPerRun: number; // 한 런에서 서폿 최대
+  maxParties: number; // 런 내 파티 수
 };
 
 function getRaidConfig(raidId: RaidId): RaidConfig {
@@ -370,14 +370,21 @@ function optimizeCombatPowerBySwapOnly(
     if (char1.role !== char2.role) continue;
 
     const canSwap = (toRun: Character[], cFrom: Character, cTo: Character) => {
-      const isDuplicateName = toRun.some(m => m.id !== cTo.id && m.discordName === cFrom.discordName);
+      const isDuplicateName = toRun.some(
+        (m) => m.id !== cTo.id && m.discordName === cFrom.discordName,
+      );
       if (isDuplicateName) return false;
 
       if (cFrom.role === 'DPS') {
-        const sameJobCount = toRun.filter(m => m.id !== cTo.id && m.role === 'DPS' && m.jobCode === cFrom.jobCode).length;
+        const sameJobCount = toRun.filter(
+          (m) =>
+            m.id !== cTo.id &&
+            m.role === 'DPS' &&
+            m.jobCode === cFrom.jobCode,
+        ).length;
         if (sameJobCount >= 2) return false;
       } else {
-        const supCount = toRun.filter(m => m.id !== cTo.id && m.role === 'SUPPORT').length;
+        const supCount = toRun.filter((m) => m.id !== cTo.id && m.role === 'SUPPORT').length;
         if (supCount >= maxSupportsPerRun) return false;
         if (maxPerRun > 4 && supCount >= 1 && (toRun.length - 1) < 4) return false;
       }
@@ -676,7 +683,6 @@ function swapSameUserCharactersToFixDuplicates(
   return runs;
 }
 
-
 // ✅ [MODIFIED] 3막 하드 삭제 및 새 로직 적용
 // - exclusions에 해당 레이드ID가 있으면 아예 제외(완료 처리)
 // - 하위 난이도로 자동 이동하지 않음
@@ -702,7 +708,7 @@ function groupCharactersByRaid(
       // ✅ 제외 로직: 해당 레이드에 제외 이력이 있으면 그냥 스킵 (완료 처리)
       const excludedList = exclusions[raidId];
       if (excludedList && excludedList.includes(ch.id)) return;
-      
+
       if (map[raidId]) {
         map[raidId].push(ch);
       }
@@ -750,9 +756,17 @@ function distributeCharactersIntoRuns(
   const runsSupPower: number[] = Array(runCount).fill(0);
   const runsPlayerCounts: Array<Record<string, number>> = Array.from({ length: runCount }, () => ({}));
 
+  // ✅ [MODIFIED] speed 모드: "최대한 한번에 많이 빼기" = 꽉 찬 런에 우선 투입
+  // - DPS 우선 정렬(서폿이 빈 런을 여는 걸 최대한 늦춤)
   let sorted: Character[] = [...characters]
     .filter((c) => !lockIds.has(c.id))
     .sort((a, b) => {
+      if (speed) {
+        // DPS 먼저, 이후 전투력 높은 순
+        if (a.role !== b.role) return a.role === 'DPS' ? -1 : 1;
+        return b.combatPower - a.combatPower || a.id.localeCompare(b.id);
+      }
+      // 기존(밸런스 모드): 서폿 먼저
       if (a.role !== b.role) return a.role === 'SUPPORT' ? -1 : 1;
       return b.combatPower - a.combatPower || a.id.localeCompare(b.id);
     });
@@ -762,13 +776,38 @@ function distributeCharactersIntoRuns(
     const currentRunCount = runsMembers.length;
 
     if (speed) {
+      // ✅ [MODIFIED] speed: "가장 찬 런"에 우선 배치 (Best-Fit by filled size)
+      // - 서폿은 size=0 런을 여는 걸 최대한 늦춤(가능하면 이미 누군가 있는 런에 넣음)
+      let bestSize = -1;
+
+      // 1) 우선: 서폿은 빈 런(0명) 제외하고 탐색
       for (let i = 0; i < currentRunCount; i++) {
-        if (canAddToRunGreedy(runsMembers[i], runsPlayerCounts[i], ch, maxPerRun, maxSupportsPerRun)) {
+        if (!canAddToRunGreedy(runsMembers[i], runsPlayerCounts[i], ch, maxPerRun, maxSupportsPerRun)) continue;
+
+        const size = runsMembers[i].length;
+        if (ch.role === 'SUPPORT' && size === 0) continue;
+
+        if (size > bestSize) {
+          bestSize = size;
           bestIndex = i;
-          break;
+        }
+      }
+
+      // 2) 그래도 못 찾으면: 빈 런 포함해서 다시 탐색
+      if (bestIndex === -1) {
+        bestSize = -1;
+        for (let i = 0; i < currentRunCount; i++) {
+          if (!canAddToRunGreedy(runsMembers[i], runsPlayerCounts[i], ch, maxPerRun, maxSupportsPerRun)) continue;
+
+          const size = runsMembers[i].length;
+          if (size > bestSize) {
+            bestSize = size;
+            bestIndex = i;
+          }
         }
       }
     } else {
+      // 기존 밸런스 모드 로직 유지
       let bestScore: [number, number, number] | null = null;
       for (let i = 0; i < currentRunCount; i++) {
         if (!canAddToRunGreedy(runsMembers[i], runsPlayerCounts[i], ch, maxPerRun, maxSupportsPerRun)) continue;
@@ -788,20 +827,57 @@ function distributeCharactersIntoRuns(
     }
 
     if (bestIndex === -1) {
+      // ✅ [MODIFIED] fallback도 speed일 때 "가장 찬 런" 선호
+      let bestSize = -1;
+
       for (let i = 0; i < currentRunCount; i++) {
         const size = runsMembers[i].length;
         if (size >= maxPerRun) continue;
         if (runsPlayerCounts[i][ch.discordName]) continue;
+
+        // 최소한의 제약만 체크(기존 fallback 유지)
         if (ch.role === 'SUPPORT') {
-          const supCount = runsMembers[i].filter(m => m.role === 'SUPPORT').length;
+          const supCount = runsMembers[i].filter((m) => m.role === 'SUPPORT').length;
           if (supCount >= maxSupportsPerRun) continue;
+          // speed일 때도 "서폿이 빈 런 여는 걸 늦춤"을 유지하려면:
+          if (speed && size === 0) continue;
         }
-        if (speed) { bestIndex = i; break; }
-        if (bestIndex === -1 || size < runsMembers[bestIndex].length) bestIndex = i;
+
+        if (!speed) {
+          // 기존: 가장 작은 런 선호
+          if (bestIndex === -1 || size < runsMembers[bestIndex].length) bestIndex = i;
+        } else {
+          // speed(꽉 채우기): 가장 큰 런 선호
+          if (size > bestSize) {
+            bestSize = size;
+            bestIndex = i;
+          }
+        }
+      }
+
+      // speed에서 서폿 때문에 size===0을 스킵해서 실패했을 수 있으니 마지막으로 한 번 허용
+      if (bestIndex === -1 && speed) {
+        let bestSize2 = -1;
+        for (let i = 0; i < currentRunCount; i++) {
+          const size = runsMembers[i].length;
+          if (size >= maxPerRun) continue;
+          if (runsPlayerCounts[i][ch.discordName]) continue;
+
+          if (ch.role === 'SUPPORT') {
+            const supCount = runsMembers[i].filter((m) => m.role === 'SUPPORT').length;
+            if (supCount >= maxSupportsPerRun) continue;
+          }
+
+          if (size > bestSize2) {
+            bestSize2 = size;
+            bestIndex = i;
+          }
+        }
       }
     }
 
     if (bestIndex === -1) {
+      // 기존 "피해자 이동" 로직 유지
       for (let candRunIdx = 0; candRunIdx < currentRunCount; candRunIdx++) {
         const candRun = runsMembers[candRunIdx];
         if (runsPlayerCounts[candRunIdx][ch.discordName]) continue;
@@ -815,11 +891,11 @@ function distributeCharactersIntoRuns(
             if (targetRun.length >= maxPerRun) continue;
             if (runsPlayerCounts[targetRunIdx][victim.discordName]) continue;
             if (victim.role === 'SUPPORT') {
-              const supCnt = targetRun.filter(m => m.role === 'SUPPORT').length;
+              const supCnt = targetRun.filter((m) => m.role === 'SUPPORT').length;
               if (supCnt >= maxSupportsPerRun) continue;
             }
 
-            const removeIdx = candRun.findIndex(v => v.id === victim.id);
+            const removeIdx = candRun.findIndex((v) => v.id === victim.id);
             if (removeIdx === -1) return false;
 
             candRun.splice(removeIdx, 1);
@@ -1071,7 +1147,6 @@ function rebalanceSupportsGlobal(runs: RaidRun[]): RaidRun[] {
 
   return result;
 }
-
 
 // ✅ [NEW] 교체(Swap) 적용 함수
 function applySwaps(
