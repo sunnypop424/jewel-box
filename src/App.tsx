@@ -1,3 +1,4 @@
+// src/App.tsx
 import React, { useEffect, useMemo, useState } from 'react';
 import type {
   Character,
@@ -5,28 +6,20 @@ import type {
   RaidExclusionMap,
   RaidSchedule,
   RaidSettingsMap,
-  RaidSwap, // ✅ 추가
+  RaidSwap,
 } from './types';
 import { buildRaidCandidatesMap, buildRaidSchedule } from './raidLogic';
 import { CharacterFormList } from './components/CharacterFormList';
 import { RaidScheduleView } from './components/RaidScheduleView';
 import { RaidSequenceView } from './components/RaidSequenceView';
-import {
-  fetchCharacters,
-  saveCharacters,
-  fetchRaidSettings,
-  setRaidSetting,
-} from './api/sheetApi';
+import { fetchCharacters, saveCharacters, fetchRaidSettings, setRaidSetting } from './api/sheetApi';
 import {
   fetchRaidExclusions,
   excludeCharacterOnRaid,
   resetRaidExclusions,
-  excludeCharactersOnRaid, // ✅ 추가 (일괄 제외)
+  excludeCharactersOnRaid,
 } from './api/exclusionApi';
-import {
-  fetchSwaps, // ✅ 추가
-  addSwap,    // ✅ 추가
-} from './api/swapApi';
+import { fetchSwaps, addSwap } from './api/swapApi';
 import { Modal } from './components/Modal';
 import { RAID_META } from './constants';
 import {
@@ -46,11 +39,9 @@ import {
   User,
 } from 'lucide-react';
 
-// ✅ 라우팅 추가
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 
 type Theme = 'light' | 'dark';
-// ✅ 전투력 밸런싱 모드 (스피드 추가)
 type BalanceMode = 'overall' | 'role' | 'speed';
 
 interface Squad {
@@ -62,7 +53,7 @@ const LOCAL_SQUAD_KEY = 'raidSquad_v1';
 const THEME_KEY = 'raidTheme_v1';
 
 // ==============================
-// ✅ [NEW] 유저별 진행 현황판 (App 상단에 배치)
+// ✅ 유저별 진행 현황판
 // ==============================
 
 type RaidProgressState = 'DONE' | 'ASSIGNED' | 'UNASSIGNED';
@@ -101,10 +92,8 @@ function UserRaidProgressPanel(props: {
 }) {
   const { characters, raidCandidates, exclusions, schedule } = props;
 
-  // ✅ [NEW] 패널 토글 상태 (기본값 false = 접힘)
   const [isExpanded, setIsExpanded] = useState(false);
 
-  // 1. 데이터 가공 (기존 로직 유지)
   const assignedByRaid = useMemo(() => buildAssignedIndex(schedule), [schedule]);
 
   const users = useMemo(() => {
@@ -122,13 +111,11 @@ function UserRaidProgressPanel(props: {
 
     arr.sort(
       (a, b) =>
-        b.chars.length - a.chars.length ||
-        a.discordName.localeCompare(b.discordName),
+        b.chars.length - a.chars.length || a.discordName.localeCompare(b.discordName),
     );
     return arr;
   }, [characters]);
 
-  // 2. 상태 판단 로직 (기존 유지)
   const getState = (raidId: RaidId, charId: string): RaidProgressState => {
     const done = (exclusions?.[raidId] ?? []).includes(charId);
     if (done) return 'DONE';
@@ -139,7 +126,6 @@ function UserRaidProgressPanel(props: {
 
   const candidatesByRaid = raidCandidates ?? {};
 
-  // 3. 스타일 헬퍼 (기존 유지)
   const getStatusStyles = (state: RaidProgressState) => {
     switch (state) {
       case 'DONE':
@@ -154,7 +140,6 @@ function UserRaidProgressPanel(props: {
 
   return (
     <section className="rounded-3xl bg-white shadow-sm ring-1 ring-zinc-900/5 transition-all dark:bg-zinc-900 dark:ring-zinc-800">
-      {/* ✅ [NEW] 토글 헤더 버튼 */}
       <button
         type="button"
         onClick={() => setIsExpanded(!isExpanded)}
@@ -181,34 +166,29 @@ function UserRaidProgressPanel(props: {
         />
       </button>
 
-      {/* ✅ [NEW] 펼쳐졌을 때만 보이는 내용 */}
       {isExpanded && (
         <div className="border-t border-zinc-100 px-6 py-6 dark:border-zinc-800">
-          
-          {/* 범례 (Legend) - 펼쳤을 때 노출 */}
           <div className="mb-4 flex justify-end gap-3 text-xs font-medium text-zinc-500 dark:text-zinc-400">
             <span className="flex items-center gap-1.5">
-              <span className="h-2 w-2 rounded-full bg-amber-400 ring-1 ring-amber-400/50"></span>
+              <span className="h-2 w-2 rounded-full bg-amber-400 ring-1 ring-amber-400/50" />
               대기
             </span>
             <span className="flex items-center gap-1.5">
-              <span className="h-2 w-2 rounded-full bg-blue-500 ring-1 ring-blue-500/50"></span>
+              <span className="h-2 w-2 rounded-full bg-blue-500 ring-1 ring-blue-500/50" />
               배치
             </span>
             <span className="flex items-center gap-1.5">
-              <span className="h-2 w-2 rounded-full bg-zinc-300 ring-1 ring-zinc-300/50"></span>
+              <span className="h-2 w-2 rounded-full bg-zinc-300 ring-1 ring-zinc-300/50" />
               완료
             </span>
           </div>
 
-          {/* Masonry-like Grid Layout */}
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
             {users.map(({ discordName, chars }) => (
               <div
                 key={discordName}
                 className="flex flex-col gap-2 rounded-xl border border-zinc-200 bg-zinc-50/50 p-3 dark:border-zinc-800 dark:bg-zinc-900/50"
               >
-                {/* 유저 헤더 */}
                 <div className="flex items-center justify-between border-b border-zinc-200/60 pb-2 dark:border-zinc-700/60">
                   <div className="flex items-center gap-2">
                     <div className="flex h-6 w-6 items-center justify-center rounded bg-white text-zinc-500 shadow-sm dark:bg-zinc-800 dark:text-zinc-400">
@@ -223,7 +203,6 @@ function UserRaidProgressPanel(props: {
                   </span>
                 </div>
 
-                {/* 캐릭터 리스트 */}
                 <div className="flex flex-col gap-1.5">
                   {chars.map((c) => {
                     const raidsForChar = RAID_ORDER_FOR_PROGRESS.filter((raidId) =>
@@ -237,9 +216,7 @@ function UserRaidProgressPanel(props: {
                         key={c.id}
                         className="group flex items-center justify-between gap-2 rounded-lg bg-white p-1.5 shadow-sm ring-1 ring-zinc-900/5 dark:bg-zinc-900 dark:ring-zinc-800"
                       >
-                        {/* 좌측: 직업 아이콘 + 이름 + 스펙 */}
                         <div className="flex min-w-0 items-center gap-2">
-                          {/* 직업 아이콘 (작게) */}
                           <div
                             className={`flex h-6 w-6 shrink-0 items-center justify-center rounded text-[10px] ${
                               isSup
@@ -263,7 +240,6 @@ function UserRaidProgressPanel(props: {
                           </div>
                         </div>
 
-                        {/* 우측: 레이드 상태 배지들 */}
                         <div className="flex flex-wrap justify-end gap-1 text-right">
                           {raidsForChar.length === 0 ? (
                             <span className="text-[9px] text-zinc-300 px-1">-</span>
@@ -278,9 +254,7 @@ function UserRaidProgressPanel(props: {
                                   key={raidId}
                                   className={`inline-flex items-center rounded px-1.5 py-0.5 text-[9px] font-bold ${style}`}
                                 >
-                                  {state === 'DONE' && (
-                                    <Check size={8} className="mr-0.5" />
-                                  )}
+                                  {state === 'DONE' && <Check size={8} className="mr-0.5" />}
                                   {meta.label}
                                 </span>
                               );
@@ -300,9 +274,8 @@ function UserRaidProgressPanel(props: {
   );
 }
 
-
 // ==============================
-// App
+// ✅ App
 // ==============================
 
 const App: React.FC = () => {
@@ -312,41 +285,33 @@ const App: React.FC = () => {
 
   const [allCharacters, setAllCharacters] = useState<Character[]>([]);
 
-  // 내 원정대 정보 (로컬 편집용)
   const [localSquad, setLocalSquad] = useState<Squad>({
     discordName: '',
     characters: [],
   });
 
-  const [loading, setLoading] = useState(false); // 캐릭터 로딩
-  const [saving, setSaving] = useState(false); // 저장 중
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
 
-  // ✅ 기존 모달(내 원정대 관리)
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  // 🔹 레이드 제외 상태 (모든 사람이 공유)
   const [raidExclusions, setRaidExclusions] = useState<RaidExclusionMap>({});
   const [loadingExclusions, setLoadingExclusions] = useState(false);
 
-  // 🔹 레이드별 랏폿(서폿 부족) 설정 (모든 사람이 공유)
   const [raidSettings, setRaidSettings] = useState<RaidSettingsMap>({});
   const [loadingRaidSettings, setLoadingRaidSettings] = useState(false);
 
-  // ✅ [NEW] 교체(Swap) 데이터 상태
   const [raidSwaps, setRaidSwaps] = useState<RaidSwap[]>([]);
+  const [isSwapping, setIsSwapping] = useState(false);
 
-  // 🔹 전투력 밸런싱 모드 (기본값: 전체 평균 스피드 모드)
   const [balanceMode, _setBalanceMode] = useState<BalanceMode>('speed');
 
-  // 테마 설정
   const [theme, setTheme] = useState<Theme>(() => {
     if (typeof window === 'undefined') return 'light';
     const stored = window.localStorage.getItem(THEME_KEY) as Theme | null;
     if (stored === 'light' || stored === 'dark') return stored;
-    return window.matchMedia?.('(prefers-color-scheme: dark)').matches
-      ? 'dark'
-      : 'light';
+    return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
   });
 
   useEffect(() => {
@@ -357,18 +322,13 @@ const App: React.FC = () => {
     window.localStorage.setItem(THEME_KEY, theme);
   }, [theme]);
 
-  // 초기 로컬 스토리지(내 원정대) 로드
   useEffect(() => {
     try {
       if (typeof window === 'undefined') return;
       const raw = window.localStorage.getItem(LOCAL_SQUAD_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
-        if (
-          parsed &&
-          typeof parsed.discordName === 'string' &&
-          Array.isArray(parsed.characters)
-        ) {
+        if (parsed && typeof parsed.discordName === 'string' && Array.isArray(parsed.characters)) {
           setLocalSquad(parsed);
         }
       }
@@ -377,13 +337,11 @@ const App: React.FC = () => {
     }
   }, []);
 
-  // 내 원정대 로컬 저장
   useEffect(() => {
     if (typeof window === 'undefined') return;
     window.localStorage.setItem(LOCAL_SQUAD_KEY, JSON.stringify(localSquad));
   }, [localSquad]);
 
-  // 전체 캐릭터 데이터 새로고침
   const refreshAllCharacters = async () => {
     try {
       setLoading(true);
@@ -404,7 +362,6 @@ const App: React.FC = () => {
     }
   };
 
-  // 제외 목록 새로고침
   const refreshExclusions = async () => {
     try {
       setLoadingExclusions(true);
@@ -417,7 +374,6 @@ const App: React.FC = () => {
     }
   };
 
-  // 랏폿 설정 새로고침
   const refreshRaidSettings = async () => {
     try {
       setLoadingRaidSettings(true);
@@ -430,7 +386,6 @@ const App: React.FC = () => {
     }
   };
 
-  // ✅ [NEW] 교체 내역 새로고침
   const refreshSwaps = async () => {
     try {
       const s = await fetchSwaps();
@@ -440,48 +395,29 @@ const App: React.FC = () => {
     }
   };
 
-  // 앱 시작 시 모든 데이터 로드
   useEffect(() => {
     refreshAllCharacters().catch(console.error);
     refreshExclusions().catch(console.error);
     refreshRaidSettings().catch(console.error);
-    refreshSwaps().catch(console.error); // ✅ 추가
+    refreshSwaps().catch(console.error);
   }, []);
 
-  // 내 원정대 반영한 전체 캐릭터
   const effectiveCharacters = useMemo(() => {
     if (!localSquad.discordName) return allCharacters;
-    const others = allCharacters.filter(
-      (c) => c.discordName !== localSquad.discordName,
-    );
+    const others = allCharacters.filter((c) => c.discordName !== localSquad.discordName);
     return [...others, ...localSquad.characters];
   }, [allCharacters, localSquad]);
 
-  // ✅ 모드 + 제외 + 교체(Swap) 내역을 반영한 레이드 스케줄
   const schedule = useMemo(
-    () =>
-      buildRaidSchedule(
-        effectiveCharacters,
-        raidExclusions,
-        balanceMode,
-        raidSettings,
-        raidSwaps // ✅ 교체 내역 전달
-      ),
+    () => buildRaidSchedule(effectiveCharacters, raidExclusions, balanceMode, raidSettings, raidSwaps),
     [effectiveCharacters, raidExclusions, balanceMode, raidSettings, raidSwaps],
   );
 
-  // ✅ 레이드별 후보풀(대상자)
   const raidCandidates = useMemo(
-    () =>
-      buildRaidCandidatesMap(
-        effectiveCharacters,
-        raidExclusions,
-        raidSettings,
-      ),
+    () => buildRaidCandidatesMap(effectiveCharacters, raidExclusions, raidSettings),
     [effectiveCharacters, raidExclusions, raidSettings],
   );
 
-  // 🔹 레이드별 랏폿 토글
   const handleToggleSupportShortage = async (raidId: RaidId, next: boolean) => {
     try {
       setStatus('랏폿 설정 저장 중...');
@@ -496,22 +432,14 @@ const App: React.FC = () => {
     }
   };
 
-  // 저장 & 동기화
-  const handleSaveAndSync = async (
-    discordName: string,
-    characters: Character[],
-  ) => {
+  const handleSaveAndSync = async (discordName: string, characters: Character[]) => {
     try {
       setSaving(true);
       await saveCharacters(discordName, characters);
       const newSquad: Squad = { discordName, characters };
       setLocalSquad(newSquad);
-      
-      // 전체 다시 로드
-      await Promise.all([
-        refreshAllCharacters(),
-        refreshSwaps() // 캐릭터 변경 시 Swap 내역에 영향 있을 수 있으므로 체크 (선택사항)
-      ]);
+
+      await Promise.all([refreshAllCharacters(), refreshSwaps()]);
 
       setIsModalOpen(false);
       setStatus(`${discordName}님의 정보가 저장되고 동기화되었습니다.`);
@@ -523,9 +451,12 @@ const App: React.FC = () => {
     }
   };
 
-  // 🔹 X 버튼으로 레이드에서 캐릭 제외
   const handleExcludeCharacterFromRaid = async (raidId: RaidId, charId: string) => {
     try {
+      if (isSwapping) {
+        alert('캐릭터 변경 반영 중입니다. 잠시 후 다시 시도해주세요.');
+        return;
+      }
       setStatus('레이드 제외 처리 중...');
       const next = await excludeCharacterOnRaid(raidId, charId);
       setRaidExclusions(next);
@@ -536,12 +467,19 @@ const App: React.FC = () => {
     }
   };
 
-  // ✅ [NEW] 공격대 일괄 완료 (Batch Exclude)
   const handleExcludeRun = async (raidId: RaidId, charIds: string[]) => {
     try {
+      if (isSwapping) {
+        alert('캐릭터 변경 반영 중입니다. 잠시 후 다시 시도해주세요.');
+        return;
+      }
+
+      const uniqIds = Array.from(new Set((charIds ?? []).map((id) => String(id ?? '').trim()).filter(Boolean)));
+      if (uniqIds.length === 0) return;
+
       setStatus('공격대 완료 처리 중...');
       const updatedBy = localSquad.discordName || 'User';
-      const next = await excludeCharactersOnRaid(raidId, charIds, updatedBy);
+      const next = await excludeCharactersOnRaid(raidId, uniqIds, updatedBy);
       setRaidExclusions(next);
       setStatus('공격대가 완료 처리되었습니다.');
     } catch (e) {
@@ -550,9 +488,9 @@ const App: React.FC = () => {
     }
   };
 
-  // ✅ [NEW] 캐릭터 교체 (Swap)
   const handleSwapCharacter = async (raidId: RaidId, charId1: string, charId2: string) => {
     try {
+      setIsSwapping(true);
       setStatus('캐릭터 교체 중...');
       const updatedBy = localSquad.discordName || 'User';
       const nextSwaps = await addSwap(raidId, charId1, charId2, updatedBy);
@@ -561,25 +499,22 @@ const App: React.FC = () => {
     } catch (e) {
       console.error(e);
       alert('캐릭터 교체 실패');
+    } finally {
+      setIsSwapping(false);
     }
   };
 
-  // 🔹 제외 및 교체 내역 초기화
   const handleResetExclusions = async () => {
     const ok = window.confirm('모든 제외 내역과 캐릭터 변경(Swap) 내역을 초기화하시겠습니까?');
     if (!ok) return;
 
     try {
       setStatus('내역 초기화 중...');
-      // 서버에서 resetRaidExclusions 호출 시 Swap 내역도 같이 초기화하도록 Apps Script 수정됨
-      await resetRaidExclusions(); 
-      
-      // 프론트 상태 동기화
-      await Promise.all([
-        refreshExclusions(),
-        refreshSwaps()
-      ]);
-      
+
+      // ✅ API 스펙상 resetExclusions가 swap도 함께 초기화
+      await resetRaidExclusions();
+
+      await Promise.all([refreshExclusions(), refreshSwaps()]);
       setStatus('모든 내역이 초기화되었습니다.');
     } catch (e) {
       console.error(e);
@@ -597,10 +532,7 @@ const App: React.FC = () => {
                 <Swords size={20} strokeWidth={2.5} />
               </div>
               <h1 className="text-lg font-bold tracking-tight sm:text-xl">
-                Lost Ark{' '}
-                <span className="text-indigo-600 dark:text-indigo-400">
-                  Raid Plan
-                </span>
+                Lost Ark <span className="text-indigo-600 dark:text-indigo-400">Raid Plan</span>
               </h1>
             </div>
 
@@ -626,9 +558,7 @@ const App: React.FC = () => {
           </div>
 
           <button
-            onClick={() =>
-              setTheme((prev) => (prev === 'light' ? 'dark' : 'light'))
-            }
+            onClick={() => setTheme((prev) => (prev === 'light' ? 'dark' : 'light'))}
             className="rounded-full bg-zinc-100 p-2 text-zinc-600 transition-colors hover:bg-zinc-200 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800"
           >
             {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
@@ -669,7 +599,7 @@ const App: React.FC = () => {
                 refreshRaidSettings();
                 refreshSwaps();
               }}
-              disabled={loading || saving}
+              disabled={loading || saving || isSwapping}
               className="group inline-flex items-center gap-2 rounded-xl border border-zinc-200 bg-white px-5 py-2.5 text-sm font-semibold text-zinc-700 transition-colors hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
             >
               <RefreshCw
@@ -683,7 +613,7 @@ const App: React.FC = () => {
 
             <button
               onClick={handleResetExclusions}
-              disabled={loadingExclusions}
+              disabled={loadingExclusions || isSwapping}
               className="group inline-flex items-center gap-2 rounded-xl border border-zinc-200 bg-white px-5 py-2.5 text-sm font-semibold text-zinc-600 transition-colors hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
             >
               <Eraser
@@ -717,9 +647,7 @@ const App: React.FC = () => {
                       <div className="mb-4 rounded-full bg-zinc-100 p-4 dark:bg-zinc-800">
                         <UserCog size={32} className="text-zinc-400" />
                       </div>
-                      <p className="text-lg font-medium text-zinc-400">
-                        등록된 캐릭터가 없습니다.
-                      </p>
+                      <p className="text-lg font-medium text-zinc-400">등록된 캐릭터가 없습니다.</p>
                       <p className="mt-1 text-sm text-zinc-500">
                         "내 원정대 관리" 버튼을 눌러 캐릭터를 등록해주세요.
                       </p>
@@ -729,10 +657,7 @@ const App: React.FC = () => {
                       {!loading && (
                         <div className="flex items-center justify-between px-1">
                           <h3 className="flex items-center gap-2 text-lg font-bold text-zinc-900 dark:text-zinc-100">
-                            <ClipboardClock
-                              size={20}
-                              className="text-indigo-500"
-                            />
+                            <ClipboardClock size={20} className="text-indigo-500" />
                             레이드 배정 결과
                           </h3>
 
@@ -757,10 +682,10 @@ const App: React.FC = () => {
                         isRaidSettingsLoading={loadingRaidSettings}
                         onToggleSupportShortage={handleToggleSupportShortage}
                         raidCandidates={raidCandidates}
-                        // ✅ [NEW] Props 전달
                         onSwapCharacter={handleSwapCharacter}
                         onExcludeRun={handleExcludeRun}
                         allCharacters={effectiveCharacters}
+                        isSwapping={isSwapping}
                       />
                     </div>
                   )}
@@ -778,9 +703,7 @@ const App: React.FC = () => {
                     onSubmit={handleSaveAndSync}
                     onCancel={() => setIsModalOpen(false)}
                     onLoadByDiscordName={(targetName: string) => {
-                      return allCharacters.filter(
-                        (c) => c.discordName === targetName,
-                      );
+                      return allCharacters.filter((c) => c.discordName === targetName);
                     }}
                   />
                 </Modal>
@@ -808,12 +731,14 @@ const App: React.FC = () => {
                   </button>
                 </div>
 
-                <RaidSequenceView 
-                  schedule={schedule} 
-                  balanceMode={balanceMode} 
-                  onSwapCharacter={handleSwapCharacter} // 추가
-                  allCharacters={effectiveCharacters}   // 추가
-                  onExclusionsUpdated={(next) => setRaidExclusions(next)} // 상태 동기화용
+                <RaidSequenceView
+                  schedule={schedule}
+                  balanceMode={balanceMode}
+                  onSwapCharacter={handleSwapCharacter}
+                  allCharacters={effectiveCharacters}
+                  onExclusionsUpdated={(next) => setRaidExclusions(next)}
+                  isSwapping={isSwapping}
+                  updatedBy={localSquad.discordName || 'User'}
                 />
               </section>
             }

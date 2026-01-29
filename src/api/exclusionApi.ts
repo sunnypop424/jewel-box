@@ -63,17 +63,31 @@ export async function excludeCharactersOnRaid(
   characterIds: string[],
   updatedBy?: string,
 ): Promise<RaidExclusionMap> {
-  const uniq = Array.from(new Set(characterIds)).filter(Boolean);
+  if (!BASE_URL) return {};
+
+  const uniq = Array.from(new Set(characterIds))
+    .map((id) => String(id || '').trim())
+    .filter(Boolean);
+
   if (uniq.length === 0) return await fetchRaidExclusions();
 
-  // Apps Script가 단건 exclude만 지원해도 OK (시트에는 row가 누적됨)
-  for (const id of uniq) {
-    await excludeCharacterOnRaid(raidId, id, updatedBy);
-  }
+  const payload = {
+    action: 'batchExclude',
+    raidId,
+    characterIds: uniq,
+    updatedBy,
+  };
 
-  // 최신 exclusions 재조회 (안정)
-  return await fetchRaidExclusions();
+  const res = await fetch(BASE_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify(payload),
+  });
+
+  const data = await parseJson(res); // ExclusionResponse { ok, exclusions }
+  return data.exclusions || {};
 }
+
 
 // 🔹 제외 내역 전체 초기화 (POST)
 export async function resetRaidExclusions(): Promise<RaidExclusionMap> {
