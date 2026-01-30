@@ -91,15 +91,13 @@ export const CharacterFormList: React.FC<Props> = ({
     }
   };
 
-  // const isModified = useMemo(() => {
-  //   if (localDiscord !== discordName) return true;
-  //   const originalRows = characters.map(c => ({
-  //     id: c.id, discordName: c.discordName, jobCode: c.jobCode, 
-  //     role: c.role, itemLevel: c.itemLevel, combatPower: c.combatPower
-  //   }));
-  //   if (originalRows.length !== rows.length) return true;
-  //   return JSON.stringify(originalRows) !== JSON.stringify(rows);
-  // }, [localDiscord, rows, discordName, characters]);
+  // ✅ [추가] 엔터키 핸들러
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault(); // 폼 제출 방지 (혹시 form 태그 안에 있다면)
+      handleFetchFromCloud();
+    }
+  };
 
   const handleChangeRow = (index: number, field: keyof CharacterFormRow, value: any) => {
     setRows(prev => prev.map((row, i) => {
@@ -188,6 +186,7 @@ export const CharacterFormList: React.FC<Props> = ({
                 setLocalDiscord(v);
                 setRows(prev => prev.map(r => ({ ...r, discordName: v })));
               }}
+              onKeyDown={handleKeyDown} // ✅ [추가] 엔터키 이벤트 연결
               placeholder="Nickname#1234"
               disabled={isLoading || isFetching}
             />
@@ -204,7 +203,7 @@ export const CharacterFormList: React.FC<Props> = ({
           </button>
         </div>
         <p className="mt-2 text-[11px] text-zinc-500">
-          다른 기기에서 접속했다면 닉네임을 입력하고 <b>불러오기</b>를 눌러주세요.
+          다른 기기에서 접속했다면 닉네임을 입력하고 <b>불러오기</b>(엔터)를 눌러주세요.
         </p>
       </div>
 

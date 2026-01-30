@@ -132,7 +132,7 @@ export const RaidScheduleView: React.FC<Props> = ({
         {[1, 2, 3].map((i) => (
           <div
             key={i}
-            className="h-40 animate-pulse rounded-3xl bg-zinc-200 dark:bg-zinc-800"
+            className="h-40 animate-pulse rounded-2xl bg-zinc-200 dark:bg-zinc-800"
           />
         ))}
       </div>
@@ -193,7 +193,7 @@ export const RaidScheduleView: React.FC<Props> = ({
         return (
           <div
             key={raidId}
-            className={`overflow-hidden rounded-3xl border shadow-sm dark:bg-zinc-900 ${containerBorder}`}
+            className={`overflow-hidden rounded-2xl border shadow-sm dark:bg-zinc-900 ${containerBorder}`}
           >
             <button
               type="button"
