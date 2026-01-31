@@ -103,8 +103,7 @@ function promoteValkyToSupportIfNeeded(
     )
     .slice()
     .sort(
-      (a, b) =>
-        a.combatPower - b.combatPower || a.id.localeCompare(b.id),
+      (a, b) => a.combatPower - b.combatPower || a.id.localeCompare(b.id),
     );
 
   if (candidates.length === 0) return characters;
@@ -228,7 +227,17 @@ function shouldReserveLastSlotForSupport(
   );
 }
 
+/**
+ * ✅ 세르카 직업 중복 규칙:
+ * - 세르카(4인): 같은 직업 DPS는 최대 1명(=중복 2명 이상 금지)
+ * - 그 외(8인): 같은 직업 DPS는 최대 2명(기존 유지)
+ */
+function getMaxSameJobDpsInRun(raidId: RaidId): number {
+  return isSerkaRaid(raidId) ? 1 : 2;
+}
+
 function canAddToRunGreedy(
+  raidId: RaidId,
   runMembers: Character[],
   runPlayerCounts: Record<string, number>,
   ch: Character,
@@ -251,7 +260,9 @@ function canAddToRunGreedy(
     const sameJob = runMembers.filter(
       (m) => m.role === 'DPS' && m.jobCode === ch.jobCode,
     ).length;
-    if (sameJob >= 2) return false;
+
+    const maxSameJobDps = getMaxSameJobDpsInRun(raidId);
+    if (sameJob >= maxSameJobDps) return false;
   } else {
     // SUPPORT
     if (supCountNow >= maxSupportsPerRun) return false;
@@ -261,6 +272,7 @@ function canAddToRunGreedy(
 }
 
 function canAddToRunLocalSearch(
+  raidId: RaidId,
   runMembers: Character[],
   ch: Character,
   maxPerRun: number,
@@ -282,7 +294,9 @@ function canAddToRunLocalSearch(
     const sameJob = runMembers.filter(
       (m) => m.role === 'DPS' && m.jobCode === ch.jobCode,
     ).length;
-    if (sameJob >= 2) return false;
+
+    const maxSameJobDps = getMaxSameJobDpsInRun(raidId);
+    if (sameJob >= maxSameJobDps) return false;
   } else {
     if (supCountNow >= maxSupportsPerRun) return false;
   }
@@ -294,6 +308,7 @@ function canAddToRunLocalSearch(
  * ⚖️ [Balance Mode] 인원 이동(Move)까지 포함한 최적화
  */
 function optimizeRunsByStdDev(
+  raidId: RaidId,
   runsMembers: Character[][],
   maxPerRun: number,
   maxSupportsPerRun: number,
@@ -336,6 +351,7 @@ function optimizeRunsByStdDev(
 
     if (
       !canAddToRunLocalSearch(
+        raidId,
         toRun,
         ch,
         maxPerRun,
@@ -366,6 +382,7 @@ function optimizeRunsByStdDev(
  * ⚡️ [Speed Mode] 인원 수 유지(Swap Only) 최적화
  */
 function optimizeCombatPowerBySwapOnly(
+  raidId: RaidId,
   runsMembers: Character[][],
   maxSupportsPerRun: number,
   dim: BalanceDimension,
@@ -378,6 +395,8 @@ function optimizeCombatPowerBySwapOnly(
 
   let bestCost = computeRunsCost(runs, dim);
   const maxIterations = runs.flat().length * 100;
+
+  const maxSameJobDps = getMaxSameJobDpsInRun(raidId);
 
   for (let iter = 0; iter < maxIterations; iter++) {
     const r1 = Math.floor(random() * runCount);
@@ -406,7 +425,9 @@ function optimizeCombatPowerBySwapOnly(
             m.role === 'DPS' &&
             m.jobCode === cFrom.jobCode,
         ).length;
-        if (sameJobCount >= 2) return false;
+
+        // ✅ 세르카면 1명이라도 있으면 swap 불가
+        if (sameJobCount >= maxSameJobDps) return false;
       } else {
         const supCount = toRun.filter(
           (m) => m.id !== cTo.id && m.role === 'SUPPORT',
@@ -437,6 +458,7 @@ function optimizeCombatPowerBySwapOnly(
  * ✅ speed 모드에서 "앞 런부터 최대한 꽉 채우기" 압축(Front-load Compaction)
  */
 function compactRunsFrontloadedForSpeed(
+  raidId: RaidId,
   runsMembers: Character[][],
   maxPerRun: number,
   maxSupportsPerRun: number,
@@ -465,6 +487,7 @@ function compactRunsFrontloadedForSpeed(
         for (const ch of candidates) {
           if (
             !canAddToRunGreedy(
+              raidId,
               runs[i],
               countsI,
               ch,
@@ -492,6 +515,7 @@ function compactRunsFrontloadedForSpeed(
 }
 
 function adjustSoloLastRunStrongCharacter(
+  raidId: RaidId,
   runsMembers: Character[][],
   maxPerRun: number,
   maxSupportsPerRun: number,
@@ -572,6 +596,7 @@ function adjustSoloLastRunStrongCharacter(
       const donorCountsAfter = buildPlayerCounts(donorRunWithoutDonor);
 
       const canPlaceDonorInSolo = canAddToRunGreedy(
+        raidId,
         soloRunWithoutSolo,
         soloCountsAfter,
         donorChar,
@@ -581,6 +606,7 @@ function adjustSoloLastRunStrongCharacter(
       );
 
       const canPlaceSoloInDonor = canAddToRunGreedy(
+        raidId,
         donorRunWithoutDonor,
         donorCountsAfter,
         originalSolo,
@@ -607,6 +633,7 @@ function adjustSoloLastRunStrongCharacter(
 }
 
 function minimizeSameJobInRuns(
+  raidId: RaidId,
   runsMembers: Character[][],
   maxPerRun: number,
   maxSupportsPerRun: number,
@@ -615,6 +642,12 @@ function minimizeSameJobInRuns(
   const runs = runsMembers.map((r) => [...r]);
   const runCount = runs.length;
   if (runCount <= 1) return runs;
+
+  // ✅ 세르카: 2부터 중복(=2명 이상)이므로 해소 대상
+  // ✅ 그외: 3부터 해소 대상(2명까지 허용 유지)
+  const dupThreshold = isSerkaRaid(raidId) ? 2 : 3;
+  const keepUntil = isSerkaRaid(raidId) ? 1 : 2;
+  const targetMaxSameJob = getMaxSameJobDpsInRun(raidId);
 
   const buildPlayerCounts = (members: Character[]) => {
     const counts: Record<string, number> = {};
@@ -632,13 +665,13 @@ function minimizeSameJobInRuns(
       jobCounts[c.jobCode] = (jobCounts[c.jobCode] || 0) + 1;
     });
 
-    const duplicatedJobCodes = Object.keys(jobCounts).filter((job) => jobCounts[job] >= 3);
+    const duplicatedJobCodes = Object.keys(jobCounts).filter((job) => jobCounts[job] >= dupThreshold);
     if (duplicatedJobCodes.length === 0) continue;
 
     for (const ch of [...run]) {
       if (ch.role !== 'DPS') continue;
       if (!duplicatedJobCodes.includes(ch.jobCode)) continue;
-      if (jobCounts[ch.jobCode] <= 2) continue;
+      if (jobCounts[ch.jobCode] <= keepUntil) continue;
 
       for (let targetIdx = 0; targetIdx < runCount; targetIdx++) {
         if (targetIdx === ri) continue;
@@ -647,12 +680,14 @@ function minimizeSameJobInRuns(
         const sameJobInTargetCount = targetRun.filter(
           (m) => m.role === 'DPS' && m.jobCode === ch.jobCode,
         ).length;
-        if (sameJobInTargetCount >= 2) continue;
+
+        if (sameJobInTargetCount >= targetMaxSameJob) continue;
 
         const targetCounts = buildPlayerCounts(targetRun);
 
         if (
           !canAddToRunGreedy(
+            raidId,
             targetRun,
             targetCounts,
             ch,
@@ -679,10 +714,16 @@ function minimizeSameJobInRuns(
 }
 
 // ✅ 같은 유저의 캐릭터끼리 스왑해서 직업 중복을 해결하는 로직 (전투력 고려)
-function swapSameUserCharactersToFixDuplicates(runsMembers: Character[][]): Character[][] {
+function swapSameUserCharactersToFixDuplicates(
+  raidId: RaidId,
+  runsMembers: Character[][],
+): Character[][] {
   const runs = runsMembers.map((r) => [...r]);
   const runCount = runs.length;
   if (runCount <= 1) return runs;
+
+  // ✅ 세르카: 2부터, 그외: 3부터 중복 해소 대상으로 본다
+  const dupThreshold = isSerkaRaid(raidId) ? 2 : 3;
 
   for (let ri = 0; ri < runCount; ri++) {
     const run = runs[ri];
@@ -694,7 +735,7 @@ function swapSameUserCharactersToFixDuplicates(runsMembers: Character[][]): Char
       jobCounts[c.jobCode] = (jobCounts[c.jobCode] || 0) + 1;
     });
 
-    const dupJobs = Object.keys(jobCounts).filter((j) => jobCounts[j] >= 3);
+    const dupJobs = Object.keys(jobCounts).filter((j) => jobCounts[j] >= dupThreshold);
     if (dupJobs.length === 0) continue;
 
     for (const ch of [...run]) {
@@ -715,6 +756,8 @@ function swapSameUserCharactersToFixDuplicates(runsMembers: Character[][]): Char
           if (t.id === ch.id) continue;
           if (t.role !== 'DPS') continue;
 
+          // ✅ 세르카는 직업 중복 자체가 불가(=존재하면 안됨)
+          // ✅ 그외는 더 느슨하게 만들 수도 있지만, 현재 로직은 보수적으로 유지
           const hasMyJobInTarget = targetRun.some(
             (m) => m.id !== t.id && m.jobCode === ch.jobCode,
           );
@@ -801,11 +844,11 @@ function distributeCharactersIntoRuns(
   if (characters.length === 0) return [];
 
   console.log(
-  raidId,
-  'uniqueUsers=',
-  new Set(characters.map(c => c.discordName)).size,
-  Array.from(new Set(characters.map(c => c.discordName))),
-);
+    raidId,
+    'uniqueUsers=',
+    new Set(characters.map((c) => c.discordName)).size,
+    Array.from(new Set(characters.map((c) => c.discordName))),
+  );
 
   const cfg = getRaidConfig(raidId);
   const maxSupportsPerRun = cfg.maxSupportsPerRun;
@@ -843,6 +886,7 @@ function distributeCharactersIntoRuns(
   const runsPlayerCounts: Array<Record<string, number>> = Array.from({ length: runCount }, () => ({}));
 
   const isSerka = isSerkaRaid(raidId);
+  const maxSameJobDps = getMaxSameJobDpsInRun(raidId);
 
   let sorted: Character[] = [...characters]
     .filter((c) => !lockIds.has(c.id))
@@ -871,6 +915,7 @@ function distributeCharactersIntoRuns(
       for (let i = 0; i < currentRunCount; i++) {
         if (
           !canAddToRunGreedy(
+            raidId,
             runsMembers[i],
             runsPlayerCounts[i],
             ch,
@@ -893,6 +938,7 @@ function distributeCharactersIntoRuns(
       for (let i = 0; i < currentRunCount; i++) {
         if (
           !canAddToRunGreedy(
+            raidId,
             runsMembers[i],
             runsPlayerCounts[i],
             ch,
@@ -919,6 +965,7 @@ function distributeCharactersIntoRuns(
       }
     }
 
+    // ✅ 2차 fallback (원래 canAddToRunGreedy를 안 타는 구간)에도 "세르카 직업중복" 포함
     if (bestIndex === -1) {
       let bestSize = -1;
 
@@ -936,6 +983,12 @@ function distributeCharactersIntoRuns(
             const remainingSlots = maxPerRun - runsMembers[i].length;
             if (supCountNow === 0 && remainingSlots === 1) continue;
           }
+
+          // ✅ 세르카/그외 직업중복 제한
+          const sameJob = runsMembers[i].filter(
+            (m) => m.role === 'DPS' && m.jobCode === ch.jobCode,
+          ).length;
+          if (sameJob >= maxSameJobDps) continue;
         }
 
         if (size > bestSize) {
@@ -945,6 +998,7 @@ function distributeCharactersIntoRuns(
       }
     }
 
+    // ✅ 강제 이동(victim move) 구간도 "세르카 직업중복" 체크 추가 (안 하면 세르카 규칙이 뚫릴 수 있음)
     if (bestIndex === -1) {
       for (let candRunIdx = 0; candRunIdx < currentRunCount; candRunIdx++) {
         const candRun = runsMembers[candRunIdx];
@@ -968,6 +1022,12 @@ function distributeCharactersIntoRuns(
                 const remainingSlots = maxPerRun - targetRun.length;
                 if (supCountNow === 0 && remainingSlots === 1) continue;
               }
+
+              // ✅ 세르카/그외 직업중복 제한
+              const sameJob = targetRun.filter(
+                (m) => m.role === 'DPS' && m.jobCode === victim.jobCode,
+              ).length;
+              if (sameJob >= maxSameJobDps) continue;
             }
 
             const removeIdx = candRun.findIndex((v) => v.id === victim.id);
@@ -1015,6 +1075,7 @@ function distributeCharactersIntoRuns(
 
   if (speed) {
     optimizedRunsMembers = optimizeCombatPowerBySwapOnly(
+      raidId,
       runsMembers,
       maxSupportsPerRun,
       dim,
@@ -1023,6 +1084,7 @@ function distributeCharactersIntoRuns(
     );
 
     optimizedRunsMembers = compactRunsFrontloadedForSpeed(
+      raidId,
       optimizedRunsMembers,
       maxPerRun,
       maxSupportsPerRun,
@@ -1030,6 +1092,7 @@ function distributeCharactersIntoRuns(
     );
   } else {
     optimizedRunsMembers = optimizeRunsByStdDev(
+      raidId,
       runsMembers,
       maxPerRun,
       maxSupportsPerRun,
@@ -1041,13 +1104,16 @@ function distributeCharactersIntoRuns(
   }
 
   let afterJobAdjust = minimizeSameJobInRuns(
+    raidId,
     optimizedRunsMembers,
     maxPerRun,
     maxSupportsPerRun,
     reserveLastSlotForSupport,
   );
-  afterJobAdjust = swapSameUserCharactersToFixDuplicates(afterJobAdjust);
+  afterJobAdjust = swapSameUserCharactersToFixDuplicates(raidId, afterJobAdjust);
+
   optimizedRunsMembers = adjustSoloLastRunStrongCharacter(
+    raidId,
     afterJobAdjust,
     maxPerRun,
     maxSupportsPerRun,
@@ -1121,7 +1187,9 @@ function splitIntoPartiesLossless(members: Character[], raidId: RaidId): RaidRun
       if (p.members.length >= maxPartySize) continue;
 
       const distinctDps = dps.find(
-        (d) => !usedIds.has(d.id) && !p.members.some((m) => m.role === 'DPS' && m.jobCode === d.jobCode),
+        (d) =>
+          !usedIds.has(d.id) &&
+          !p.members.some((m) => m.role === 'DPS' && m.jobCode === d.jobCode),
       );
 
       if (distinctDps) {
@@ -1137,7 +1205,9 @@ function splitIntoPartiesLossless(members: Character[], raidId: RaidId): RaidRun
       if (p.members.length >= maxPartySize) continue;
 
       const distinctDps = dps.find(
-        (d) => !usedIds.has(d.id) && !p.members.some((m) => m.role === 'DPS' && m.jobCode === d.jobCode),
+        (d) =>
+          !usedIds.has(d.id) &&
+          !p.members.some((m) => m.role === 'DPS' && m.jobCode === d.jobCode),
       );
 
       if (distinctDps) {
