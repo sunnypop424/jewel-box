@@ -632,22 +632,22 @@ function minimizeSameJobInRuns(
       jobCounts[c.jobCode] = (jobCounts[c.jobCode] || 0) + 1;
     });
 
-    const duplicatedJobCodes = Object.keys(jobCounts).filter((job) => jobCounts[job] >= 2);
+    const duplicatedJobCodes = Object.keys(jobCounts).filter((job) => jobCounts[job] >= 3);
     if (duplicatedJobCodes.length === 0) continue;
 
     for (const ch of [...run]) {
       if (ch.role !== 'DPS') continue;
       if (!duplicatedJobCodes.includes(ch.jobCode)) continue;
-      if (jobCounts[ch.jobCode] <= 1) continue;
+      if (jobCounts[ch.jobCode] <= 2) continue;
 
       for (let targetIdx = 0; targetIdx < runCount; targetIdx++) {
         if (targetIdx === ri) continue;
 
         const targetRun = runs[targetIdx];
-        const hasSameJobInTarget = targetRun.some(
+        const sameJobInTargetCount = targetRun.filter(
           (m) => m.role === 'DPS' && m.jobCode === ch.jobCode,
-        );
-        if (hasSameJobInTarget) continue;
+        ).length;
+        if (sameJobInTargetCount >= 2) continue;
 
         const targetCounts = buildPlayerCounts(targetRun);
 
@@ -694,7 +694,7 @@ function swapSameUserCharactersToFixDuplicates(runsMembers: Character[][]): Char
       jobCounts[c.jobCode] = (jobCounts[c.jobCode] || 0) + 1;
     });
 
-    const dupJobs = Object.keys(jobCounts).filter((j) => jobCounts[j] >= 2);
+    const dupJobs = Object.keys(jobCounts).filter((j) => jobCounts[j] >= 3);
     if (dupJobs.length === 0) continue;
 
     for (const ch of [...run]) {
@@ -799,6 +799,13 @@ function distributeCharactersIntoRuns(
   random: () => number,
 ): RaidRun[] {
   if (characters.length === 0) return [];
+
+  console.log(
+  raidId,
+  'uniqueUsers=',
+  new Set(characters.map(c => c.discordName)).size,
+  Array.from(new Set(characters.map(c => c.discordName))),
+);
 
   const cfg = getRaidConfig(raidId);
   const maxSupportsPerRun = cfg.maxSupportsPerRun;
