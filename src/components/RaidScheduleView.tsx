@@ -271,7 +271,7 @@ export const RaidScheduleView: React.FC<Props> = ({
                   }
                   canExclude={Boolean(onExcludeCharacter) && !isSwapping}
                 />
-
+                <div className="grid gap-4 lg:grid-cols-3 lg:gap-6 p-6">
                 {runs.map((run: RaidRun) => {
                   const runKey = `${raidId}-${run.runIndex}`;
                   const isRunOpen = runOpenState[runKey] ?? true;
@@ -319,7 +319,7 @@ export const RaidScheduleView: React.FC<Props> = ({
                   const isCompleting = completingKey === completeBtnKey;
 
                   return (
-                    <div key={run.runIndex} className="p-5">
+                    <div key={run.runIndex}>
                       <div className="flex items-center justify-between rounded-xl bg-zinc-50 px-3 py-2 dark:bg-zinc-900/60">
                         <button
                           onClick={() => toggleRun(raidId as string, run.runIndex)}
@@ -516,7 +516,7 @@ export const RaidScheduleView: React.FC<Props> = ({
                                       key={i}
                                       className="flex items-center justify-center gap-2 rounded-xl border border-dashed border-zinc-200 py-3 text-xs text-zinc-400 dark:border-zinc-800 dark:text-zinc-600"
                                     >
-                                      <User size={14} className="opacity-50" /> 빈 자리
+                                      <User size={14} className="opacity-50 min-h-[30.5px]" /> 빈 자리
                                     </div>
                                   ))}
                                 </div>
@@ -528,6 +528,7 @@ export const RaidScheduleView: React.FC<Props> = ({
                     </div>
                   );
                 })}
+                </div>
               </div>
             )}
           </div>

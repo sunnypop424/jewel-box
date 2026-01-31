@@ -446,7 +446,7 @@ const App: React.FC = () => {
 
         {/* Scrollable Content */}
         <div className="flex-1 overflow-y-auto bg-zinc-50/50 p-4 dark:bg-zinc-950 sm:p-6 lg:p-8">
-          <div className="mx-auto max-w-7xl space-y-6">
+          <div className="mx-auto space-y-6">
             <Routes>
               {/* PAGE 1: 개인별 진행 현황 */}
               <Route

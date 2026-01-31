@@ -96,7 +96,7 @@ export function UserRaidProgressPanel({
     return (
         <div className="space-y-6">
 
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-6">
                 {users.map(({ discordName, chars }) => (
                     <div
                         key={discordName}
