@@ -97,6 +97,66 @@ export const RaidScheduleView: React.FC<Props> = ({
     return map;
   }, [schedule]);
 
+  
+  if (!schedule) return null;
+
+    // ✅ 전역 유저 컬러맵: 레이드가 달라도 같은 유저는 같은 색
+  const nameCollator = useMemo(
+    () => new Intl.Collator('ko', { sensitivity: 'base', numeric: true }),
+    [],
+  );
+
+  const userColorMap = useMemo(() => {
+    // schedule에 실제로 등장하는 유저들을 기준으로(또는 allCharacters 기준으로도 가능)
+    const names: string[] = [];
+
+    (Object.keys(schedule) as RaidId[]).forEach((raidId) => {
+      const runs = schedule[raidId] ?? [];
+      runs.forEach((r) =>
+        r.parties.forEach((p) =>
+          p.members.forEach((m) => {
+            if (m?.discordName) names.push(m.discordName);
+          }),
+        ),
+      );
+    });
+
+    // exclusions/미배치까지 포함해서 색을 고정하고 싶으면 candidates도 포함
+    (Object.keys(candidatesFallback) as RaidId[]).forEach((raidId) => {
+      (candidatesFallback[raidId] ?? []).forEach((m) => {
+        if (m?.discordName) names.push(m.discordName);
+      });
+    });
+
+    const uniq = Array.from(new Set(names)).sort((a, b) =>
+      nameCollator.compare(a, b),
+    );
+
+    const map = new Map<string, number>();
+    uniq.forEach((n, i) => map.set(n, i));
+    return map;
+  }, [schedule, candidatesFallback, nameCollator]);
+
+  const getUserCardClass = (discordName: string) => {
+    const idx = userColorMap.get(discordName) ?? 0;
+
+    const palette = [
+      'bg-blue-50 ring-blue-200 dark:bg-blue-950/30 dark:ring-blue-900/50',
+      'bg-rose-50 ring-rose-200 dark:bg-rose-950/30 dark:ring-rose-900/50',
+      'bg-amber-50 ring-amber-200 dark:bg-amber-950/30 dark:ring-amber-900/50',
+      'bg-emerald-50 ring-emerald-200 dark:bg-emerald-950/30 dark:ring-emerald-900/50',
+      'bg-violet-50 ring-violet-200 dark:bg-violet-950/30 dark:ring-violet-900/50',
+      'bg-cyan-50 ring-cyan-200 dark:bg-cyan-950/30 dark:ring-cyan-900/50',
+      'bg-lime-50 ring-lime-200 dark:bg-lime-950/30 dark:ring-lime-900/50',
+      'bg-fuchsia-50 ring-fuchsia-200 dark:bg-fuchsia-950/30 dark:ring-fuchsia-900/50',
+      'bg-slate-50 ring-slate-200 dark:bg-slate-950/30 dark:ring-slate-900/50',
+      'bg-stone-50 ring-stone-200 dark:bg-stone-950/30 dark:ring-stone-900/50',
+    ];
+
+    return palette[idx % palette.length];
+  };
+
+
   const toggleRaid = (raidId: string) => {
     setRaidOpenState((prev) => ({ ...prev, [raidId]: !(prev[raidId] ?? true) }));
   };
@@ -138,8 +198,6 @@ export const RaidScheduleView: React.FC<Props> = ({
       </div>
     );
   }
-
-  if (!schedule) return null;
 
   const RAID_ORDER: (keyof RaidSchedule)[] = [
     'ACT4_NORMAL',
@@ -270,6 +328,8 @@ export const RaidScheduleView: React.FC<Props> = ({
                     )
                   }
                   canExclude={Boolean(onExcludeCharacter) && !isSwapping}
+                  getUserCardClass={getUserCardClass}
+                  userColorMap={userColorMap}
                 />
                 <div className="grid gap-4 lg:grid-cols-3 lg:gap-6 p-6">
                 {runs.map((run: RaidRun) => {
@@ -569,8 +629,10 @@ function RaidStatusBoard(props: {
   excludedIds: string[];
   canExclude: boolean;
   onExclude: (m: Character) => void | Promise<void>;
+  getUserCardClass: (discordName: string) => string;
+  userColorMap: Map<string, number>;
 }) {
-  const { candidates, runs, excludedIds } = props;
+  const { candidates, runs, excludedIds, getUserCardClass, userColorMap } = props;
 
   const uniqueCandidates = Array.from(
     new Map(candidates.map((c) => [c.id, c])).values(),
@@ -581,60 +643,22 @@ function RaidStatusBoard(props: {
     runs.flatMap((r) => r.parties.flatMap((p) => p.members.map((m) => m.id))),
   );
 
-  // ✅ 유저 이름 정렬용(한글/영문 섞여도 안정적으로)
-  const nameCollator = useMemo(
-    () => new Intl.Collator('ko', { sensitivity: 'base', numeric: true }),
-    [],
-  );
-
-  // ✅ 유저별 고정 색상 매핑 (discordName -> index)
-  const userIndexMap = useMemo(() => {
-    const names = uniqueCandidates
-      .map((c) => c.discordName || '')
-      .filter(Boolean);
-
-    const uniq = Array.from(new Set(names)).sort((a, b) => nameCollator.compare(a, b));
-
-    const map = new Map<string, number>();
-    uniq.forEach((n, i) => map.set(n, i));
-    return map;
-  }, [uniqueCandidates, nameCollator]);
-
-  // ✅ 유저별 카드 클래스 반환
-  const getUserCardClass = (discordName: string) => {
-    const idx = userIndexMap.get(discordName) ?? 0;
-
-    // Tailwind에서 안전하게 쓰기 위해 "고정 클래스 셋"을 미리 준비
-    const palette = [
-      'bg-sky-50 ring-sky-200 dark:bg-sky-950/30 dark:ring-sky-900/50',
-      'bg-rose-50 ring-rose-200 dark:bg-rose-950/30 dark:ring-rose-900/50',
-      'bg-amber-50 ring-amber-200 dark:bg-amber-950/30 dark:ring-amber-900/50',
-      'bg-emerald-50 ring-emerald-200 dark:bg-emerald-950/30 dark:ring-emerald-900/50',
-      'bg-violet-50 ring-violet-200 dark:bg-violet-950/30 dark:ring-violet-900/50',
-      'bg-cyan-50 ring-cyan-200 dark:bg-cyan-950/30 dark:ring-cyan-900/50',
-      'bg-lime-50 ring-lime-200 dark:bg-lime-950/30 dark:ring-lime-900/50',
-      'bg-fuchsia-50 ring-fuchsia-200 dark:bg-fuchsia-950/30 dark:ring-fuchsia-900/50',
-      'bg-indigo-50 ring-indigo-200 dark:bg-indigo-950/30 dark:ring-indigo-900/50',
-      'bg-teal-50 ring-teal-200 dark:bg-teal-950/30 dark:ring-teal-900/50',
-    ];
-
-    return palette[idx % palette.length];
-  };
-
   // ✅ 유저별 그룹 정렬 + 유저 내부 전투력 정렬
+  // ✅ 유저별 그룹 정렬(전역 인덱스) + 유저 내부 전투력 정렬
   const sortByUserThenPower = (a: Character, b: Character) => {
-    const nameA = a.discordName || '';
-    const nameB = b.discordName || '';
-    const byName = nameCollator.compare(nameA, nameB);
-    if (byName !== 0) return byName;
+    const ia = userColorMap.get(a.discordName || '') ?? 999999;
+    const ib = userColorMap.get(b.discordName || '') ?? 999999;
+    if (ia !== ib) return ia - ib;
 
-    // 같은 유저면 전투력 내림차순
     const byPower = (b.combatPower ?? 0) - (a.combatPower ?? 0);
     if (byPower !== 0) return byPower;
 
-    // 안정 정렬(같으면 id)
+    const byJob = String(a.jobCode || '').localeCompare(String(b.jobCode || ''), 'ko');
+    if (byJob !== 0) return byJob;
+
     return String(a.id).localeCompare(String(b.id));
   };
+
 
   const completed = uniqueCandidates
     .filter((c) => excludedSet.has(c.id))
