@@ -228,6 +228,15 @@ function shouldReserveLastSlotForSupport(
 }
 
 /**
+ * ✅ 세르카 서폿 부족 시 규칙:
+ * - 서폿이 "없는" 런은 딜러 3명까지만(= 런 총 3명 cap)
+ * - 서폿이 들어간 런만 4인(서폿1+딜3) 가능
+ */
+function getMaxMembersWhenNoSupportInRun(raidId: RaidId): number {
+  return isSerkaRaid(raidId) ? 3 : Number.POSITIVE_INFINITY;
+}
+
+/**
  * ✅ 세르카 직업 중복 규칙:
  * - 세르카(4인): 같은 직업 DPS는 최대 1명(=중복 2명 이상 금지)
  * - 그 외(8인): 같은 직업 DPS는 최대 2명(기존 유지)
@@ -251,7 +260,11 @@ function canAddToRunGreedy(
   const supCountNow = runMembers.filter((m) => m.role === 'SUPPORT').length;
 
   if (ch.role === 'DPS') {
-    // ✅ [SERKA] 4딜 4/4 방지
+    // ✅ [SERKA] 서폿 없는 런은 최대 3명까지만(딜3)
+    const maxNoSup = getMaxMembersWhenNoSupportInRun(raidId);
+    if (supCountNow === 0 && runMembers.length >= maxNoSup) return false;
+
+    // ✅ [SERKA] 4딜 4/4 방지(기존)
     if (reserveLastSlotForSupport) {
       const remainingSlots = maxPerRun - runMembers.length;
       if (supCountNow === 0 && remainingSlots === 1) return false;
@@ -285,7 +298,11 @@ function canAddToRunLocalSearch(
   const supCountNow = runMembers.filter((m) => m.role === 'SUPPORT').length;
 
   if (ch.role === 'DPS') {
-    // ✅ [SERKA] 4딜 4/4 방지
+    // ✅ [SERKA] 서폿 없는 런은 최대 3명까지만(딜3)
+    const maxNoSup = getMaxMembersWhenNoSupportInRun(raidId);
+    if (supCountNow === 0 && runMembers.length >= maxNoSup) return false;
+
+    // ✅ [SERKA] 4딜 4/4 방지(기존)
     if (reserveLastSlotForSupport) {
       const remainingSlots = maxPerRun - runMembers.length;
       if (supCountNow === 0 && remainingSlots === 1) return false;
@@ -426,7 +443,6 @@ function optimizeCombatPowerBySwapOnly(
             m.jobCode === cFrom.jobCode,
         ).length;
 
-        // ✅ 세르카면 1명이라도 있으면 swap 불가
         if (sameJobCount >= maxSameJobDps) return false;
       } else {
         const supCount = toRun.filter(
@@ -643,8 +659,6 @@ function minimizeSameJobInRuns(
   const runCount = runs.length;
   if (runCount <= 1) return runs;
 
-  // ✅ 세르카: 2부터 중복(=2명 이상)이므로 해소 대상
-  // ✅ 그외: 3부터 해소 대상(2명까지 허용 유지)
   const dupThreshold = isSerkaRaid(raidId) ? 2 : 3;
   const keepUntil = isSerkaRaid(raidId) ? 1 : 2;
   const targetMaxSameJob = getMaxSameJobDpsInRun(raidId);
@@ -722,7 +736,6 @@ function swapSameUserCharactersToFixDuplicates(
   const runCount = runs.length;
   if (runCount <= 1) return runs;
 
-  // ✅ 세르카: 2부터, 그외: 3부터 중복 해소 대상으로 본다
   const dupThreshold = isSerkaRaid(raidId) ? 2 : 3;
 
   for (let ri = 0; ri < runCount; ri++) {
@@ -756,8 +769,6 @@ function swapSameUserCharactersToFixDuplicates(
           if (t.id === ch.id) continue;
           if (t.role !== 'DPS') continue;
 
-          // ✅ 세르카는 직업 중복 자체가 불가(=존재하면 안됨)
-          // ✅ 그외는 더 느슨하게 만들 수도 있지만, 현재 로직은 보수적으로 유지
           const hasMyJobInTarget = targetRun.some(
             (m) => m.id !== t.id && m.jobCode === ch.jobCode,
           );
@@ -804,6 +815,107 @@ function swapSameUserCharactersToFixDuplicates(
   return runs;
 }
 
+/**
+ * ✅ [추가] 세르카 런 구성 최종 강제 보정
+ * - 어떤 이유로든(스왑/제외/후처리) "서폿0 + 4명"이 생기면 안 됨
+ * - 서폿 없는 런은 최대 3명으로 맞추고, 남는 1명(DPS)을
+ *   '서폿이 있는 런 중 빈자리가 있는 곳'으로 이동시킨다.
+ */
+function enforceSerkaRunsNoSupportCap(runsMembers: Character[][]): Character[][] {
+  const maxPerRun = 4;
+  const noSupCap = 3;
+
+  const runs = runsMembers.map((r) => [...r]);
+
+  const runHasUser = (run: Character[], discordName: string) =>
+    run.some((m) => m.discordName === discordName);
+
+  const supCount = (run: Character[]) => run.filter((m) => m.role === 'SUPPORT').length;
+
+  let changed = true;
+  let guard = 0;
+
+  while (changed && guard < 200) {
+    guard++;
+    changed = false;
+
+    // 1) 서폿 없는 런이 4명이면 -> 1명 빼야함
+    for (let srcIdx = 0; srcIdx < runs.length; srcIdx++) {
+      const src = runs[srcIdx];
+      if (src.length <= noSupCap) continue;
+      if (supCount(src) > 0) continue; // 서폿 있는 4인은 OK
+
+      // 빼낼 후보(DPS) - 낮은 전투력부터 이동
+      const dpsCandidates = [...src]
+        .filter((m) => m.role === 'DPS')
+        .sort((a, b) => a.combatPower - b.combatPower || a.id.localeCompare(b.id));
+
+      if (dpsCandidates.length === 0) continue;
+
+      const mover = dpsCandidates[0];
+
+      // 2) 받을 런: 서폿이 있고, 4명 미만, 같은 유저 없고, (세르카) 같은 직업 DPS 중복 없게
+      let bestTargetIdx = -1;
+      let bestTargetSize = -1;
+
+      for (let tIdx = 0; tIdx < runs.length; tIdx++) {
+        if (tIdx === srcIdx) continue;
+        const target = runs[tIdx];
+
+        if (target.length >= maxPerRun) continue;
+        if (supCount(target) <= 0) continue; // 서폿이 있는 런에 우선 넣기
+        if (runHasUser(target, mover.discordName)) continue;
+
+        // 세르카: 같은 직업 DPS 중복 금지
+        const sameJobDps = target.filter(
+          (m) => m.role === 'DPS' && m.jobCode === mover.jobCode,
+        ).length;
+        if (sameJobDps >= 1) continue;
+
+        if (target.length > bestTargetSize) {
+          bestTargetSize = target.length;
+          bestTargetIdx = tIdx;
+        }
+      }
+
+      if (bestTargetIdx === -1) {
+        // 서폿 있는 런이 없거나 못 넣는 상황이면, 그냥 빈 런(3 이하) 중 규칙 맞는 곳으로 이동(최후)
+        for (let tIdx = 0; tIdx < runs.length; tIdx++) {
+          if (tIdx === srcIdx) continue;
+          const target = runs[tIdx];
+          if (target.length >= maxPerRun) continue;
+          if (runHasUser(target, mover.discordName)) continue;
+
+          // 서폿 없는 런이면 cap 3을 넘기면 안됨
+          if (supCount(target) === 0 && target.length >= noSupCap) continue;
+
+          const sameJobDps = target.filter(
+            (m) => m.role === 'DPS' && m.jobCode === mover.jobCode,
+          ).length;
+          if (sameJobDps >= 1) continue;
+
+          bestTargetIdx = tIdx;
+          break;
+        }
+      }
+
+      if (bestTargetIdx === -1) continue;
+
+      // 이동
+      const srcRemoveIdx = src.findIndex((m) => m.id === mover.id);
+      if (srcRemoveIdx === -1) continue;
+
+      src.splice(srcRemoveIdx, 1);
+      runs[bestTargetIdx].push(mover);
+
+      changed = true;
+      break; // 다시 스캔
+    }
+  }
+
+  return runs;
+}
+
 function groupCharactersByRaid(
   characters: Character[],
   exclusions: RaidExclusionMap = {},
@@ -842,13 +954,6 @@ function distributeCharactersIntoRuns(
   random: () => number,
 ): RaidRun[] {
   if (characters.length === 0) return [];
-
-  console.log(
-    raidId,
-    'uniqueUsers=',
-    new Set(characters.map((c) => c.discordName)).size,
-    Array.from(new Set(characters.map((c) => c.discordName))),
-  );
 
   const cfg = getRaidConfig(raidId);
   const maxSupportsPerRun = cfg.maxSupportsPerRun;
@@ -965,7 +1070,7 @@ function distributeCharactersIntoRuns(
       }
     }
 
-    // ✅ 2차 fallback (원래 canAddToRunGreedy를 안 타는 구간)에도 "세르카 직업중복" 포함
+    // ✅ 2차 fallback
     if (bestIndex === -1) {
       let bestSize = -1;
 
@@ -984,7 +1089,13 @@ function distributeCharactersIntoRuns(
             if (supCountNow === 0 && remainingSlots === 1) continue;
           }
 
-          // ✅ 세르카/그외 직업중복 제한
+          // ✅ [SERKA] 서폿 없는 런 cap 3
+          {
+            const supCountNow = runsMembers[i].filter((m) => m.role === 'SUPPORT').length;
+            const maxNoSup = getMaxMembersWhenNoSupportInRun(raidId);
+            if (supCountNow === 0 && runsMembers[i].length >= maxNoSup) continue;
+          }
+
           const sameJob = runsMembers[i].filter(
             (m) => m.role === 'DPS' && m.jobCode === ch.jobCode,
           ).length;
@@ -998,7 +1109,7 @@ function distributeCharactersIntoRuns(
       }
     }
 
-    // ✅ 강제 이동(victim move) 구간도 "세르카 직업중복" 체크 추가 (안 하면 세르카 규칙이 뚫릴 수 있음)
+    // ✅ 강제 이동(victim move)
     if (bestIndex === -1) {
       for (let candRunIdx = 0; candRunIdx < currentRunCount; candRunIdx++) {
         const candRun = runsMembers[candRunIdx];
@@ -1023,7 +1134,13 @@ function distributeCharactersIntoRuns(
                 if (supCountNow === 0 && remainingSlots === 1) continue;
               }
 
-              // ✅ 세르카/그외 직업중복 제한
+              // ✅ [SERKA] 서폿 없는 런 cap 3
+              {
+                const supCountNow = targetRun.filter((m) => m.role === 'SUPPORT').length;
+                const maxNoSup = getMaxMembersWhenNoSupportInRun(raidId);
+                if (supCountNow === 0 && targetRun.length >= maxNoSup) continue;
+              }
+
               const sameJob = targetRun.filter(
                 (m) => m.role === 'DPS' && m.jobCode === victim.jobCode,
               ).length;
@@ -1120,6 +1237,11 @@ function distributeCharactersIntoRuns(
     lockIds,
     reserveLastSlotForSupport,
   );
+
+  // ✅ [추가] 세르카면 최종적으로 "서폿0 런 4명"을 강제로 해소
+  if (isSerkaRaid(raidId)) {
+    optimizedRunsMembers = enforceSerkaRunsNoSupportCap(optimizedRunsMembers);
+  }
 
   const runs: RaidRun[] = [];
   optimizedRunsMembers.forEach((members, idx) => {
@@ -1408,6 +1530,102 @@ function applySwaps(schedule: RaidSchedule, swaps: RaidSwap[], allCharacters: Ch
   return next;
 }
 
+/**
+ * ✅ [추가] 최종 스케줄에서 세르카 구성 강제
+ * - applySwaps/enforceExclusions 이후에도 4딜 런이 생길 수 있으니 마지막에 한번 더 보정
+ */
+function enforceSerkaDpsCapOnSchedule(schedule: RaidSchedule): RaidSchedule {
+  const next = cloneSchedule(schedule);
+
+  const raidIds: RaidId[] = ['SERKA_NORMAL', 'SERKA_HARD', 'SERKA_NIGHTMARE'];
+
+  const recomputeAvg = (run: RaidRun): RaidRun => {
+    const members = (run.parties as unknown as FixedRaidRunParty[]).flatMap((p) => p.members);
+    if (!members.length) return { ...run, averageCombatPower: 0 };
+    const avg = members.reduce((s, m) => s + m.combatPower, 0) / members.length;
+    return { ...run, averageCombatPower: Math.round(avg) };
+  };
+
+  for (const raidId of raidIds) {
+    const runs = next[raidId] ?? [];
+    if (runs.length <= 1) continue;
+
+    // 세르카는 파티 1개 전제
+    const getRunMembers = (ri: number): Character[] =>
+      ((runs[ri].parties[0] as unknown) as FixedRaidRunParty).members;
+
+    const supCount = (members: Character[]) => members.filter((m) => m.role === 'SUPPORT').length;
+    const hasUser = (members: Character[], discordName: string) =>
+      members.some((m) => m.discordName === discordName);
+
+    let changed = true;
+    let guard = 0;
+
+    while (changed && guard < 200) {
+      guard++;
+      changed = false;
+
+      // src: 서폿0 + 4명 런
+      const srcIdx = runs.findIndex((run) => {
+        const mem = getRunMembers(runs.indexOf(run));
+        return mem.length === 4 && supCount(mem) === 0;
+      });
+      if (srcIdx === -1) break;
+
+      const srcMembers = getRunMembers(srcIdx);
+
+      // 옮길 DPS: 전투력 낮은 순
+      const mover = [...srcMembers]
+        .filter((m) => m.role === 'DPS')
+        .sort((a, b) => a.combatPower - b.combatPower || a.id.localeCompare(b.id))[0];
+
+      if (!mover) break;
+
+      // dst: 서폿이 있고 3/4인 런(빈자리), 유저 중복 X, 세르카 동일직업DPS 중복 X
+      let bestDstIdx = -1;
+      let bestSize = -1;
+
+      for (let di = 0; di < runs.length; di++) {
+        if (di === srcIdx) continue;
+
+        const dstMembers = getRunMembers(di);
+        if (dstMembers.length >= 4) continue;
+        if (supCount(dstMembers) <= 0) continue;
+        if (hasUser(dstMembers, mover.discordName)) continue;
+
+        const sameJobDps = dstMembers.filter(
+          (m) => m.role === 'DPS' && m.jobCode === mover.jobCode,
+        ).length;
+        if (sameJobDps >= 1) continue;
+
+        if (dstMembers.length > bestSize) {
+          bestSize = dstMembers.length;
+          bestDstIdx = di;
+        }
+      }
+
+      if (bestDstIdx === -1) break;
+
+      // 이동 실행
+      const removeIdx = srcMembers.findIndex((m) => m.id === mover.id);
+      if (removeIdx === -1) break;
+
+      srcMembers.splice(removeIdx, 1);
+      getRunMembers(bestDstIdx).push(mover);
+
+      // 평균 재계산
+      runs[srcIdx] = recomputeAvg(runs[srcIdx]);
+      runs[bestDstIdx] = recomputeAvg(runs[bestDstIdx]);
+
+      changed = true;
+    }
+
+    next[raidId] = runs;
+  }
+
+  return next;
+}
+
 export function buildRaidSchedule(
   characters: Character[],
   exclusions: RaidExclusionMap = {},
@@ -1444,7 +1662,10 @@ export function buildRaidSchedule(
 
   // ✅ immutable pipeline
   const scheduleWithSwaps = applySwaps(schedule, swaps, characters);
-  return enforceExclusions(scheduleWithSwaps, exclusions);
+  const scheduleWithExclusions = enforceExclusions(scheduleWithSwaps, exclusions);
+
+  // ✅ [추가] 최종적으로 세르카는 "서폿0 4명"이 절대 안 나오도록 강제 보정
+  return enforceSerkaDpsCapOnSchedule(scheduleWithExclusions);
 }
 
 // ==============================

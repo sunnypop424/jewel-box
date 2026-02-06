@@ -571,25 +571,82 @@ function RaidStatusBoard(props: {
   onExclude: (m: Character) => void | Promise<void>;
 }) {
   const { candidates, runs, excludedIds } = props;
+
   const uniqueCandidates = Array.from(
     new Map(candidates.map((c) => [c.id, c])).values(),
   );
+
   const excludedSet = new Set(excludedIds);
   const placedIds = new Set(
     runs.flatMap((r) => r.parties.flatMap((p) => p.members.map((m) => m.id))),
   );
 
-  const sortKey = (a: Character, b: Character) => b.combatPower - a.combatPower;
+  // ✅ 유저 이름 정렬용(한글/영문 섞여도 안정적으로)
+  const nameCollator = useMemo(
+    () => new Intl.Collator('ko', { sensitivity: 'base', numeric: true }),
+    [],
+  );
+
+  // ✅ 유저별 고정 색상 매핑 (discordName -> index)
+  const userIndexMap = useMemo(() => {
+    const names = uniqueCandidates
+      .map((c) => c.discordName || '')
+      .filter(Boolean);
+
+    const uniq = Array.from(new Set(names)).sort((a, b) => nameCollator.compare(a, b));
+
+    const map = new Map<string, number>();
+    uniq.forEach((n, i) => map.set(n, i));
+    return map;
+  }, [uniqueCandidates, nameCollator]);
+
+  // ✅ 유저별 카드 클래스 반환
+  const getUserCardClass = (discordName: string) => {
+    const idx = userIndexMap.get(discordName) ?? 0;
+
+    // Tailwind에서 안전하게 쓰기 위해 "고정 클래스 셋"을 미리 준비
+    const palette = [
+      'bg-sky-50 ring-sky-200 dark:bg-sky-950/30 dark:ring-sky-900/50',
+      'bg-rose-50 ring-rose-200 dark:bg-rose-950/30 dark:ring-rose-900/50',
+      'bg-amber-50 ring-amber-200 dark:bg-amber-950/30 dark:ring-amber-900/50',
+      'bg-emerald-50 ring-emerald-200 dark:bg-emerald-950/30 dark:ring-emerald-900/50',
+      'bg-violet-50 ring-violet-200 dark:bg-violet-950/30 dark:ring-violet-900/50',
+      'bg-cyan-50 ring-cyan-200 dark:bg-cyan-950/30 dark:ring-cyan-900/50',
+      'bg-lime-50 ring-lime-200 dark:bg-lime-950/30 dark:ring-lime-900/50',
+      'bg-fuchsia-50 ring-fuchsia-200 dark:bg-fuchsia-950/30 dark:ring-fuchsia-900/50',
+      'bg-indigo-50 ring-indigo-200 dark:bg-indigo-950/30 dark:ring-indigo-900/50',
+      'bg-teal-50 ring-teal-200 dark:bg-teal-950/30 dark:ring-teal-900/50',
+    ];
+
+    return palette[idx % palette.length];
+  };
+
+  // ✅ 유저별 그룹 정렬 + 유저 내부 전투력 정렬
+  const sortByUserThenPower = (a: Character, b: Character) => {
+    const nameA = a.discordName || '';
+    const nameB = b.discordName || '';
+    const byName = nameCollator.compare(nameA, nameB);
+    if (byName !== 0) return byName;
+
+    // 같은 유저면 전투력 내림차순
+    const byPower = (b.combatPower ?? 0) - (a.combatPower ?? 0);
+    if (byPower !== 0) return byPower;
+
+    // 안정 정렬(같으면 id)
+    return String(a.id).localeCompare(String(b.id));
+  };
 
   const completed = uniqueCandidates
     .filter((c) => excludedSet.has(c.id))
-    .sort(sortKey);
+    .sort(sortByUserThenPower);
+
   const assigned = uniqueCandidates
     .filter((c) => !excludedSet.has(c.id) && placedIds.has(c.id))
-    .sort(sortKey);
+    .sort(sortByUserThenPower);
+
   const unassigned = uniqueCandidates
     .filter((c) => !excludedSet.has(c.id) && !placedIds.has(c.id))
-    .sort(sortKey);
+    .sort(sortByUserThenPower);
 
   return (
     <div className="flex flex-col gap-5 p-6">
@@ -601,7 +658,12 @@ function RaidStatusBoard(props: {
           color="amber"
         >
           {unassigned.map((m) => (
-            <RaidMemberCard key={m.id} member={m} {...props} />
+            <RaidMemberCard
+              key={m.id}
+              member={m}
+              {...props}
+              userCardClass={getUserCardClass(m.discordName)}
+            />
           ))}
         </StatusColumn>
 
@@ -612,7 +674,12 @@ function RaidStatusBoard(props: {
           color="blue"
         >
           {assigned.map((m) => (
-            <RaidMemberCard key={m.id} member={m} {...props} />
+            <RaidMemberCard
+              key={m.id}
+              member={m}
+              {...props}
+              userCardClass={getUserCardClass(m.discordName)}
+            />
           ))}
         </StatusColumn>
 
@@ -624,7 +691,12 @@ function RaidStatusBoard(props: {
         >
           {completed.map((m) => (
             <div key={m.id} className="opacity-50 grayscale">
-              <RaidMemberCard member={m} {...props} isReadOnly />
+              <RaidMemberCard
+                member={m}
+                {...props}
+                isReadOnly
+                userCardClass={getUserCardClass(m.discordName)}
+              />
             </div>
           ))}
         </StatusColumn>
@@ -668,29 +740,35 @@ function StatusColumn({ title, count, icon, color, children }: any) {
   );
 }
 
-function RaidMemberCard({ member, canExclude, onExclude, isReadOnly }: any) {
+function RaidMemberCard({
+  member,
+  canExclude,
+  onExclude,
+  isReadOnly,
+  userCardClass = '',
+}: any) {
   return (
-    <div className="group flex items-center justify-between rounded-xl bg-white p-2.5 shadow-sm ring-1 ring-zinc-900/5 hover:shadow-md dark:bg-zinc-900 dark:ring-zinc-800">
+    <div
+      className={`group flex items-center justify-between rounded-xl p-2.5 shadow-sm ring-1 hover:shadow-md
+      ${userCardClass}
+      ring-zinc-900/5 dark:ring-zinc-800`}
+    >
       <div className="flex items-center gap-3">
         <div
           className={`flex h-8 w-8 items-center justify-center rounded-lg ${
             member.role === 'SUPPORT'
               ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400'
-              : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400'
+              : 'bg-white/60 text-zinc-600 dark:bg-zinc-900/40 dark:text-zinc-300'
           }`}
         >
-          {member.role === 'SUPPORT' ? (
-            <Shield size={16} />
-          ) : (
-            <Swords size={16} />
-          )}
+          {member.role === 'SUPPORT' ? <Shield size={16} /> : <Swords size={16} />}
         </div>
 
         <div>
           <div className="text-sm font-bold dark:text-zinc-100">
             {member.jobCode}
           </div>
-          <div className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400">
+          <div className="text-[11px] font-medium text-zinc-600 dark:text-zinc-300">
             {member.discordName}
           </div>
         </div>
@@ -698,10 +776,10 @@ function RaidMemberCard({ member, canExclude, onExclude, isReadOnly }: any) {
 
       <div className="flex items-center gap-3">
         <div className="text-right">
-          <div className="text-xs font-bold dark:text-zinc-300">
+          <div className="text-xs font-bold dark:text-zinc-200">
             Lv.{member.itemLevel}
           </div>
-          <div className="text-[10px] text-zinc-400">
+          <div className="text-[10px] text-zinc-500 dark:text-zinc-400">
             CP {member.combatPower.toLocaleString()}
           </div>
         </div>
