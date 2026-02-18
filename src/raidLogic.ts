@@ -44,29 +44,57 @@ function isSerkaRaid(raidId: RaidId): boolean {
 }
 
 type RaidConfig = {
-  maxPerRun: number; // 한 런의 총 인원
-  maxSupportsPerRun: number; // 한 런에서 서폿 최대
-  maxParties: number; // 런 내 파티 수
+  maxPerRun: number; // 런 절대상한(세르카 4 / 그외 8)
+  maxSupportsPerRun: number; // 런 내 서폿 최대(랏폿ON이면 2, OFF면 1)
+  maxParties: number; // 런 내 파티 수(세르카 1 / 그외 2)
 };
 
-function getRaidConfig(raidId: RaidId): RaidConfig {
-  // ✅ 세르카: 4인(딜3+서폿1), 1파티
+function getRaidConfig(raidId: RaidId, fillTwoSupports: boolean): RaidConfig {
+  // ✅ 세르카: 4인 1파티, 서폿 최대 1
   if (isSerkaRaid(raidId)) {
     return { maxPerRun: 4, maxSupportsPerRun: 1, maxParties: 1 };
   }
-  // ✅ 그 외(4막, 종막): 8인(4+4), 2파티 (공격대 서폿 2명까지 OK)
-  return { maxPerRun: 8, maxSupportsPerRun: 2, maxParties: 2 };
+
+  // ✅ 세르카 제외:
+  // - 랏폿 체크 ON: 서폿 최대 2
+  // - OFF: 서폿 최대 1
+  return {
+    maxPerRun: 8,
+    maxSupportsPerRun: fillTwoSupports ? 2 : 1,
+    maxParties: 2,
+  };
 }
 
-function getEffectiveMaxPerRun(raidId: RaidId, characters: Character[]): number {
-  const cfg = getRaidConfig(raidId);
+// ✅ 런 인원 cap(핵심): "서폿 수"에 따라 달라짐
+// 세르카: 서폿0 -> 3, 서폿1 -> 4
+// 그외:   서폿0 -> 6, 서폿1 -> 7, 서폿2 -> 8
+function getRunSizeCapBySupports(raidId: RaidId, supportCount: number): number {
+  if (isSerkaRaid(raidId)) {
+    return supportCount > 0 ? 4 : 3;
+  }
+  if (supportCount <= 0) return 6;
+  if (supportCount === 1) return 7;
+  return 8;
+}
+
+function getEffectiveMaxPerRun(
+  raidId: RaidId,
+  characters: Character[],
+  fillTwoSupports: boolean,
+): number {
+  const cfg = getRaidConfig(raidId, fillTwoSupports);
   const uniqueUsers = new Set(characters.map((c) => c.discordName)).size;
   return Math.max(1, Math.min(cfg.maxPerRun, uniqueUsers));
 }
 
-function estimateRunCount(raidId: RaidId, characters: Character[]): number {
+function estimateRunCount(
+  raidId: RaidId,
+  characters: Character[],
+  fillTwoSupports: boolean,
+): number {
   if (characters.length === 0) return 0;
-  const cfg = getRaidConfig(raidId);
+
+  const cfg = getRaidConfig(raidId, fillTwoSupports);
   const maxPerRun = cfg.maxPerRun;
 
   const perPlayerCount: Record<string, number> = {};
@@ -83,44 +111,18 @@ function estimateRunCount(raidId: RaidId, characters: Character[]): number {
   );
 
   const baseRunsBySize = Math.ceil(characters.length / maxPerRun);
-  const runsBySupport = Math.ceil(supportCount / cfg.maxSupportsPerRun);
+
+  // 랏폿 ON이면 supports/2 만큼 런 수가 확보돼야 "2서폿 런"을 만들 여지가 생김(강제 아님, 하한치만)
+  let runsBySupport = 1;
+  if (isSerkaRaid(raidId)) {
+    runsBySupport = Math.max(1, supportCount || 1);
+  } else if (fillTwoSupports) {
+    runsBySupport = Math.max(1, Math.ceil(supportCount / 2));
+  } else {
+    runsBySupport = 1;
+  }
 
   return Math.max(baseRunsBySize, maxCharsForOnePlayer || 1, runsBySupport);
-}
-
-function promoteValkyToSupportIfNeeded(
-  raidId: RaidId,
-  characters: Character[],
-): Character[] {
-  const cfg = getRaidConfig(raidId);
-
-  const candidates = characters
-    .filter(
-      (c) =>
-        c.jobCode === '발키리' &&
-        c.role === 'DPS' &&
-        c.valkyCanSupport === true,
-    )
-    .slice()
-    .sort(
-      (a, b) => a.combatPower - b.combatPower || a.id.localeCompare(b.id),
-    );
-
-  if (candidates.length === 0) return characters;
-
-  const runCount = estimateRunCount(raidId, characters);
-  const requiredSupports = runCount * cfg.maxSupportsPerRun;
-  const existingSupports = characters.filter((c) => c.role === 'SUPPORT').length;
-
-  const need = requiredSupports - existingSupports;
-  if (need <= 0) return characters;
-
-  const promote = candidates.slice(0, need);
-  const promoteIds = new Set(promote.map((c) => c.id));
-
-  return characters.map((c) =>
-    promoteIds.has(c.id) ? { ...c, role: 'SUPPORT' } : c,
-  );
 }
 
 // ==========================================
@@ -151,6 +153,9 @@ interface RaidBucket {
   characters: Character[];
 }
 
+// ==========================================
+// ✅ 통계 유틸
+// ==========================================
 function std(values: number[]): number {
   const arr = values.filter((v) => Number.isFinite(v));
   if (arr.length <= 1) return 0;
@@ -158,7 +163,6 @@ function std(values: number[]): number {
   const variance = arr.reduce((s, v) => s + (v - mean) * (v - mean), 0) / arr.length;
   return Math.sqrt(variance);
 }
-
 function median(values: number[]): number {
   const arr = values
     .filter((v) => Number.isFinite(v))
@@ -169,7 +173,6 @@ function median(values: number[]): number {
   if (arr.length % 2 === 1) return arr[mid];
   return (arr[mid - 1] + arr[mid]) / 2;
 }
-
 function runAvg(run: Character[]): number {
   if (run.length === 0) return 0;
   const total = run.reduce((sum, m) => sum + m.combatPower, 0);
@@ -208,43 +211,97 @@ function computeRunsCost(runsMembers: Character[][], dim: BalanceDimension): num
   return std(dpsAvgs) + std(supAvgs);
 }
 
-/**
- * ✅ [SERKA 전용 안전장치]
- * - 세르카는 4인 1파티라서 "서폿이 존재하는데 4딜 4/4" 조합이 나오면 안 됨
- * - 따라서 (세르카 + 서폿이 풀에 존재) 시: "서폿 없는 런은 3명까지만 채우고 마지막 1칸은 서폿 예약"
- */
-function shouldReserveLastSlotForSupport(
-  raidId: RaidId,
-  maxPerRun: number,
-  maxSupportsPerRun: number,
-  supportCountInPool: number,
-) {
-  return (
-    isSerkaRaid(raidId) &&
-    maxPerRun === 4 &&
-    maxSupportsPerRun === 1 &&
-    supportCountInPool > 0
-  );
-}
-
-/**
- * ✅ 세르카 서폿 부족 시 규칙:
- * - 서폿이 "없는" 런은 딜러 3명까지만(= 런 총 3명 cap)
- * - 서폿이 들어간 런만 4인(서폿1+딜3) 가능
- */
-function getMaxMembersWhenNoSupportInRun(raidId: RaidId): number {
-  return isSerkaRaid(raidId) ? 3 : Number.POSITIVE_INFINITY;
-}
-
-/**
- * ✅ 세르카 직업 중복 규칙:
- * - 세르카(4인): 같은 직업 DPS는 최대 1명(=중복 2명 이상 금지)
- * - 그 외(8인): 같은 직업 DPS는 최대 2명(기존 유지)
- */
+// ==========================================
+// ✅ 직업 중복 규칙
+// - 세르카(4인): 같은 직업 DPS 최대 1명
+// - 그 외(8인): 같은 직업 DPS 최대 2명
+// ==========================================
 function getMaxSameJobDpsInRun(raidId: RaidId): number {
   return isSerkaRaid(raidId) ? 1 : 2;
 }
 
+// ==========================================
+// ✅ 런 유효성 검사(최적화/후처리에서 룰 깨짐 방지)
+// ==========================================
+function isRunValid(
+  raidId: RaidId,
+  members: Character[],
+  maxPerRun: number,
+  maxSupportsPerRun: number,
+): boolean {
+  if (members.length === 0) return true;
+
+  const supports = members.filter((m) => m.role === 'SUPPORT').length;
+  if (supports > maxSupportsPerRun) return false;
+
+  const cap = Math.min(maxPerRun, getRunSizeCapBySupports(raidId, supports));
+  if (members.length > cap) return false;
+
+  // 같은 유저 중복 금지
+  const names = new Set<string>();
+  for (const m of members) {
+    if (names.has(m.discordName)) return false;
+    names.add(m.discordName);
+  }
+
+  // DPS 직업 중복 상한(런 단위)
+  const maxSame = getMaxSameJobDpsInRun(raidId);
+  const jobCount: Record<string, number> = {};
+  for (const m of members) {
+    if (m.role !== 'DPS') continue;
+    jobCount[m.jobCode] = (jobCount[m.jobCode] || 0) + 1;
+    if (jobCount[m.jobCode] > maxSame) return false;
+  }
+
+  return true;
+}
+
+// ==========================================
+// ✅ [랏폿 체크 ON] 발키리 승격(보조)
+// ==========================================
+function promoteValkyToSupportIfNeeded(
+  raidId: RaidId,
+  characters: Character[],
+  fillTwoSupports: boolean,
+): Character[] {
+  const cfg = getRaidConfig(raidId, fillTwoSupports);
+
+  const candidates = characters
+    .filter(
+      (c) =>
+        c.jobCode === '발키리' &&
+        c.role === 'DPS' &&
+        c.valkyCanSupport === true,
+    )
+    .slice()
+    .sort(
+      (a, b) => a.combatPower - b.combatPower || a.id.localeCompare(b.id),
+    );
+
+  if (candidates.length === 0) return characters;
+
+  const runCount = estimateRunCount(raidId, characters, fillTwoSupports);
+  const requiredSupports = runCount * cfg.maxSupportsPerRun;
+  const existingSupports = characters.filter((c) => c.role === 'SUPPORT').length;
+
+  const need = requiredSupports - existingSupports;
+  if (need <= 0) return characters;
+
+  const promote = candidates.slice(0, need);
+  const promoteIds = new Set(promote.map((c) => c.id));
+
+  return characters.map((c) =>
+    promoteIds.has(c.id) ? { ...c, role: 'SUPPORT' } : c,
+  );
+}
+
+// ==========================================
+// ✅ add 가능 판단 (Greedy/LocalSearch 공통 규칙)
+// - 유저 중복 금지
+// - 서폿 상한
+// - 직업 중복 상한
+// - "서폿 수 기반 런 cap" 강제
+// ==========================================
 function canAddToRunGreedy(
   raidId: RaidId,
   runMembers: Character[],
@@ -252,33 +309,24 @@ function canAddToRunGreedy(
   ch: Character,
   maxPerRun: number,
   maxSupportsPerRun: number,
-  reserveLastSlotForSupport: boolean = false,
 ): boolean {
   if (runMembers.length >= maxPerRun) return false;
   if (runPlayerCounts[ch.discordName]) return false;
 
-  const supCountNow = runMembers.filter((m) => m.role === 'SUPPORT').length;
+  const supNow = runMembers.filter((m) => m.role === 'SUPPORT').length;
+  const supAfter = supNow + (ch.role === 'SUPPORT' ? 1 : 0);
+  if (supAfter > maxSupportsPerRun) return false;
+
+  const cap = Math.min(maxPerRun, getRunSizeCapBySupports(raidId, supAfter));
+  if (runMembers.length + 1 > cap) return false;
 
   if (ch.role === 'DPS') {
-    // ✅ [SERKA] 서폿 없는 런은 최대 3명까지만(딜3)
-    const maxNoSup = getMaxMembersWhenNoSupportInRun(raidId);
-    if (supCountNow === 0 && runMembers.length >= maxNoSup) return false;
-
-    // ✅ [SERKA] 4딜 4/4 방지(기존)
-    if (reserveLastSlotForSupport) {
-      const remainingSlots = maxPerRun - runMembers.length;
-      if (supCountNow === 0 && remainingSlots === 1) return false;
-    }
-
     const sameJob = runMembers.filter(
       (m) => m.role === 'DPS' && m.jobCode === ch.jobCode,
     ).length;
 
     const maxSameJobDps = getMaxSameJobDpsInRun(raidId);
     if (sameJob >= maxSameJobDps) return false;
-  } else {
-    // SUPPORT
-    if (supCountNow >= maxSupportsPerRun) return false;
   }
 
   return true;
@@ -290,35 +338,201 @@ function canAddToRunLocalSearch(
   ch: Character,
   maxPerRun: number,
   maxSupportsPerRun: number,
-  reserveLastSlotForSupport: boolean = false,
 ): boolean {
   if (runMembers.length >= maxPerRun) return false;
   if (runMembers.some((m) => m.discordName === ch.discordName)) return false;
 
-  const supCountNow = runMembers.filter((m) => m.role === 'SUPPORT').length;
+  const supNow = runMembers.filter((m) => m.role === 'SUPPORT').length;
+  const supAfter = supNow + (ch.role === 'SUPPORT' ? 1 : 0);
+  if (supAfter > maxSupportsPerRun) return false;
+
+  const cap = Math.min(maxPerRun, getRunSizeCapBySupports(raidId, supAfter));
+  if (runMembers.length + 1 > cap) return false;
 
   if (ch.role === 'DPS') {
-    // ✅ [SERKA] 서폿 없는 런은 최대 3명까지만(딜3)
-    const maxNoSup = getMaxMembersWhenNoSupportInRun(raidId);
-    if (supCountNow === 0 && runMembers.length >= maxNoSup) return false;
-
-    // ✅ [SERKA] 4딜 4/4 방지(기존)
-    if (reserveLastSlotForSupport) {
-      const remainingSlots = maxPerRun - runMembers.length;
-      if (supCountNow === 0 && remainingSlots === 1) return false;
-    }
-
     const sameJob = runMembers.filter(
       (m) => m.role === 'DPS' && m.jobCode === ch.jobCode,
     ).length;
 
     const maxSameJobDps = getMaxSameJobDpsInRun(raidId);
     if (sameJob >= maxSameJobDps) return false;
-  } else {
-    if (supCountNow >= maxSupportsPerRun) return false;
   }
 
   return true;
+}
+
+// ==========================================
+// ✅ [랏폿 체크 ON] 2서폿 런 우선 생성 보정(pack)
+// - 1서폿 런 두 개가 있으면 한쪽 서폿을 다른 쪽으로 옮겨 2서폿 런 만들기 시도
+// ==========================================
+function packSupportsToTwoPerRunIfPossible(
+  raidId: RaidId,
+  runsMembers: Character[][],
+  maxPerRun: number,
+  maxSupportsPerRun: number,
+  fillTwoSupports: boolean,
+): Character[][] {
+  if (!fillTwoSupports) return runsMembers;
+  if (isSerkaRaid(raidId)) return runsMembers;
+
+  const runs = runsMembers.map((r) => [...r]);
+
+  const supCount = (run: Character[]) => run.filter((m) => m.role === 'SUPPORT').length;
+  const hasUser = (run: Character[], discordName: string) => run.some((m) => m.discordName === discordName);
+
+  let changed = true;
+  let guard = 0;
+
+  while (changed && guard < 200) {
+    guard++;
+    changed = false;
+
+    const oneSupRuns = runs
+      .map((r, idx) => ({ idx, r, s: supCount(r) }))
+      .filter((x) => x.s === 1 && x.r.length > 0);
+
+    if (oneSupRuns.length < 2) break;
+
+    // receiver: 더 큰 런 우선(완성시키기)
+    oneSupRuns.sort((a, b) => b.r.length - a.r.length);
+    const receiverIdx = oneSupRuns[0].idx;
+
+    let donorIdx = -1;
+
+    for (let k = oneSupRuns.length - 1; k >= 1; k--) {
+      const cand = oneSupRuns[k];
+      const donor = cand.r;
+
+      const sup = donor.find((m) => m.role === 'SUPPORT');
+      if (!sup) continue;
+
+      if (hasUser(runs[receiverIdx], sup.discordName)) continue;
+
+      const donorAfter = donor.filter((m) => m.id !== sup.id);
+      const receiverAfter = [...runs[receiverIdx], sup];
+
+      if (!isRunValid(raidId, donorAfter, maxPerRun, maxSupportsPerRun)) continue;
+      if (!isRunValid(raidId, receiverAfter, maxPerRun, maxSupportsPerRun)) continue;
+
+      donorIdx = cand.idx;
+      break;
+    }
+
+    if (donorIdx === -1) break;
+
+    const donor = runs[donorIdx];
+    const supIndex = donor.findIndex((m) => m.role === 'SUPPORT');
+    if (supIndex === -1) break;
+
+    const sup = donor.splice(supIndex, 1)[0];
+    runs[receiverIdx].push(sup);
+
+    changed = true;
+  }
+
+  return runs;
+}
+
+// ==========================================
+// ✅ "한 번에 최대한 많이" Front-load 극대화(요청 핵심)
+// - 랏폿 ON이면: 2서폿 런을 앞 런부터 최대한 먼저 만들고(가능하면)
+// - 그 다음: 뒤 런에서 앞으로 사람을 끌어와서 앞 런을 cap까지 채움
+// ==========================================
+function maximizeRunsFrontloaded(
+  raidId: RaidId,
+  runsMembers: Character[][],
+  maxPerRun: number,
+  maxSupportsPerRun: number,
+  fillTwoSupports: boolean,
+): Character[][] {
+  const runs = runsMembers.map((r) => [...r]);
+
+  const supCount = (run: Character[]) => run.filter((m) => m.role === 'SUPPORT').length;
+  const buildPlayerSet = (run: Character[]) => new Set(run.map((m) => m.discordName));
+
+  const runCap = (run: Character[]) => {
+    const capBySup = getRunSizeCapBySupports(raidId, supCount(run));
+    return Math.min(maxPerRun, capBySup);
+  };
+
+  const donorValidAfterRemoval = (donor: Character[], removeId: string) => {
+    const next = donor.filter((m) => m.id !== removeId);
+    return isRunValid(raidId, next, maxPerRun, maxSupportsPerRun);
+  };
+
+  // 1) 랏폿 ON이면 앞 런부터 2서폿 확보(가능하면)
+  if (fillTwoSupports && !isSerkaRaid(raidId)) {
+    for (let i = 0; i < runs.length; i++) {
+      while (supCount(runs[i]) < 2) {
+        let moved = false;
+
+        for (let j = runs.length - 1; j > i; j--) {
+          const donor = runs[j];
+          const supIdx = donor.findIndex((m) => m.role === 'SUPPORT');
+          if (supIdx === -1) continue;
+
+          const sup = donor[supIdx];
+          const playersI = buildPlayerSet(runs[i]);
+          if (playersI.has(sup.discordName)) continue;
+
+          if (!canAddToRunLocalSearch(raidId, runs[i], sup, maxPerRun, maxSupportsPerRun)) continue;
+          if (!donorValidAfterRemoval(donor, sup.id)) continue;
+
+          donor.splice(supIdx, 1);
+          runs[i].push(sup);
+
+          moved = true;
+          break;
+        }
+
+        if (!moved) break;
+      }
+    }
+  }
+
+  // 2) 앞 런부터 cap까지 채우기(뒤 -> 앞 이동)
+  for (let i = 0; i < runs.length; i++) {
+    let capI = runCap(runs[i]);
+
+    while (runs[i].length < capI) {
+      let moved = false;
+      const playersI = buildPlayerSet(runs[i]);
+
+      for (let j = runs.length - 1; j > i; j--) {
+        if (runs[j].length === 0) continue;
+
+        const wantSupport =
+          fillTwoSupports && !isSerkaRaid(raidId) && supCount(runs[i]) < 2;
+
+        const candidates = [...runs[j]].sort((a, b) => {
+          if (wantSupport && a.role !== b.role) return a.role === 'SUPPORT' ? -1 : 1;
+          return b.combatPower - a.combatPower || a.id.localeCompare(b.id);
+        });
+
+        for (const ch of candidates) {
+          if (playersI.has(ch.discordName)) continue;
+
+          if (!canAddToRunLocalSearch(raidId, runs[i], ch, maxPerRun, maxSupportsPerRun)) continue;
+          if (!donorValidAfterRemoval(runs[j], ch.id)) continue;
+
+          runs[j] = runs[j].filter((m) => m.id !== ch.id);
+          runs[i].push(ch);
+
+          moved = true;
+          break;
+        }
+
+        if (moved) break;
+      }
+
+      if (!moved) break;
+
+      // 서폿 이동으로 cap이 증가할 수 있음(0->6,1->7,2->8)
+      capI = runCap(runs[i]);
+    }
+  }
+
+  return runs.filter((r) => r.length > 0);
 }
 
 /**
@@ -332,7 +546,6 @@ function optimizeRunsByStdDev(
   dim: BalanceDimension,
   random: () => number,
   lockIds: Set<string> = new Set(),
-  reserveLastSlotForSupport: boolean = false,
 ): Character[][] {
   const runs = runsMembers.map((r) => [...r]);
   const runCount = runs.length;
@@ -366,21 +579,22 @@ function optimizeRunsByStdDev(
     const fromRun = runs[from];
     const toRun = runs[to];
 
-    if (
-      !canAddToRunLocalSearch(
-        raidId,
-        toRun,
-        ch,
-        maxPerRun,
-        maxSupportsPerRun,
-        reserveLastSlotForSupport,
-      )
-    )
-      continue;
+    if (!canAddToRunLocalSearch(raidId, toRun, ch, maxPerRun, maxSupportsPerRun)) continue;
 
     const idxInFrom = fromRun.findIndex((m) => m.id === ch.id);
+    if (idxInFrom === -1) continue;
+
     fromRun.splice(idxInFrom, 1);
     toRun.push(ch);
+
+    if (
+      !isRunValid(raidId, fromRun, maxPerRun, maxSupportsPerRun) ||
+      !isRunValid(raidId, toRun, maxPerRun, maxSupportsPerRun)
+    ) {
+      toRun.pop();
+      fromRun.splice(idxInFrom, 0, ch);
+      continue;
+    }
 
     const newCost = computeRunsCost(runs, dim);
     if (newCost <= bestCost) {
@@ -402,6 +616,7 @@ function optimizeCombatPowerBySwapOnly(
   raidId: RaidId,
   runsMembers: Character[][],
   maxSupportsPerRun: number,
+  maxPerRun: number,
   dim: BalanceDimension,
   random: () => number,
   lockIds: Set<string> = new Set(),
@@ -430,24 +645,15 @@ function optimizeCombatPowerBySwapOnly(
     if (char1.role !== char2.role) continue;
 
     const canSwap = (toRun: Character[], cFrom: Character, cTo: Character) => {
-      const isDuplicateName = toRun.some(
-        (m) => m.id !== cTo.id && m.discordName === cFrom.discordName,
-      );
-      if (isDuplicateName) return false;
+      if (toRun.some((m) => m.id !== cTo.id && m.discordName === cFrom.discordName)) return false;
 
       if (cFrom.role === 'DPS') {
         const sameJobCount = toRun.filter(
-          (m) =>
-            m.id !== cTo.id &&
-            m.role === 'DPS' &&
-            m.jobCode === cFrom.jobCode,
+          (m) => m.id !== cTo.id && m.role === 'DPS' && m.jobCode === cFrom.jobCode,
         ).length;
-
         if (sameJobCount >= maxSameJobDps) return false;
       } else {
-        const supCount = toRun.filter(
-          (m) => m.id !== cTo.id && m.role === 'SUPPORT',
-        ).length;
+        const supCount = toRun.filter((m) => m.id !== cTo.id && m.role === 'SUPPORT').length;
         if (supCount >= maxSupportsPerRun) return false;
       }
       return true;
@@ -458,6 +664,15 @@ function optimizeCombatPowerBySwapOnly(
 
     runs[r1][c1Idx] = char2;
     runs[r2][c2Idx] = char1;
+
+    if (
+      !isRunValid(raidId, runs[r1], maxPerRun, maxSupportsPerRun) ||
+      !isRunValid(raidId, runs[r2], maxPerRun, maxSupportsPerRun)
+    ) {
+      runs[r1][c1Idx] = char1;
+      runs[r2][c2Idx] = char2;
+      continue;
+    }
 
     const newCost = computeRunsCost(runs, dim);
     if (newCost < bestCost) bestCost = newCost;
@@ -471,14 +686,13 @@ function optimizeCombatPowerBySwapOnly(
 }
 
 /**
- * ✅ speed 모드에서 "앞 런부터 최대한 꽉 채우기" 압축(Front-load Compaction)
+ * ✅ speed 모드에서 "앞 런부터 최대한 꽉 채우기" 압축(기존)
  */
 function compactRunsFrontloadedForSpeed(
   raidId: RaidId,
   runsMembers: Character[][],
   maxPerRun: number,
   maxSupportsPerRun: number,
-  reserveLastSlotForSupport: boolean = false,
 ): Character[][] {
   const runs = runsMembers.map((r) => [...r]);
 
@@ -501,21 +715,16 @@ function compactRunsFrontloadedForSpeed(
         );
 
         for (const ch of candidates) {
-          if (
-            !canAddToRunGreedy(
-              raidId,
-              runs[i],
-              countsI,
-              ch,
-              maxPerRun,
-              maxSupportsPerRun,
-              reserveLastSlotForSupport,
-            )
-          )
-            continue;
+          if (!canAddToRunGreedy(raidId, runs[i], countsI, ch, maxPerRun, maxSupportsPerRun)) continue;
 
-          runs[j] = runs[j].filter((m) => m.id !== ch.id);
-          runs[i].push(ch);
+          const nextI = [...runs[i], ch];
+          const nextJ = runs[j].filter((m) => m.id !== ch.id);
+
+          if (!isRunValid(raidId, nextI, maxPerRun, maxSupportsPerRun)) continue;
+          if (!isRunValid(raidId, nextJ, maxPerRun, maxSupportsPerRun)) continue;
+
+          runs[j] = nextJ;
+          runs[i] = nextI;
           moved = true;
           break;
         }
@@ -530,130 +739,11 @@ function compactRunsFrontloadedForSpeed(
   return runs;
 }
 
-function adjustSoloLastRunStrongCharacter(
-  raidId: RaidId,
-  runsMembers: Character[][],
-  maxPerRun: number,
-  maxSupportsPerRun: number,
-  lockIds: Set<string>,
-  reserveLastSlotForSupport: boolean = false,
-): Character[][] {
-  const runs = runsMembers.map((r) => [...r]);
-  const runCount = runs.length;
-  if (runCount <= 1) return runs;
-
-  const buildPlayerCounts = (members: Character[]) => {
-    const counts: Record<string, number> = {};
-    members.forEach((m) => (counts[m.discordName] = (counts[m.discordName] || 0) + 1));
-    return counts;
-  };
-
-  const runAverages: number[] = runs.map((members) => {
-    if (members.length === 0) return 0;
-    const total = members.reduce((sum, c) => sum + c.combatPower, 0);
-    return total / members.length;
-  });
-
-  for (let soloRunIdx = 0; soloRunIdx < runCount; soloRunIdx++) {
-    const soloRun = runs[soloRunIdx];
-    if (soloRun.length !== 1) continue;
-
-    const solo = soloRun[0];
-    if (lockIds.has(solo.id)) continue;
-
-    const otherAverages: number[] = [];
-    for (let i = 0; i < runCount; i++) {
-      if (i === soloRunIdx) continue;
-      if (runs[i].length === 0) continue;
-      otherAverages.push(runAverages[i]);
-    }
-    if (otherAverages.length === 0) continue;
-
-    const threshold =
-      otherAverages.reduce((sum, v) => sum + v, 0) / otherAverages.length;
-
-    type Candidate = { runIndex: number; charIndex: number; ch: Character };
-    const candidates: Candidate[] = [];
-
-    for (let ri = 0; ri < runCount; ri++) {
-      if (ri === soloRunIdx) continue;
-      const members = runs[ri];
-
-      for (let ci = 0; ci < members.length; ci++) {
-        const ch = members[ci];
-        if (lockIds.has(ch.id)) continue;
-        if (ch.discordName !== solo.discordName) continue;
-        if (ch.combatPower >= threshold)
-          candidates.push({ runIndex: ri, charIndex: ci, ch });
-      }
-    }
-
-    if (candidates.length === 0) continue;
-    candidates.sort((a, b) => a.ch.combatPower - b.ch.combatPower);
-
-    for (const cand of candidates) {
-      const { runIndex: donorRunIdx, charIndex: donorCharIdx, ch: donorChar } =
-        cand;
-
-      const soloRunMembers = runs[soloRunIdx];
-      const donorRunMembers = runs[donorRunIdx];
-
-      if (soloRunMembers.length !== 1 || donorCharIdx >= donorRunMembers.length)
-        continue;
-
-      const originalSolo = soloRunMembers[0];
-
-      const soloRunWithoutSolo: Character[] = [];
-      const donorRunWithoutDonor = donorRunMembers.filter(
-        (_, idx) => idx !== donorCharIdx,
-      );
-
-      const soloCountsAfter = buildPlayerCounts(soloRunWithoutSolo);
-      const donorCountsAfter = buildPlayerCounts(donorRunWithoutDonor);
-
-      const canPlaceDonorInSolo = canAddToRunGreedy(
-        raidId,
-        soloRunWithoutSolo,
-        soloCountsAfter,
-        donorChar,
-        maxPerRun,
-        maxSupportsPerRun,
-        reserveLastSlotForSupport,
-      );
-
-      const canPlaceSoloInDonor = canAddToRunGreedy(
-        raidId,
-        donorRunWithoutDonor,
-        donorCountsAfter,
-        originalSolo,
-        maxPerRun,
-        maxSupportsPerRun,
-        reserveLastSlotForSupport,
-      );
-
-      if (!canPlaceDonorInSolo || !canPlaceSoloInDonor) continue;
-
-      soloRunMembers.length = 0;
-      soloRunMembers.push(donorChar);
-      donorRunMembers.splice(donorCharIdx, 1, originalSolo);
-
-      runAverages[soloRunIdx] = donorChar.combatPower;
-      const donorTotal = donorRunMembers.reduce((sum, c) => sum + c.combatPower, 0);
-      runAverages[donorRunIdx] = donorTotal / donorRunMembers.length;
-
-      break;
-    }
-  }
-
-  return runs;
-}
-
 function minimizeSameJobInRuns(
   raidId: RaidId,
   runsMembers: Character[][],
   maxPerRun: number,
   maxSupportsPerRun: number,
-  reserveLastSlotForSupport: boolean = false,
 ): Character[][] {
   const runs = runsMembers.map((r) => [...r]);
   const runCount = runs.length;
@@ -698,25 +788,16 @@ function minimizeSameJobInRuns(
         if (sameJobInTargetCount >= targetMaxSameJob) continue;
 
         const targetCounts = buildPlayerCounts(targetRun);
+        if (!canAddToRunGreedy(raidId, targetRun, targetCounts, ch, maxPerRun, maxSupportsPerRun)) continue;
 
-        if (
-          !canAddToRunGreedy(
-            raidId,
-            targetRun,
-            targetCounts,
-            ch,
-            maxPerRun,
-            maxSupportsPerRun,
-            reserveLastSlotForSupport,
-          )
-        )
-          continue;
+        const nextSrc = run.filter((m) => m.id !== ch.id);
+        const nextDst = [...targetRun, ch];
 
-        const idxInSrc = run.findIndex((m) => m.id === ch.id);
-        if (idxInSrc === -1) break;
+        if (!isRunValid(raidId, nextSrc, maxPerRun, maxSupportsPerRun)) continue;
+        if (!isRunValid(raidId, nextDst, maxPerRun, maxSupportsPerRun)) continue;
 
-        run.splice(idxInSrc, 1);
-        targetRun.push(ch);
+        runs[ri] = nextSrc;
+        runs[targetIdx] = nextDst;
 
         jobCounts[ch.jobCode]--;
         break;
@@ -727,10 +808,11 @@ function minimizeSameJobInRuns(
   return runs;
 }
 
-// ✅ 같은 유저의 캐릭터끼리 스왑해서 직업 중복을 해결하는 로직 (전투력 고려)
 function swapSameUserCharactersToFixDuplicates(
   raidId: RaidId,
   runsMembers: Character[][],
+  maxPerRun: number,
+  maxSupportsPerRun: number,
 ): Character[][] {
   const runs = runsMembers.map((r) => [...r]);
   const runCount = runs.length;
@@ -804,8 +886,17 @@ function swapSameUserCharactersToFixDuplicates(
 
       const targetChar = targetRun[bestCand.charIdx];
 
-      run[myIdx] = targetChar;
-      targetRun[bestCand.charIdx] = ch;
+      const nextSrc = [...run];
+      const nextDst = [...targetRun];
+
+      nextSrc[myIdx] = targetChar;
+      nextDst[bestCand.charIdx] = ch;
+
+      if (!isRunValid(raidId, nextSrc, maxPerRun, maxSupportsPerRun)) continue;
+      if (!isRunValid(raidId, nextDst, maxPerRun, maxSupportsPerRun)) continue;
+
+      runs[ri] = nextSrc;
+      runs[bestCand.runIdx] = nextDst;
 
       jobCounts[ch.jobCode] = (jobCounts[ch.jobCode] || 0) - 1;
       jobCounts[targetChar.jobCode] = (jobCounts[targetChar.jobCode] || 0) + 1;
@@ -815,107 +906,9 @@ function swapSameUserCharactersToFixDuplicates(
   return runs;
 }
 
-/**
- * ✅ [추가] 세르카 런 구성 최종 강제 보정
- * - 어떤 이유로든(스왑/제외/후처리) "서폿0 + 4명"이 생기면 안 됨
- * - 서폿 없는 런은 최대 3명으로 맞추고, 남는 1명(DPS)을
- *   '서폿이 있는 런 중 빈자리가 있는 곳'으로 이동시킨다.
- */
-function enforceSerkaRunsNoSupportCap(runsMembers: Character[][]): Character[][] {
-  const maxPerRun = 4;
-  const noSupCap = 3;
-
-  const runs = runsMembers.map((r) => [...r]);
-
-  const runHasUser = (run: Character[], discordName: string) =>
-    run.some((m) => m.discordName === discordName);
-
-  const supCount = (run: Character[]) => run.filter((m) => m.role === 'SUPPORT').length;
-
-  let changed = true;
-  let guard = 0;
-
-  while (changed && guard < 200) {
-    guard++;
-    changed = false;
-
-    // 1) 서폿 없는 런이 4명이면 -> 1명 빼야함
-    for (let srcIdx = 0; srcIdx < runs.length; srcIdx++) {
-      const src = runs[srcIdx];
-      if (src.length <= noSupCap) continue;
-      if (supCount(src) > 0) continue; // 서폿 있는 4인은 OK
-
-      // 빼낼 후보(DPS) - 낮은 전투력부터 이동
-      const dpsCandidates = [...src]
-        .filter((m) => m.role === 'DPS')
-        .sort((a, b) => a.combatPower - b.combatPower || a.id.localeCompare(b.id));
-
-      if (dpsCandidates.length === 0) continue;
-
-      const mover = dpsCandidates[0];
-
-      // 2) 받을 런: 서폿이 있고, 4명 미만, 같은 유저 없고, (세르카) 같은 직업 DPS 중복 없게
-      let bestTargetIdx = -1;
-      let bestTargetSize = -1;
-
-      for (let tIdx = 0; tIdx < runs.length; tIdx++) {
-        if (tIdx === srcIdx) continue;
-        const target = runs[tIdx];
-
-        if (target.length >= maxPerRun) continue;
-        if (supCount(target) <= 0) continue; // 서폿이 있는 런에 우선 넣기
-        if (runHasUser(target, mover.discordName)) continue;
-
-        // 세르카: 같은 직업 DPS 중복 금지
-        const sameJobDps = target.filter(
-          (m) => m.role === 'DPS' && m.jobCode === mover.jobCode,
-        ).length;
-        if (sameJobDps >= 1) continue;
-
-        if (target.length > bestTargetSize) {
-          bestTargetSize = target.length;
-          bestTargetIdx = tIdx;
-        }
-      }
-
-      if (bestTargetIdx === -1) {
-        // 서폿 있는 런이 없거나 못 넣는 상황이면, 그냥 빈 런(3 이하) 중 규칙 맞는 곳으로 이동(최후)
-        for (let tIdx = 0; tIdx < runs.length; tIdx++) {
-          if (tIdx === srcIdx) continue;
-          const target = runs[tIdx];
-          if (target.length >= maxPerRun) continue;
-          if (runHasUser(target, mover.discordName)) continue;
-
-          // 서폿 없는 런이면 cap 3을 넘기면 안됨
-          if (supCount(target) === 0 && target.length >= noSupCap) continue;
-
-          const sameJobDps = target.filter(
-            (m) => m.role === 'DPS' && m.jobCode === mover.jobCode,
-          ).length;
-          if (sameJobDps >= 1) continue;
-
-          bestTargetIdx = tIdx;
-          break;
-        }
-      }
-
-      if (bestTargetIdx === -1) continue;
-
-      // 이동
-      const srcRemoveIdx = src.findIndex((m) => m.id === mover.id);
-      if (srcRemoveIdx === -1) continue;
-
-      src.splice(srcRemoveIdx, 1);
-      runs[bestTargetIdx].push(mover);
-
-      changed = true;
-      break; // 다시 스캔
-    }
-  }
-
-  return runs;
-}
-
+// ==========================================
+// ✅ 레이드별 버킷
+// ==========================================
 function groupCharactersByRaid(
   characters: Character[],
   exclusions: RaidExclusionMap = {},
@@ -947,42 +940,28 @@ function groupCharactersByRaid(
   }));
 }
 
+// ==========================================
+// ✅ 런 구성 (핵심)
+// - 랏폿 ON이면: 2서폿 런을 우선 생성/유지
+// - 최우선 목표: "앞 런부터 최대 인원"(7,6,5...) => maximizeRunsFrontloaded 적용
+// ==========================================
 function distributeCharactersIntoRuns(
   raidId: RaidId,
   characters: Character[],
   balanceMode: BalanceMode,
   random: () => number,
+  fillTwoSupports: boolean,
 ): RaidRun[] {
   if (characters.length === 0) return [];
 
-  const cfg = getRaidConfig(raidId);
+  const cfg = getRaidConfig(raidId, fillTwoSupports);
   const maxSupportsPerRun = cfg.maxSupportsPerRun;
-  const maxPerRun = getEffectiveMaxPerRun(raidId, characters);
+  const maxPerRun = getEffectiveMaxPerRun(raidId, characters, fillTwoSupports);
   const dim = getBalanceDimension(balanceMode);
   const speed = isSpeedMode(balanceMode);
   const lockIds = new Set<string>();
 
-  const perPlayerCount: Record<string, number> = {};
-  let supportCount = 0;
-  characters.forEach((ch) => {
-    perPlayerCount[ch.discordName] = (perPlayerCount[ch.discordName] || 0) + 1;
-    if (ch.role === 'SUPPORT') supportCount++;
-  });
-
-  const reserveLastSlotForSupport = shouldReserveLastSlotForSupport(
-    raidId,
-    maxPerRun,
-    maxSupportsPerRun,
-    supportCount,
-  );
-
-  const maxCharsForOnePlayer = Object.values(perPlayerCount).reduce(
-    (max, v) => (v > max ? v : max),
-    0,
-  );
-  const baseRunsBySize = Math.ceil(characters.length / maxPerRun);
-  const runsBySupport = Math.ceil(supportCount / maxSupportsPerRun);
-  const runCount = Math.max(baseRunsBySize, maxCharsForOnePlayer || 1, runsBySupport);
+  const runCount = estimateRunCount(raidId, characters, fillTwoSupports);
 
   const runsMembers: Character[][] = Array.from({ length: runCount }, () => [] as Character[]);
   const runsTotalPower: number[] = Array(runCount).fill(0);
@@ -990,268 +969,236 @@ function distributeCharactersIntoRuns(
   const runsSupPower: number[] = Array(runCount).fill(0);
   const runsPlayerCounts: Array<Record<string, number>> = Array.from({ length: runCount }, () => ({}));
 
-  const isSerka = isSerkaRaid(raidId);
   const maxSameJobDps = getMaxSameJobDpsInRun(raidId);
 
-  let sorted: Character[] = [...characters]
-    .filter((c) => !lockIds.has(c.id))
-    .sort((a, b) => {
-      if (isSerka) {
-        if (a.role !== b.role) return a.role === 'SUPPORT' ? -1 : 1;
-        return b.combatPower - a.combatPower || a.id.localeCompare(b.id);
+  const supports = characters
+    .filter((c) => !lockIds.has(c.id) && c.role === 'SUPPORT')
+    .slice()
+    .sort((a, b) => b.combatPower - a.combatPower || a.id.localeCompare(b.id));
+
+  const dps = characters
+    .filter((c) => !lockIds.has(c.id) && c.role === 'DPS')
+    .slice()
+    .sort((a, b) => b.combatPower - a.combatPower || a.id.localeCompare(b.id));
+
+  const targetSupPerRun = isSerkaRaid(raidId) ? 1 : (fillTwoSupports ? 2 : 1);
+
+  const placeIntoRun = (runIdx: number, ch: Character) => {
+    runsMembers[runIdx].push(ch);
+    runsTotalPower[runIdx] += ch.combatPower;
+    if (ch.role === 'DPS') runsDpsPower[runIdx] += ch.combatPower;
+    else runsSupPower[runIdx] += ch.combatPower;
+    runsPlayerCounts[runIdx][ch.discordName] = (runsPlayerCounts[runIdx][ch.discordName] || 0) + 1;
+  };
+
+  // 1) 서폿 먼저: 랏폿 ON이면 2서폿 런 우선
+  for (const sup of supports) {
+    let best = -1;
+
+    // (a) 목표치 미만 런 우선(0->1->2)
+    let bestScore: [number, number, number] | null = null; // [supCnt, -size, idx]
+    for (let i = 0; i < runsMembers.length; i++) {
+      const run = runsMembers[i];
+      const supCnt = run.filter((m) => m.role === 'SUPPORT').length;
+
+      if (supCnt >= targetSupPerRun) continue;
+      if (!canAddToRunGreedy(raidId, run, runsPlayerCounts[i], sup, maxPerRun, maxSupportsPerRun)) continue;
+
+      const score: [number, number, number] = [supCnt, -run.length, i];
+      if (
+        !bestScore ||
+        score[0] < bestScore[0] ||
+        (score[0] === bestScore[0] && score[1] < bestScore[1])
+      ) {
+        bestScore = score;
+        best = i;
       }
+    }
 
-      if (speed) {
-        if (a.role !== b.role) return a.role === 'DPS' ? -1 : 1;
-        return b.combatPower - a.combatPower || a.id.localeCompare(b.id);
-      }
-
-      if (a.role !== b.role) return a.role === 'SUPPORT' ? -1 : 1;
-      return b.combatPower - a.combatPower || a.id.localeCompare(b.id);
-    });
-
-  sorted.forEach((ch) => {
-    let bestIndex = -1;
-    const currentRunCount = runsMembers.length;
-
-    if (speed || isSerka) {
+    // (b) 그래도 없으면 size 큰 런 우선
+    if (best === -1) {
       let bestSize = -1;
-
-      for (let i = 0; i < currentRunCount; i++) {
-        if (
-          !canAddToRunGreedy(
-            raidId,
-            runsMembers[i],
-            runsPlayerCounts[i],
-            ch,
-            maxPerRun,
-            maxSupportsPerRun,
-            reserveLastSlotForSupport,
-          )
-        )
-          continue;
-
-        const size = runsMembers[i].length;
-        if (size > bestSize) {
-          bestSize = size;
-          bestIndex = i;
-        }
-      }
-    } else {
-      let bestScore: [number, number, number] | null = null;
-
-      for (let i = 0; i < currentRunCount; i++) {
-        if (
-          !canAddToRunGreedy(
-            raidId,
-            runsMembers[i],
-            runsPlayerCounts[i],
-            ch,
-            maxPerRun,
-            maxSupportsPerRun,
-            reserveLastSlotForSupport,
-          )
-        )
-          continue;
-
-        const size = runsMembers[i].length;
-        const metric =
-          dim === 'overall'
-            ? runsTotalPower[i]
-            : ch.role === 'DPS'
-              ? runsDpsPower[i]
-              : runsSupPower[i];
-
-        const score: [number, number, number] = [metric, size, i];
-        if (!bestScore || score[0] < bestScore[0]) {
-          bestScore = score;
-          bestIndex = i;
+      for (let i = 0; i < runsMembers.length; i++) {
+        const run = runsMembers[i];
+        if (!canAddToRunGreedy(raidId, run, runsPlayerCounts[i], sup, maxPerRun, maxSupportsPerRun)) continue;
+        if (run.length > bestSize) {
+          bestSize = run.length;
+          best = i;
         }
       }
     }
 
-    // ✅ 2차 fallback
-    if (bestIndex === -1) {
-      let bestSize = -1;
-
-      for (let i = 0; i < currentRunCount; i++) {
-        const size = runsMembers[i].length;
-        if (size >= maxPerRun) continue;
-        if (runsPlayerCounts[i][ch.discordName]) continue;
-
-        if (ch.role === 'SUPPORT') {
-          const supCount = runsMembers[i].filter((m) => m.role === 'SUPPORT').length;
-          if (supCount >= maxSupportsPerRun) continue;
-        } else {
-          if (reserveLastSlotForSupport) {
-            const supCountNow = runsMembers[i].filter((m) => m.role === 'SUPPORT').length;
-            const remainingSlots = maxPerRun - runsMembers[i].length;
-            if (supCountNow === 0 && remainingSlots === 1) continue;
-          }
-
-          // ✅ [SERKA] 서폿 없는 런 cap 3
-          {
-            const supCountNow = runsMembers[i].filter((m) => m.role === 'SUPPORT').length;
-            const maxNoSup = getMaxMembersWhenNoSupportInRun(raidId);
-            if (supCountNow === 0 && runsMembers[i].length >= maxNoSup) continue;
-          }
-
-          const sameJob = runsMembers[i].filter(
-            (m) => m.role === 'DPS' && m.jobCode === ch.jobCode,
-          ).length;
-          if (sameJob >= maxSameJobDps) continue;
-        }
-
-        if (size > bestSize) {
-          bestSize = size;
-          bestIndex = i;
-        }
-      }
-    }
-
-    // ✅ 강제 이동(victim move)
-    if (bestIndex === -1) {
-      for (let candRunIdx = 0; candRunIdx < currentRunCount; candRunIdx++) {
-        const candRun = runsMembers[candRunIdx];
-        if (runsPlayerCounts[candRunIdx][ch.discordName]) continue;
-
-        const victimOk = candRun.some((victim) => {
-          if (victim.id === ch.id) return false;
-
-          for (let targetRunIdx = 0; targetRunIdx < currentRunCount; targetRunIdx++) {
-            if (targetRunIdx === candRunIdx) continue;
-            const targetRun = runsMembers[targetRunIdx];
-            if (targetRun.length >= maxPerRun) continue;
-            if (runsPlayerCounts[targetRunIdx][victim.discordName]) continue;
-
-            if (victim.role === 'SUPPORT') {
-              const supCnt = targetRun.filter((m) => m.role === 'SUPPORT').length;
-              if (supCnt >= maxSupportsPerRun) continue;
-            } else {
-              if (reserveLastSlotForSupport) {
-                const supCountNow = targetRun.filter((m) => m.role === 'SUPPORT').length;
-                const remainingSlots = maxPerRun - targetRun.length;
-                if (supCountNow === 0 && remainingSlots === 1) continue;
-              }
-
-              // ✅ [SERKA] 서폿 없는 런 cap 3
-              {
-                const supCountNow = targetRun.filter((m) => m.role === 'SUPPORT').length;
-                const maxNoSup = getMaxMembersWhenNoSupportInRun(raidId);
-                if (supCountNow === 0 && targetRun.length >= maxNoSup) continue;
-              }
-
-              const sameJob = targetRun.filter(
-                (m) => m.role === 'DPS' && m.jobCode === victim.jobCode,
-              ).length;
-              if (sameJob >= maxSameJobDps) continue;
-            }
-
-            const removeIdx = candRun.findIndex((v) => v.id === victim.id);
-            if (removeIdx === -1) return false;
-
-            candRun.splice(removeIdx, 1);
-            runsPlayerCounts[candRunIdx][victim.discordName]--;
-            runsTotalPower[candRunIdx] -= victim.combatPower;
-
-            targetRun.push(victim);
-            runsPlayerCounts[targetRunIdx][victim.discordName] =
-              (runsPlayerCounts[targetRunIdx][victim.discordName] || 0) + 1;
-            runsTotalPower[targetRunIdx] += victim.combatPower;
-
-            return true;
-          }
-          return false;
-        });
-
-        if (victimOk) {
-          bestIndex = candRunIdx;
-          break;
-        }
-      }
-    }
-
-    if (bestIndex === -1) {
-      bestIndex = runsMembers.length;
-      runsMembers.push([] as Character[]);
+    // (c) 새 런 생성(미배치 0)
+    if (best === -1) {
+      best = runsMembers.length;
+      runsMembers.push([]);
       runsTotalPower.push(0);
       runsDpsPower.push(0);
       runsSupPower.push(0);
       runsPlayerCounts.push({});
     }
 
-    runsMembers[bestIndex].push(ch);
-    runsTotalPower[bestIndex] += ch.combatPower;
-    if (ch.role === 'DPS') runsDpsPower[bestIndex] += ch.combatPower;
-    else runsSupPower[bestIndex] += ch.combatPower;
-    runsPlayerCounts[bestIndex][ch.discordName] =
-      (runsPlayerCounts[bestIndex][ch.discordName] || 0) + 1;
-  });
+    placeIntoRun(best, sup);
+  }
 
-  let optimizedRunsMembers: Character[][];
+  // 2) DPS 배치
+  for (const ch of dps) {
+    let bestIndex = -1;
+    const currentRunCount = runsMembers.length;
 
+    if (speed) {
+      // speed: (랏폿 ON이면) supports 많은 런 우선(2 > 1 > 0), 그 다음 size 큰 런 우선
+      let bestTuple: [number, number, number] | null = null; // [supCnt, size, idx]
+      for (let i = 0; i < currentRunCount; i++) {
+        const run = runsMembers[i];
+        if (!canAddToRunGreedy(raidId, run, runsPlayerCounts[i], ch, maxPerRun, maxSupportsPerRun)) continue;
+
+        const supCnt = run.filter((m) => m.role === 'SUPPORT').length;
+        const size = run.length;
+        const tuple: [number, number, number] = [supCnt, size, i];
+
+        if (!bestTuple) bestTuple = tuple;
+        else {
+          if (tuple[0] > bestTuple[0]) bestTuple = tuple;
+          else if (tuple[0] === bestTuple[0] && tuple[1] > bestTuple[1]) bestTuple = tuple;
+        }
+      }
+      if (bestTuple) bestIndex = bestTuple[2];
+    } else {
+      // balance: power 낮은 런 우선 + (랏폿 ON이면) supports 높은 런 약간 선호
+      let bestScore: [number, number, number, number] | null = null; // [metric, -supBoost, size, idx]
+      for (let i = 0; i < currentRunCount; i++) {
+        const run = runsMembers[i];
+        if (!canAddToRunGreedy(raidId, run, runsPlayerCounts[i], ch, maxPerRun, maxSupportsPerRun)) continue;
+
+        const metric = dim === 'overall' ? runsTotalPower[i] : runsDpsPower[i];
+        const supCnt = run.filter((m) => m.role === 'SUPPORT').length;
+        const supBoost = fillTwoSupports && !isSerkaRaid(raidId) ? supCnt : 0;
+
+        const score: [number, number, number, number] = [metric, -supBoost, run.length, i];
+
+        if (
+          !bestScore ||
+          score[0] < bestScore[0] ||
+          (score[0] === bestScore[0] && score[1] < bestScore[1])
+        ) {
+          bestScore = score;
+          bestIndex = i;
+        }
+      }
+    }
+
+    // fallback: 그냥 들어갈 수 있는 곳 중 size 큰 곳
+    if (bestIndex === -1) {
+      let bestSize = -1;
+      for (let i = 0; i < currentRunCount; i++) {
+        const run = runsMembers[i];
+        const size = run.length;
+        if (size >= maxPerRun) continue;
+        if (runsPlayerCounts[i][ch.discordName]) continue;
+
+        const sameJob = run.filter((m) => m.role === 'DPS' && m.jobCode === ch.jobCode).length;
+        if (sameJob >= maxSameJobDps) continue;
+
+        if (!canAddToRunGreedy(raidId, run, runsPlayerCounts[i], ch, maxPerRun, maxSupportsPerRun)) continue;
+
+        if (size > bestSize) {
+          bestSize = size;
+          bestIndex = i;
+        }
+      }
+    }
+
+    // 새 런 생성(미배치 0)
+    if (bestIndex === -1) {
+      bestIndex = runsMembers.length;
+      runsMembers.push([]);
+      runsTotalPower.push(0);
+      runsDpsPower.push(0);
+      runsSupPower.push(0);
+      runsPlayerCounts.push({});
+    }
+
+    placeIntoRun(bestIndex, ch);
+  }
+
+  // ✅ 2서폿 런 우선 압축 + "앞 런 최대" 1차
+  let stage1 = packSupportsToTwoPerRunIfPossible(
+    raidId,
+    runsMembers,
+    maxPerRun,
+    maxSupportsPerRun,
+    fillTwoSupports,
+  );
+
+  stage1 = maximizeRunsFrontloaded(
+    raidId,
+    stage1,
+    maxPerRun,
+    maxSupportsPerRun,
+    fillTwoSupports,
+  );
+
+  // ✅ 최적화
+  let optimized: Character[][];
   if (speed) {
-    optimizedRunsMembers = optimizeCombatPowerBySwapOnly(
+    optimized = optimizeCombatPowerBySwapOnly(
       raidId,
-      runsMembers,
+      stage1,
       maxSupportsPerRun,
+      maxPerRun,
       dim,
       random,
       lockIds,
     );
 
-    optimizedRunsMembers = compactRunsFrontloadedForSpeed(
+    optimized = compactRunsFrontloadedForSpeed(
       raidId,
-      optimizedRunsMembers,
+      optimized,
       maxPerRun,
       maxSupportsPerRun,
-      reserveLastSlotForSupport,
     );
   } else {
-    optimizedRunsMembers = optimizeRunsByStdDev(
+    optimized = optimizeRunsByStdDev(
       raidId,
-      runsMembers,
+      stage1,
       maxPerRun,
       maxSupportsPerRun,
       dim,
       random,
       lockIds,
-      reserveLastSlotForSupport,
     );
   }
 
-  let afterJobAdjust = minimizeSameJobInRuns(
+  optimized = minimizeSameJobInRuns(raidId, optimized, maxPerRun, maxSupportsPerRun);
+  optimized = swapSameUserCharactersToFixDuplicates(raidId, optimized, maxPerRun, maxSupportsPerRun);
+
+  // ✅ 2서폿/앞런최대 최종 보정
+  optimized = packSupportsToTwoPerRunIfPossible(
     raidId,
-    optimizedRunsMembers,
+    optimized,
     maxPerRun,
     maxSupportsPerRun,
-    reserveLastSlotForSupport,
+    fillTwoSupports,
   );
-  afterJobAdjust = swapSameUserCharactersToFixDuplicates(raidId, afterJobAdjust);
 
-  optimizedRunsMembers = adjustSoloLastRunStrongCharacter(
+  optimized = maximizeRunsFrontloaded(
     raidId,
-    afterJobAdjust,
+    optimized,
     maxPerRun,
     maxSupportsPerRun,
-    lockIds,
-    reserveLastSlotForSupport,
+    fillTwoSupports,
   );
 
-  // ✅ [추가] 세르카면 최종적으로 "서폿0 런 4명"을 강제로 해소
-  if (isSerkaRaid(raidId)) {
-    optimizedRunsMembers = enforceSerkaRunsNoSupportCap(optimizedRunsMembers);
-  }
-
+  // ✅ RaidRun 변환
   const runs: RaidRun[] = [];
-  optimizedRunsMembers.forEach((members, idx) => {
+  optimized.forEach((members, idx) => {
     if (members.length === 0) return;
 
     const parties = splitIntoPartiesLossless(members, raidId);
     if (parties.length === 0) return;
 
-    const avgPower =
-      members.reduce((sum, c) => sum + c.combatPower, 0) / members.length;
+    const avgPower = members.reduce((sum, c) => sum + c.combatPower, 0) / members.length;
     runs.push({
       raidId,
       runIndex: idx + 1,
@@ -1263,12 +1210,16 @@ function distributeCharactersIntoRuns(
   return rebalanceSupportsGlobal(runs);
 }
 
-// ✅ 캐릭터 누락 방지 + 전투력 밸런싱(Snake) 파티 나누기 함수
+// ==========================================
+// ✅ 파티 나누기(룰 반영)
+// - 세르카: 1파티(최대 4). 단, 런 단계에서 서폿0이면 3 cap이라 여기까지 4가 안 들어옴
+// - 세르카 제외:
+//   - 서폿 있는 파티: 최대 4
+//   - 서폿 없는 파티: 최대 3
+// => 결과: (0서폿 런: 3+3), (1서폿 런: 4+3), (2서폿 런: 4+4)
+// ==========================================
 function splitIntoPartiesLossless(members: Character[], raidId: RaidId): RaidRunParty[] {
-  const cfg = getRaidConfig(raidId);
-  const maxParties = cfg.maxParties;
-  const maxPartySize = 4;
-  const maxSupPerParty = 1;
+  const maxParties = isSerkaRaid(raidId) ? 1 : 2;
 
   const supports = [...members]
     .filter((m) => m.role === 'SUPPORT')
@@ -1278,35 +1229,47 @@ function splitIntoPartiesLossless(members: Character[], raidId: RaidId): RaidRun
     .filter((m) => m.role === 'DPS')
     .sort((a, b) => b.combatPower - a.combatPower || a.id.localeCompare(b.id));
 
-  const parties: FixedRaidRunParty[] = Array.from({ length: maxParties }, (_, idx) => ({
+  // 파티 수 결정(간단): 세르카는 1, 그 외는 2가 필요할 때만 2
+  let partyCount = 1;
+  if (!isSerkaRaid(raidId)) {
+    partyCount = members.length > 4 ? 2 : 1;
+  }
+  partyCount = Math.min(maxParties, partyCount);
+
+  const parties: FixedRaidRunParty[] = Array.from({ length: partyCount }, (_, idx) => ({
     partyIndex: idx + 1,
     members: [],
   }));
 
   const usedIds = new Set<string>();
 
+  const maxSize = (party: FixedRaidRunParty) => {
+    if (isSerkaRaid(raidId)) return 4;
+    const hasSup = party.members.some((m) => m.role === 'SUPPORT');
+    return hasSup ? 4 : 3;
+  };
+
   const addMember = (party: FixedRaidRunParty, c: Character) => {
-    if (party.members.length >= maxPartySize) return false;
+    if (party.members.length >= maxSize(party)) return false;
     party.members.push(c);
     usedIds.add(c.id);
     return true;
   };
 
-  // 1) 서폿 우선 배치
-  parties.forEach((p) => {
+  // 1) 서폿 우선 배치(파티당 1명까지)
+  for (let i = 0; i < parties.length; i++) {
     const sup = supports.find((s) => !usedIds.has(s.id));
-    if (sup && p.members.filter((m) => m.role === 'SUPPORT').length < maxSupPerParty)
-      addMember(p, sup);
-  });
+    if (sup) addMember(parties[i], sup);
+  }
 
-  // 2) DPS 배치 (Snake)
+  // 2) DPS 배치 (Snake, 파티 내 동일 직업 DPS 중복 최소화)
   let placed = true;
   while (placed) {
     placed = false;
 
-    for (let i = 0; i < maxParties; i++) {
+    for (let i = 0; i < parties.length; i++) {
       const p = parties[i];
-      if (p.members.length >= maxPartySize) continue;
+      if (p.members.length >= maxSize(p)) continue;
 
       const distinctDps = dps.find(
         (d) =>
@@ -1322,9 +1285,9 @@ function splitIntoPartiesLossless(members: Character[], raidId: RaidId): RaidRun
     if (!placed) break;
 
     placed = false;
-    for (let i = maxParties - 1; i >= 0; i--) {
+    for (let i = parties.length - 1; i >= 0; i--) {
       const p = parties[i];
-      if (p.members.length >= maxPartySize) continue;
+      if (p.members.length >= maxSize(p)) continue;
 
       const distinctDps = dps.find(
         (d) =>
@@ -1339,7 +1302,7 @@ function splitIntoPartiesLossless(members: Character[], raidId: RaidId): RaidRun
     }
   }
 
-  // 3) 남은 인원 강제 배치
+  // 3) 남은 인원 강제 배치(파티 cap 적용)
   [...supports, ...dps].forEach((c) => {
     if (!usedIds.has(c.id)) {
       for (const p of parties) {
@@ -1351,6 +1314,9 @@ function splitIntoPartiesLossless(members: Character[], raidId: RaidId): RaidRun
   return parties.filter((p) => p.members.length > 0) as unknown as RaidRunParty[];
 }
 
+// ==========================================
+// ✅ 글로벌 서폿 재분배(기존 로직 유지)
+// ==========================================
 function rebalanceSupportsGlobal(runs: RaidRun[]): RaidRun[] {
   const result = runs.map((run) => ({
     ...run,
@@ -1388,7 +1354,10 @@ function rebalanceSupportsGlobal(runs: RaidRun[]): RaidRun[] {
     const supports = entry.party.members.filter((m) => m.role === 'SUPPORT').length;
     const size = entry.party.members.length;
 
+    // 서폿0인데 파티가 비지 않음 -> lacking
     if (supports === 0 && size > 0) lacking.push(entry);
+
+    // "서폿1 혼자" 파티 -> donors
     if (supports === 1 && size === 1) donors.push(entry);
   }
 
@@ -1402,6 +1371,7 @@ function rebalanceSupportsGlobal(runs: RaidRun[]): RaidRun[] {
     let bestDonorIdx = -1;
 
     if (targetRunAvg <= globalMedian) {
+      // 낮은 런에 더 높은 런의 서폿 붙여주기
       let bestAvg = -Infinity;
       donors.forEach((donor, idx) => {
         const sup = donor.party.members.find((m) => m.role === 'SUPPORT');
@@ -1414,6 +1384,7 @@ function rebalanceSupportsGlobal(runs: RaidRun[]): RaidRun[] {
         }
       });
     } else {
+      // 높은 런에 너무 높은 서폿 붙이면 더 치우칠 수 있으니 낮은쪽 donor 선호
       let bestAvg = Infinity;
       donors.forEach((donor, idx) => {
         const sup = donor.party.members.find((m) => m.role === 'SUPPORT');
@@ -1442,7 +1413,6 @@ function rebalanceSupportsGlobal(runs: RaidRun[]): RaidRun[] {
 
 // ==============================
 // ✅ 불변성 유지용: schedule deep-ish clone
-// (Character 객체 자체는 재사용, 배열/런/파티는 새로 생성)
 // ==============================
 function cloneSchedule(schedule: RaidSchedule): RaidSchedule {
   const result: RaidSchedule = {
@@ -1531,8 +1501,9 @@ function applySwaps(schedule: RaidSchedule, swaps: RaidSwap[], allCharacters: Ch
 }
 
 /**
- * ✅ [추가] 최종 스케줄에서 세르카 구성 강제
- * - applySwaps/enforceExclusions 이후에도 4딜 런이 생길 수 있으니 마지막에 한번 더 보정
+ * ✅ [최종] 세르카 구성 강제
+ * - swaps/exclusions 이후에도 "서폿0 + 4명"이 생기면 안 됨(세르카 서폿0 cap=3)
+ * - 서폿 있는 런(4인)으로 1명 이동
  */
 function enforceSerkaDpsCapOnSchedule(schedule: RaidSchedule): RaidSchedule {
   const next = cloneSchedule(schedule);
@@ -1550,7 +1521,6 @@ function enforceSerkaDpsCapOnSchedule(schedule: RaidSchedule): RaidSchedule {
     const runs = next[raidId] ?? [];
     if (runs.length <= 1) continue;
 
-    // 세르카는 파티 1개 전제
     const getRunMembers = (ri: number): Character[] =>
       ((runs[ri].parties[0] as unknown) as FixedRaidRunParty).members;
 
@@ -1565,23 +1535,20 @@ function enforceSerkaDpsCapOnSchedule(schedule: RaidSchedule): RaidSchedule {
       guard++;
       changed = false;
 
-      // src: 서폿0 + 4명 런
-      const srcIdx = runs.findIndex((run) => {
-        const mem = getRunMembers(runs.indexOf(run));
+      const srcIdx = runs.findIndex((_, idx) => {
+        const mem = getRunMembers(idx);
         return mem.length === 4 && supCount(mem) === 0;
       });
       if (srcIdx === -1) break;
 
       const srcMembers = getRunMembers(srcIdx);
 
-      // 옮길 DPS: 전투력 낮은 순
       const mover = [...srcMembers]
         .filter((m) => m.role === 'DPS')
         .sort((a, b) => a.combatPower - b.combatPower || a.id.localeCompare(b.id))[0];
 
       if (!mover) break;
 
-      // dst: 서폿이 있고 3/4인 런(빈자리), 유저 중복 X, 세르카 동일직업DPS 중복 X
       let bestDstIdx = -1;
       let bestSize = -1;
 
@@ -1593,6 +1560,7 @@ function enforceSerkaDpsCapOnSchedule(schedule: RaidSchedule): RaidSchedule {
         if (supCount(dstMembers) <= 0) continue;
         if (hasUser(dstMembers, mover.discordName)) continue;
 
+        // 세르카: 같은 직업 DPS 중복 금지(파티 4인)
         const sameJobDps = dstMembers.filter(
           (m) => m.role === 'DPS' && m.jobCode === mover.jobCode,
         ).length;
@@ -1606,14 +1574,12 @@ function enforceSerkaDpsCapOnSchedule(schedule: RaidSchedule): RaidSchedule {
 
       if (bestDstIdx === -1) break;
 
-      // 이동 실행
       const removeIdx = srcMembers.findIndex((m) => m.id === mover.id);
       if (removeIdx === -1) break;
 
       srcMembers.splice(removeIdx, 1);
       getRunMembers(bestDstIdx).push(mover);
 
-      // 평균 재계산
       runs[srcIdx] = recomputeAvg(runs[srcIdx]);
       runs[bestDstIdx] = recomputeAvg(runs[bestDstIdx]);
 
@@ -1626,6 +1592,9 @@ function enforceSerkaDpsCapOnSchedule(schedule: RaidSchedule): RaidSchedule {
   return next;
 }
 
+// ==============================
+// ✅ 빌드 스케줄
+// ==============================
 export function buildRaidSchedule(
   characters: Character[],
   exclusions: RaidExclusionMap = {},
@@ -1650,13 +1619,21 @@ export function buildRaidSchedule(
   };
 
   buckets.forEach(({ raidId, characters }) => {
-    const supportShortage = Boolean(raidSettings?.[raidId]);
-    const pool = supportShortage
-      ? promoteValkyToSupportIfNeeded(raidId, characters)
+    const fillTwoSupports = Boolean(raidSettings?.[raidId]); // ✅ 랏폿 체크
+
+    // ✅ 랏폿 체크 ON이면 승격을 통해 2서폿 런 우선 생성이 쉬워짐
+    const pool = fillTwoSupports
+      ? promoteValkyToSupportIfNeeded(raidId, characters, fillTwoSupports)
       : characters;
 
     if (schedule[raidId] !== undefined) {
-      schedule[raidId] = distributeCharactersIntoRuns(raidId, pool, balanceMode, seededRng);
+      schedule[raidId] = distributeCharactersIntoRuns(
+        raidId,
+        pool,
+        balanceMode,
+        seededRng,
+        fillTwoSupports,
+      );
     }
   });
 
@@ -1664,7 +1641,7 @@ export function buildRaidSchedule(
   const scheduleWithSwaps = applySwaps(schedule, swaps, characters);
   const scheduleWithExclusions = enforceExclusions(scheduleWithSwaps, exclusions);
 
-  // ✅ [추가] 최종적으로 세르카는 "서폿0 4명"이 절대 안 나오도록 강제 보정
+  // ✅ 세르카 안전장치
   return enforceSerkaDpsCapOnSchedule(scheduleWithExclusions);
 }
 
@@ -1708,11 +1685,12 @@ export function buildRaidCandidatesMap(
       (a, b) => b.combatPower - a.combatPower || a.id.localeCompare(b.id),
     );
 
-    const supportShortage = Boolean(raidSettings?.[raidId]);
-    if (supportShortage) {
+    const fillTwoSupports = Boolean(raidSettings?.[raidId]);
+
+    if (fillTwoSupports) {
       const excludedIds = new Set(exclusions?.[raidId] ?? []);
       const remaining = unique.filter((c) => !excludedIds.has(c.id));
-      const promotedRemaining = promoteValkyToSupportIfNeeded(raidId, remaining);
+      const promotedRemaining = promoteValkyToSupportIfNeeded(raidId, remaining, fillTwoSupports);
 
       const promotedById = new Map(promotedRemaining.map((c) => [c.id, c]));
       map[raidId] = unique.map((c) => promotedById.get(c.id) ?? c);
