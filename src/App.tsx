@@ -95,9 +95,6 @@ const App: React.FC = () => {
     window.localStorage.setItem(THEME_KEY, theme);
   }, [theme]);
 
-  // ❌ [삭제됨] 로컬 스토리지에서 Squad 정보 불러오기
-  // ❌ [삭제됨] 로컬 스토리지에 Squad 정보 저장하기
-
   const refreshAllCharacters = async () => {
     try {
       setLoading(true);
@@ -165,15 +162,40 @@ const App: React.FC = () => {
     return [...others, ...localSquad.characters];
   }, [allCharacters, localSquad]);
 
+  // ✅ [추가] 유저 토글 상태 관리 (기본값 Toggle ON = 비활성 유저 없음)
+  const [inactiveUsers, setInactiveUsers] = useState<Set<string>>(new Set());
+
+  // ✅ [추가] 비활성화된 유저를 제외한 스케줄용 캐릭터 풀
+  const schedulingCharacters = useMemo(() => {
+    return effectiveCharacters.filter((c) => !inactiveUsers.has(c.discordName));
+  }, [effectiveCharacters, inactiveUsers]);
+
+  // ✅ [수정] effectiveCharacters 대신 schedulingCharacters 기반으로 스케줄 생성
   const schedule = useMemo(
-    () => buildRaidSchedule(effectiveCharacters, raidExclusions, balanceMode, raidSettings, raidSwaps),
-    [effectiveCharacters, raidExclusions, balanceMode, raidSettings, raidSwaps],
+    () => buildRaidSchedule(schedulingCharacters, raidExclusions, balanceMode, raidSettings, raidSwaps),
+    [schedulingCharacters, raidExclusions, balanceMode, raidSettings, raidSwaps],
   );
 
+  // ✅ [수정] effectiveCharacters 대신 schedulingCharacters 기반으로 후보군 생성
   const raidCandidates = useMemo(
-    () => buildRaidCandidatesMap(effectiveCharacters, raidExclusions, raidSettings),
-    [effectiveCharacters, raidExclusions, raidSettings],
+    () => buildRaidCandidatesMap(schedulingCharacters, raidExclusions, raidSettings),
+    [schedulingCharacters, raidExclusions, raidSettings],
   );
+
+  // ✅ [추가] 토글 UI를 위한 전체 유저 목록 (가나다 순)
+  const allUserNames = useMemo(() => {
+    return Array.from(new Set(effectiveCharacters.map((c) => c.discordName))).sort();
+  }, [effectiveCharacters]);
+
+  // ✅ [추가] 유저 토글 핸들러
+  const handleToggleUserActive = (name: string) => {
+    setInactiveUsers((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  };
 
   const handleToggleSupportShortage = async (raidId: RaidId, next: boolean) => {
     try {
@@ -520,6 +542,9 @@ const App: React.FC = () => {
                         onExcludeRun={handleExcludeRun}
                         allCharacters={effectiveCharacters}
                         isSwapping={isSwapping}
+                        allUserNames={allUserNames}
+                        inactiveUsers={inactiveUsers}
+                        onToggleUser={handleToggleUserActive}
                       />
                     )}
                   </section>
@@ -545,6 +570,9 @@ const App: React.FC = () => {
                       onExclusionsUpdated={(next) => setRaidExclusions(next)}
                       isSwapping={isSwapping}
                       updatedBy={localSquad.discordName || 'User'}
+                      allUserNames={allUserNames}
+                      inactiveUsers={inactiveUsers}
+                      onToggleUser={handleToggleUserActive}
                     />
                   </section>
                 }

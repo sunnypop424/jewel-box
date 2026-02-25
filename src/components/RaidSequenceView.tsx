@@ -546,6 +546,9 @@ interface Props {
   ) => void | Promise<void>;
   allCharacters?: Character[];
   isSwapping?: boolean;
+  allUserNames?: string[];
+  inactiveUsers?: Set<string>;
+  onToggleUser?: (name: string) => void;
 }
 
 export const RaidSequenceView: React.FC<Props> = ({
@@ -557,7 +560,11 @@ export const RaidSequenceView: React.FC<Props> = ({
   onSwapCharacter,
   allCharacters = [],
   isSwapping: isSwappingFromParent = false,
+  allUserNames = [],
+  inactiveUsers = new Set(),
+  onToggleUser,
 }) => {
+
   const SHOW_SERKA_FILTER = true;
 
   // ✅ 1. 레이드 순서 상태
@@ -568,30 +575,13 @@ export const RaidSequenceView: React.FC<Props> = ({
     () => new Set(INITIAL_RAID_ORDER.filter((id) => SHOW_SERKA_FILTER || !id.startsWith('SERKA_'))),
   );
 
-  // ✅ 참여 유저 필터
-  const [selectedUsers, setSelectedUsers] = useState<Set<string>>(new Set());
+  // ❌ 로컬 상태로 관리하던 selectedUsers, toggleUser 관련 로직은 제거 (글로벌 onToggleUser로 대체)
 
   const [swapTarget, setSwapTarget] = useState<{ raidId: RaidId; char: Character } | null>(null);
-
   const [isSwappingLocal, setIsSwappingLocal] = useState(false);
 
   // 부모가 주는 값 + 로컬 값 합치기
   const isSwapping = isSwappingFromParent || isSwappingLocal;
-
-  // 전체 유저 목록 추출
-  const allUsers = useMemo(() => {
-    if (!schedule) return [];
-    const users = new Set<string>();
-    Object.values(schedule).flat().forEach((run) => {
-      run.parties.flatMap((p) => p.members).forEach((m) => users.add(m.discordName));
-    });
-    return Array.from(users).sort();
-  }, [schedule]);
-
-  // ✅ 초기 유저 선택 (전체 선택)
-  useEffect(() => {
-    setSelectedUsers(new Set(allUsers));
-  }, [allUsers.join('|')]);
 
   const [localExclusions, setLocalExclusions] = useState<RaidExclusionMap>(exclusions ?? {});
   useEffect(() => {
@@ -614,8 +604,6 @@ export const RaidSequenceView: React.FC<Props> = ({
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
-
-    // ✅ over 없을 수 있음(영역 밖 드랍) -> 크래시 방지
     if (!over) return;
 
     if (active.id !== over.id) {
@@ -627,7 +615,8 @@ export const RaidSequenceView: React.FC<Props> = ({
     }
   };
 
-  // ✅ 필터 적용된 스케줄 (레이드 종류 + 유저 참여 여부 필터링)
+  // ✅ [수정] 스케줄 자체는 이미 App.tsx에서 유저가 제외된 상태로 재생성되어 내려옵니다.
+  // 여기서는 레이드 종류(selectedRaids)만 필터링합니다.
   const filteredSchedule = useMemo(() => {
     if (!schedule) return null;
 
@@ -643,20 +632,13 @@ export const RaidSequenceView: React.FC<Props> = ({
 
     selectedRaids.forEach((raidId) => {
       const runs = schedule[raidId];
-      if (!runs) return;
-
-      // 한 명이라도 선택 해제된 유저가 포함되면 그 run 숨김
-      const validRuns = runs.filter((run) => {
-        const members = getRunMembers(run);
-        if (members.length === 0) return true;
-        return members.every((m) => selectedUsers.has(m.discordName));
-      });
-
-      if (validRuns.length > 0) fs[raidId] = validRuns;
+      if (runs && runs.length > 0) {
+        fs[raidId] = runs;
+      }
     });
 
     return fs;
-  }, [schedule, selectedRaids, selectedUsers]);
+  }, [schedule, selectedRaids]);
 
   // ✅ 시퀀스 생성
   const { groups } = useMemo(() => {
@@ -690,13 +672,6 @@ export const RaidSequenceView: React.FC<Props> = ({
     if (next.has(id)) next.delete(id);
     else next.add(id);
     setSelectedRaids(next);
-  };
-
-  const toggleUser = (name: string) => {
-    const next = new Set(selectedUsers);
-    if (next.has(name)) next.delete(name);
-    else next.add(name);
-    setSelectedUsers(next);
   };
 
   const flatSteps: GlobalStep[] = groups.flatMap((g) => g.steps);
@@ -1171,32 +1146,36 @@ export const RaidSequenceView: React.FC<Props> = ({
       {/* ✅ User Filter Controls */}
       <div className="sticky top-0 z-30 flex flex-col gap-3 rounded-2xl border border-zinc-200 bg-white/90 px-4 py-3 shadow-sm backdrop-blur-md dark:border-zinc-800 dark:bg-zinc-900/90">
         {/* 유저 필터 */}
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center gap-2 text-sm font-semibold text-zinc-600 dark:text-zinc-400">
-            <Users className="h-4 w-4" />
-            <span>오늘 참여하는 인원 (제외 시 해당 인원 포함 레이드 숨김)</span>
-          </div>
+{/* ✅ [수정] 글로벌 유저 필터 컨트롤 */}
+        {allUserNames.length > 0 && onToggleUser && (
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center gap-2 text-sm font-semibold text-zinc-600 dark:text-zinc-400">
+              <Users className="h-4 w-4" />
+              <span>참여 인원 (토글 시 전체 레이드 배정에서 제외 후 재배정)</span>
+            </div>
 
-          <div className="flex flex-wrap gap-2">
-            {allUsers.map((name) => {
-              const isSelected = selectedUsers.has(name);
-              return (
-                <button
-                  key={name}
-                  onClick={() => toggleUser(name)}
-                  className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-bold transition-all border ${
-                    isSelected
-                      ? 'bg-indigo-50 border-indigo-200 text-indigo-700 dark:bg-indigo-950/30 dark:border-indigo-900 dark:text-indigo-200'
-                      : 'bg-transparent border-zinc-200 text-zinc-400 decoration-zinc-400 line-through dark:border-zinc-800 dark:text-zinc-600'
-                  }`}
-                >
-                  {isSelected ? <UserCheck className="h-3 w-3" /> : <UserX className="h-3 w-3" />}
-                  {name}
-                </button>
-              );
-            })}
+            <div className="flex flex-wrap gap-2">
+              {allUserNames.map((name) => {
+                const isInactive = inactiveUsers.has(name);
+                const isSelected = !isInactive; // 비활성화 되지 않았으면 선택됨
+                return (
+                  <button
+                    key={name}
+                    onClick={() => onToggleUser(name)}
+                    className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-bold transition-all border ${
+                      isSelected
+                        ? 'bg-indigo-50 border-indigo-200 text-indigo-700 dark:bg-indigo-950/30 dark:border-indigo-900 dark:text-indigo-200'
+                        : 'bg-transparent border-zinc-200 text-zinc-400 decoration-zinc-400 line-through dark:border-zinc-800 dark:text-zinc-600'
+                    }`}
+                  >
+                    {isSelected ? <UserCheck className="h-3 w-3" /> : <UserX className="h-3 w-3" />}
+                    {name}
+                  </button>
+                );
+              })}
+            </div>
           </div>
-        </div>
+        )}
 
         <div className="h-px w-full bg-zinc-100 dark:bg-zinc-800" />
 

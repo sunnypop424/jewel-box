@@ -1229,10 +1229,18 @@ function splitIntoPartiesLossless(members: Character[], raidId: RaidId): RaidRun
     .filter((m) => m.role === 'DPS')
     .sort((a, b) => b.combatPower - a.combatPower || a.id.localeCompare(b.id));
 
-  // 파티 수 결정(간단): 세르카는 1, 그 외는 2가 필요할 때만 2
+  // ✅ 파티 수 결정(수정): "4명 + 서폿0"이면 2파티로 쪼개서 인원 증발 방지
   let partyCount = 1;
   if (!isSerkaRaid(raidId)) {
-    partyCount = members.length > 4 ? 2 : 1;
+    const noSupportRun = supports.length === 0;
+
+    if (members.length > 4) {
+      partyCount = 2;
+    } else if (members.length === 4 && noSupportRun) {
+      partyCount = 2; // 3 cap(서폿0) 때문에 1파티로는 4명 수용 불가 → 2파티 필요
+    } else {
+      partyCount = 1;
+    }
   }
   partyCount = Math.min(maxParties, partyCount);
 

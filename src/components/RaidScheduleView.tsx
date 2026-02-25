@@ -18,6 +18,8 @@ import {
   CheckCircle2,
   ArrowLeftRight,
   Check,
+  UserCheck,
+  UserX,
 } from 'lucide-react';
 import { SwapModal } from './SwapModal';
 
@@ -54,6 +56,10 @@ interface Props {
 
   // ✅ 실제 사용(스왑 진행 중 잠금)
   isSwapping?: boolean;
+  // ✅ [추가] Props 정의
+  allUserNames?: string[];
+  inactiveUsers?: Set<string>;
+  onToggleUser?: (name: string) => void;
 }
 
 export const RaidScheduleView: React.FC<Props> = ({
@@ -70,6 +76,10 @@ export const RaidScheduleView: React.FC<Props> = ({
   allCharacters = [],
   onExcludeRun,
   isSwapping = false,
+  // ✅ [추가] 디폴트 값 바인딩
+  allUserNames = [],
+  inactiveUsers = new Set(),
+  onToggleUser,
 }) => {
   const [raidOpenState, setRaidOpenState] = useState<Record<string, boolean>>(
     {},
@@ -213,6 +223,35 @@ export const RaidScheduleView: React.FC<Props> = ({
 
   return (
     <div className="grid gap-6">
+      {/* ✅ [추가] 유저 필터 UI */}
+      {allUserNames.length > 0 && onToggleUser && (
+        <div className="sticky top-0 z-30 flex flex-col gap-2 rounded-2xl border border-zinc-200 bg-white/90 px-4 py-3 shadow-sm backdrop-blur-md dark:border-zinc-800 dark:bg-zinc-900/90">
+          <div className="flex items-center gap-2 text-sm font-semibold text-zinc-600 dark:text-zinc-400">
+            <Users className="h-4 w-4" />
+            <span>참여 인원 (토글 시 전체 레이드 배정에서 제외 후 재배정)</span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {allUserNames.map((name) => {
+              const isInactive = inactiveUsers.has(name);
+              const isSelected = !isInactive;
+              return (
+                <button
+                  key={name}
+                  onClick={() => onToggleUser(name)}
+                  className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-bold transition-all border ${
+                    isSelected
+                      ? 'bg-indigo-50 border-indigo-200 text-indigo-700 dark:bg-indigo-950/30 dark:border-indigo-900 dark:text-indigo-200'
+                      : 'bg-transparent border-zinc-200 text-zinc-400 decoration-zinc-400 line-through dark:border-zinc-800 dark:text-zinc-600'
+                  }`}
+                >
+                  {isSelected ? <UserCheck className="h-3 w-3" /> : <UserX className="h-3 w-3" />}
+                  {name}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
       {raidIds.map((raidId) => {
         const runs = schedule[raidId];
         if (!runs || runs.length === 0) return null;
