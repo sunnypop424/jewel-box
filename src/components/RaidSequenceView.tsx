@@ -62,12 +62,18 @@ const INITIAL_RAID_ORDER: RaidId[] = [
   'SERKA_NORMAL',
   'SERKA_HARD',
   'SERKA_NIGHTMARE',
+  'HORIZON_STEP1', 
+  'HORIZON_STEP2', 
+  'HORIZON_STEP3'
 ];
 
 const DIFF_LABEL = {
   NORMAL: '노말',
   HARD: '하드',
   NIGHTMARE: '나이트메어',
+  STEP1: '1단계',
+  STEP2: '2단계',
+  STEP3: '3단계'
 } as const;
 
 function getDifficultyStyle(diff: string) {
@@ -85,6 +91,14 @@ function getDifficultyStyle(diff: string) {
       dot: 'bg-rose-500',
       borderActive: 'border-rose-500',
       badge: 'bg-rose-100 text-rose-700 dark:bg-rose-900 dark:text-rose-300',
+    };
+  }
+  if (diff === 'STEP1' || diff === 'STEP2' || diff === 'STEP3') {
+    return {
+      btn: 'bg-orange-50 border-orange-200 text-orange-700 dark:bg-orange-950/30 dark:border-orange-900 dark:text-orange-200 shadow-sm',
+      dot: 'bg-orange-500',
+      borderActive: 'border-orange-500',
+      badge: 'bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300',
     };
   }
   return {
@@ -621,6 +635,8 @@ export const RaidSequenceView: React.FC<Props> = ({
     if (!schedule) return null;
 
     const fs: RaidSchedule = {
+      ACT2_HARD: [], // 🌟 추가
+      ACT3_HARD: [], // 🌟 추가
       ACT4_NORMAL: [],
       ACT4_HARD: [],
       SERKA_NORMAL: [],
@@ -628,6 +644,9 @@ export const RaidSequenceView: React.FC<Props> = ({
       SERKA_NIGHTMARE: [],
       FINAL_NORMAL: [],
       FINAL_HARD: [],
+      HORIZON_STEP1: [], 
+      HORIZON_STEP2: [], 
+      HORIZON_STEP3: [],
     };
 
     selectedRaids.forEach((raidId) => {
@@ -698,19 +717,24 @@ export const RaidSequenceView: React.FC<Props> = ({
     const difficulty = meta.difficulty;
     const diffStyle = getDifficultyStyle(difficulty);
 
-    const titleClass =
-      difficulty === 'NORMAL'
-        ? 'text-sky-600 dark:text-sky-400'
-        : difficulty === 'HARD'
-          ? 'text-rose-600 dark:text-rose-400'
-          : 'text-violet-600 dark:text-violet-400';
+    // 🌟 여기를 수정합니다 (기존 삼항 연산자 제거 후 조건문으로 변경)
+    let titleClass = '';
+    let labelClass = '';
 
-    const labelClass =
-      difficulty === 'NORMAL'
-        ? 'text-sky-800/60 dark:text-sky-300/60'
-        : difficulty === 'HARD'
-          ? 'text-rose-800/60 dark:text-rose-300/60'
-          : 'text-violet-800/60 dark:text-violet-300/60';
+    if (difficulty === 'NORMAL') {
+      titleClass = 'text-sky-600 dark:text-sky-400';
+      labelClass = 'text-sky-800/60 dark:text-sky-300/60';
+    } else if (difficulty === 'HARD') {
+      titleClass = 'text-rose-600 dark:text-rose-400';
+      labelClass = 'text-rose-800/60 dark:text-rose-300/60';
+    } else if (difficulty === 'STEP1' || difficulty === 'STEP2' || difficulty === 'STEP3') {
+      titleClass = 'text-orange-600 dark:text-orange-400';
+      labelClass = 'text-orange-800/60 dark:text-orange-300/60';
+    } else {
+      // NIGHTMARE 및 기타
+      titleClass = 'text-violet-600 dark:text-violet-400';
+      labelClass = 'text-violet-800/60 dark:text-violet-300/60';
+    }
 
     const hasLeaving = !!(transition && transition.leaving.length > 0);
     const hasEntering = !!(transition && transition.entering.length > 0);

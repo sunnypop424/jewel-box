@@ -1,11 +1,13 @@
 import { useMemo } from 'react';
-import { User, Shield, Swords } from 'lucide-react';
+import { User, Shield, Swords, Coins } from 'lucide-react';
 import { RAID_META } from '../constants';
 import type { Character, RaidId, RaidExclusionMap, RaidSchedule } from '../types';
 
 type RaidProgressState = 'DONE' | 'ASSIGNED' | 'UNASSIGNED';
 
 const RAID_ORDER_FOR_PROGRESS: RaidId[] = [
+    'ACT2_HARD', 
+    'ACT3_HARD',
     'ACT4_NORMAL',
     'FINAL_NORMAL',
     'SERKA_NORMAL',
@@ -13,6 +15,9 @@ const RAID_ORDER_FOR_PROGRESS: RaidId[] = [
     'FINAL_HARD',
     'SERKA_HARD',
     'SERKA_NIGHTMARE',
+    'HORIZON_STEP1', 
+    'HORIZON_STEP2', 
+    'HORIZON_STEP3'
 ];
 
 /**
@@ -117,18 +122,52 @@ export function UserRaidProgressPanel({
                         </div>
 
                         <div className="flex flex-col gap-2">
-                            {chars.map((c) => {
+{chars.map((c) => {
                                 const raidsForChar = RAID_ORDER_FOR_PROGRESS.filter((raidId) =>
                                     (candidatesByRaid[raidId] ?? []).some((m) => m.id === c.id),
                                 );
-                                const isSup = c.role === 'SUPPORT';
+                                
+                                const isSup = c.role === 'SUPPORT'; // 🌟 누락되었던 변수 복구
+
+                                // 🌟 1. 본캐 판단 로직 (동일 닉네임 내 템렙 가장 높은 캐릭터)
+                                const mainChar = chars.reduce((max, curr) => curr.itemLevel > max.itemLevel ? curr : max, chars[0]);
+                                const isMain = c.id === mainChar.id;
+
+                                // 🌟 2. 골드 옵션에 따른 '귀속 골드' 배제 여부 확인
+                                const option = c.goldOption || 'ALL_MAX';
+                                let ignoreBoundGold = false;
+
+                                if (option === 'GENERAL_MAX') {
+                                    ignoreBoundGold = true;
+                                } else if (option === 'MAIN_ALL_ALT_GENERAL' && !isMain) {
+                                    ignoreBoundGold = true;
+                                }
+                                
+                                // 🌟 3. 수익 분석: 옵션에 맞춰서 4개 중 골드 효율이 높은 상위 3개 선별
+                                const raidYields = raidsForChar.map(id => {
+                                    const meta = RAID_META[id];
+                                    
+                                    // 귀속 골드 제외 상태이며, 해당 레이드가 귀속 골드를 준다면 평가 가치를 최하위(-1)로 내림
+                                    const effectiveGold = (ignoreBoundGold && meta.goldType === 'BOUND') ? -1 : meta.gold;
+
+                                    return {
+                                        id,
+                                        ...meta,
+                                        effectiveGold
+                                    }
+                                }).sort((a, b) => b.effectiveGold - a.effectiveGold);
+                                
+                                const top3Yields = raidYields.slice(0, 3);
+                                const top3Ids = new Set(top3Yields.map(y => y.id));
+                                
+                                // 합산할 때는 원래의 gold 값으로 더해줍니다.
+                                const totalGeneral = top3Yields.filter(y => y.goldType === 'GENERAL').reduce((acc, y) => acc + y.gold, 0);
+                                const totalBound = top3Yields.filter(y => y.goldType === 'BOUND').reduce((acc, y) => acc + y.gold, 0);
 
                                 return (
-                                    <div
-                                        key={c.id}
-                                        className="group flex flex-col gap-3 rounded-xl bg-white p-3 shadow-sm ring-1 ring-zinc-900/5 transition-all hover:shadow-md dark:bg-zinc-900 dark:ring-zinc-800"
-                                    >
-                                        {/* 상단: 캐릭터 기본 정보 영역 */}
+                                    <div key={c.id} className="group flex flex-col gap-3 rounded-xl bg-white p-3 shadow-sm ring-1 ring-zinc-900/5 transition-all hover:shadow-md dark:bg-zinc-900 dark:ring-zinc-800">
+                                        
+                                        {/* 🌟 복구된 상단: 캐릭터 기본 정보 영역 */}
                                         <div className="flex items-center justify-between">
                                             <div className="flex items-center gap-3">
                                                 {/* 역할 아이콘 (서포터/딜러) */}
@@ -141,10 +180,17 @@ export function UserRaidProgressPanel({
                                                     {isSup ? <Shield size={16} /> : <Swords size={16} />}
                                                 </div>
 
-                                                {/* 직업명 및 추가 정보 (필요시) */}
+                                                {/* 직업명 및 추가 정보 */}
                                                 <div>
-                                                    <div className="text-sm font-bold text-zinc-800 dark:text-zinc-100">
-                                                        {c.jobCode}
+                                                    <div className="flex items-center gap-1.5">
+                                                        <span className="text-sm font-bold text-zinc-800 dark:text-zinc-100">
+                                                            {c.jobCode}
+                                                        </span>
+                                                        {isMain && (
+                                                            <span className="rounded bg-indigo-100 px-1.5 py-0.5 text-[9px] font-bold text-indigo-600 dark:bg-indigo-900/50 dark:text-indigo-400">
+                                                                본캐
+                                                            </span>
+                                                        )}
                                                     </div>
                                                     <div className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400">
                                                         {discordName}
@@ -162,24 +208,48 @@ export function UserRaidProgressPanel({
                                                 </div>
                                             </div>
                                         </div>
+                                        {/* ------------------------------------------- */}
 
-                                        {/* 하단: 레이드 진행 상태 배지 영역 */}
-                                        <div className="flex flex-wrap items-center justify-end gap-1.5 border-t border-zinc-100 pt-2.5 dark:border-zinc-800">
+                                        {/* 골드 정보 패널 (새로 추가) */}
+                                        <div className="flex justify-between items-center rounded-lg bg-amber-50/50 p-2 dark:bg-amber-950/20 border border-amber-100 dark:border-amber-900/30">
+                                            <div className="flex items-center gap-1.5 text-amber-700 dark:text-amber-400">
+                                                <Coins size={14} />
+                                                <span className="text-xs font-bold">예상 수익</span>
+                                            </div>
+                                            <div className="flex items-center gap-2 text-xs font-semibold">
+                                                <span className="text-zinc-600 dark:text-zinc-300">
+                                                    일반 <span className="text-amber-600 dark:text-amber-400">{totalGeneral.toLocaleString()}</span>
+                                                </span>
+                                                <span className="text-zinc-600 dark:text-zinc-300">
+                                                    귀속 <span className="text-orange-600 dark:text-orange-400">{totalBound.toLocaleString()}</span>
+                                                </span>
+                                            </div>
+                                        </div>
+
+                                        <div className="flex flex-wrap items-start justify-end gap-1.5 border-t border-zinc-100 pt-2.5 dark:border-zinc-800">
                                             {raidsForChar.length === 0 ? (
                                                 <span className="text-[10px] text-zinc-400 ml-1">잔여 레이드 없음</span>
                                             ) : (
                                                 raidsForChar.map((raidId) => {
                                                     const state = getState(raidId, c.id);
                                                     const meta = RAID_META[raidId];
-                                                    const style = getStatusStyles(state);
+                                                    let style = getStatusStyles(state);
+                                                    
+                                                    // 상위 3개 골드 수급처 표시 (테두리나 색상 차이 부여)
+                                                    const isTop3 = top3Ids.has(raidId);
+                                                    if (!isTop3) style += ' opacity-50'; // 골드 미수급 레이드
 
                                                     return (
-                                                        <span
-                                                            key={raidId}
-                                                            className={`inline-flex items-center rounded px-2 py-0.5 text-[11px] font-medium transition-colors shadow-sm ${style}`}
-                                                        >
-                                                            {meta.label}
-                                                        </span>
+                                                        <div key={raidId} className="flex flex-col items-center gap-0.5">
+                                                            <span className={`inline-flex items-center rounded px-2 py-0.5 text-[11px] font-medium transition-colors shadow-sm ${style}`}>
+                                                                {meta.label}
+                                                            </span>
+                                                            {isTop3 && (
+                                                                <span className="text-[11px] font-semibold text-amber-600 dark:text-amber-400">
+                                                                    {meta.goldType === 'GENERAL' ? '' : '귀속 '}{meta.gold}G
+                                                                </span>
+                                                            )}
+                                                        </div>
                                                     );
                                                 })
                                             )}

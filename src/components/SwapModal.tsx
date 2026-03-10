@@ -17,6 +17,13 @@ interface SwapModalProps {
 function isCharacterTargetForRaid(char: Character, targetRaidId: RaidId): boolean {
   const il = char.itemLevel;
 
+  // 1. 지평의 성당
+  if (targetRaidId.startsWith('HORIZON_')) {
+    if (il >= 1750) return targetRaidId === 'HORIZON_STEP3';
+    if (il >= 1720) return targetRaidId === 'HORIZON_STEP2';
+    if (il >= 1700) return targetRaidId === 'HORIZON_STEP1';
+  }
+
   // 1. 세르카 (Serka) - 1740+ & 나메체크 시 나메, 그 외 1730+ 하드, 1710+ 노말
   if (targetRaidId.startsWith('SERKA_')) {
     if (il >= 1740 && char.serkaNightmare) return targetRaidId === 'SERKA_NIGHTMARE';

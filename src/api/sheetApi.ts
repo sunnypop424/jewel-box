@@ -35,6 +35,7 @@ export async function fetchCharacters(discordName?: string): Promise<Character[]
 
     serkaNightmare: typeof c.serkaNightmare === 'boolean' ? c.serkaNightmare : undefined,
     valkyCanSupport: typeof c.valkyCanSupport === 'boolean' ? c.valkyCanSupport : undefined,
+    goldOption: c.goldOption || 'ALL_MAX',
   }));
 }
 

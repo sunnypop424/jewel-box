@@ -217,6 +217,9 @@ export const RaidScheduleView: React.FC<Props> = ({
     'SERKA_NORMAL',
     'SERKA_HARD',
     'SERKA_NIGHTMARE',
+    'HORIZON_STEP1', 
+    'HORIZON_STEP2', 
+    'HORIZON_STEP3'
   ];
 
   const raidIds = RAID_ORDER.filter((raidId) => (schedule[raidId]?.length ?? 0) > 0);
@@ -279,7 +282,15 @@ export const RaidScheduleView: React.FC<Props> = ({
             'text-rose-900 border-rose-200 bg-rose-50/50 hover:bg-rose-100 dark:text-rose-100 dark:border-rose-800 dark:bg-rose-900/20 dark:hover:bg-rose-900/40';
           titleColor = 'text-rose-900 dark:text-rose-100';
           dotColor = 'text-rose-500';
+        } else if (diff === 'STEP1' || diff === 'STEP2' || diff === 'STEP3') {
+          // 🌟 지평의 성당용 주황색(orange) 분기 추가
+          containerBorder = 'border-orange-200 dark:border-orange-800';
+          headerClass =
+            'text-orange-900 border-orange-200 bg-orange-50/50 hover:bg-orange-100 dark:text-orange-100 dark:border-orange-800 dark:bg-orange-900/20 dark:hover:bg-orange-900/40';
+          titleColor = 'text-orange-900 dark:text-orange-100';
+          dotColor = 'text-orange-500';
         } else {
+          // NIGHTMARE 등급 (보라색 유지)
           containerBorder = 'border-violet-200 dark:border-violet-800';
           headerClass =
             'text-violet-900 border-violet-200 bg-violet-50/50 hover:bg-violet-100 dark:text-violet-100 dark:border-violet-800 dark:bg-violet-900/20 dark:hover:bg-violet-900/40';

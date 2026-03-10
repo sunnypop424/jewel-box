@@ -1,13 +1,20 @@
 export type Role = 'DPS' | 'SUPPORT';
 
+export type GoldOption = 'ALL_MAX' | 'GENERAL_MAX' | 'MAIN_ALL_ALT_GENERAL';
+
 export type RaidId =
+  | 'ACT2_HARD'     // 🌟 추가 (1690)
+  | 'ACT3_HARD'     // 🌟 추가 (1700)
   | 'ACT4_NORMAL' // 1700
   | 'FINAL_NORMAL' // 1710
   | 'SERKA_NORMAL' // 1710 (4인)
   | 'ACT4_HARD' // 1720
   | 'FINAL_HARD' // 1730
   | 'SERKA_HARD' // 1730 (4인)
-  | 'SERKA_NIGHTMARE'; // 1740 (4인)
+  | 'SERKA_NIGHTMARE' // 1740 (4인)
+  | 'HORIZON_STEP1' // 1700
+  | 'HORIZON_STEP2' // 1720
+  | 'HORIZON_STEP3'; // 1750
 
 export type Character = {
   id: string;
@@ -22,6 +29,8 @@ export type Character = {
 
   /** 발키 “서폿 가능(플렉스)” 체크 (기본 false) */
   valkyCanSupport?: boolean;
+
+  goldOption?: GoldOption;
 };
 
 export type RaidRunParty = {

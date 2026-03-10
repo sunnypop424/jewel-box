@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import type { Character, Role } from '../types';
+import type { Character, Role, GoldOption } from '../types';
 import { JOB_OPTIONS, ROLE_OPTIONS } from '../constants';
-import { Trash2, Plus, Save, User, Shield, Swords, Loader2, Download } from 'lucide-react';
+import { Trash2, Plus, Save, User, Shield, Swords, Loader2, Download, ChevronDown } from 'lucide-react';
 
 interface CharacterFormRow {
   id?: string;
@@ -36,10 +36,12 @@ export const CharacterFormList: React.FC<Props> = ({
   const [localDiscord, setLocalDiscord] = useState(discordName);
   const [rows, setRows] = useState<CharacterFormRow[]>([]);
   const [isFetching, setIsFetching] = useState(false);
+  const [goldOption, setGoldOption] = useState<GoldOption>('ALL_MAX');
 
   useEffect(() => {
     setLocalDiscord(discordName);
     if (characters.length > 0) {
+      setGoldOption(characters[0].goldOption ?? 'ALL_MAX');
       setRows(characters.map(c => ({
         ...c,
         // ✅ 하위 호환: 기존 데이터는 1740+면 기본 true로 간주
@@ -48,6 +50,7 @@ export const CharacterFormList: React.FC<Props> = ({
         valkyCanSupport: c.valkyCanSupport ?? false,
       })));
     } else {
+      setGoldOption('ALL_MAX'); 
       setRows([{ discordName, jobCode: '', role: 'DPS', itemLevel: 1700, combatPower: '', serkaNightmare: false, valkyCanSupport: false }]);
     }
   }, [discordName, characters]);
@@ -67,6 +70,7 @@ export const CharacterFormList: React.FC<Props> = ({
       const myCharacters = onLoadByDiscordName(trimmedName);
 
       if (myCharacters.length > 0) {
+        setGoldOption(myCharacters[0].goldOption ?? 'ALL_MAX');
         setRows(myCharacters.map(c => ({
           id: c.id,
           discordName: c.discordName,
@@ -157,6 +161,7 @@ export const CharacterFormList: React.FC<Props> = ({
         combatPower: Number(r.combatPower),
         serkaNightmare: Boolean(r.serkaNightmare),
         valkyCanSupport: r.jobCode === '발키리' ? Boolean(r.valkyCanSupport) : false,
+        goldOption,
       }));
 
     if (cleaned.length === 0) {
@@ -205,6 +210,35 @@ export const CharacterFormList: React.FC<Props> = ({
         <p className="mt-2 text-[11px] text-zinc-500">
           다른 기기에서 접속했다면 닉네임을 입력하고 <b>불러오기</b>(엔터)를 눌러주세요.
         </p>
+        <div className="mt-5 rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900/50">
+          <label className="mb-2 block text-sm font-bold text-zinc-900 dark:text-zinc-100">
+            원정대 골드 수급 옵션
+          </label>
+          
+          {/* 🌟 화살표 커스텀을 위해 relative 추가 */}
+          <div className="relative">
+            <select
+              // 🌟 appearance-none 추가, pr-10 추가(텍스트가 아이콘을 침범하지 않게 여백 확보)
+              className="w-full appearance-none rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2.5 pr-10 text-sm font-medium text-zinc-700 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
+              value={goldOption}
+              onChange={(e) => setGoldOption(e.target.value as GoldOption)}
+              disabled={isLoading || isFetching}
+            >
+              <option value="ALL_MAX">귀속 골드 포함 최대 골드로 받기</option>
+              <option value="GENERAL_MAX"> 귀속 골드 제외 최대 골드로 받기</option>
+              <option value="MAIN_ALL_ALT_GENERAL">본캐만 귀속 골드 포함하고 부캐는 귀속 골드 제외하기</option>
+            </select>
+            
+            {/* 🌟 커스텀 화살표 아이콘 (클릭이 관통되도록 pointer-events-none 적용) */}
+            <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400">
+              <ChevronDown size={16} />
+            </div>
+          </div>
+          
+          <p className="mt-2 text-[11px] text-zinc-500">
+            * <b>본캐</b>는 등록된 캐릭터 중 <b>아이템 레벨이 가장 높은 캐릭터</b>로 자동 판별됩니다.
+          </p>
+        </div>
       </div>
 
       {/* 2. 캐릭터 리스트 섹션 */}

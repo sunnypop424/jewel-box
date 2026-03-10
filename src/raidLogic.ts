@@ -35,12 +35,8 @@ function isSpeedMode(mode: BalanceMode): boolean {
   return mode === 'speed';
 }
 
-function isSerkaRaid(raidId: RaidId): boolean {
-  return (
-    raidId === 'SERKA_NORMAL' ||
-    raidId === 'SERKA_HARD' ||
-    raidId === 'SERKA_NIGHTMARE'
-  );
+function isFourPlayerRaid(raidId: RaidId): boolean {
+  return raidId.startsWith('SERKA_') || raidId.startsWith('HORIZON_');
 }
 
 type RaidConfig = {
@@ -51,7 +47,7 @@ type RaidConfig = {
 
 function getRaidConfig(raidId: RaidId, fillTwoSupports: boolean): RaidConfig {
   // ✅ 세르카: 4인 1파티, 서폿 최대 1
-  if (isSerkaRaid(raidId)) {
+  if (isFourPlayerRaid(raidId)) {
     return { maxPerRun: 4, maxSupportsPerRun: 1, maxParties: 1 };
   }
 
@@ -69,7 +65,7 @@ function getRaidConfig(raidId: RaidId, fillTwoSupports: boolean): RaidConfig {
 // 세르카: 서폿0 -> 3, 서폿1 -> 4
 // 그외:   서폿0 -> 6, 서폿1 -> 7, 서폿2 -> 8
 function getRunSizeCapBySupports(raidId: RaidId, supportCount: number): number {
-  if (isSerkaRaid(raidId)) {
+  if (isFourPlayerRaid(raidId)) {
     return supportCount > 0 ? 4 : 3;
   }
   if (supportCount <= 0) return 6;
@@ -114,7 +110,7 @@ function estimateRunCount(
 
   // 랏폿 ON이면 supports/2 만큼 런 수가 확보돼야 "2서폿 런"을 만들 여지가 생김(강제 아님, 하한치만)
   let runsBySupport = 1;
-  if (isSerkaRaid(raidId)) {
+  if (isFourPlayerRaid(raidId)) {
     runsBySupport = Math.max(1, supportCount || 1);
   } else if (fillTwoSupports) {
     runsBySupport = Math.max(1, Math.ceil(supportCount / 2));
@@ -132,18 +128,29 @@ function getTargetRaidsForCharacter(ch: Character): RaidId[] {
   const il = ch.itemLevel;
   const raids: RaidId[] = [];
 
-  // 1) 세르카
+// 1) 지평의 성당
+  if (il >= 1750) raids.push('HORIZON_STEP3');
+  else if (il >= 1720) raids.push('HORIZON_STEP2');
+  else if (il >= 1700) raids.push('HORIZON_STEP1');
+
+  // 2) 세르카
   if (il >= 1740 && ch.serkaNightmare === true) raids.push('SERKA_NIGHTMARE');
   else if (il >= 1730) raids.push('SERKA_HARD');
   else if (il >= 1710) raids.push('SERKA_NORMAL');
 
-  // 2) 종막
+  // 3) 종막
   if (il >= 1730) raids.push('FINAL_HARD');
   else if (il >= 1710) raids.push('FINAL_NORMAL');
 
-  // 3) 4막
+  // 4) 4막
   if (il >= 1720) raids.push('ACT4_HARD');
   else if (il >= 1700) raids.push('ACT4_NORMAL');
+
+  // 🌟 5) 3막, 2막 (1710 미만이라 상위 레이드가 부족한 캐릭터만 추가)
+  if (il < 1710) {
+    if (il >= 1700) raids.push('ACT3_HARD');
+    if (il >= 1690) raids.push('ACT2_HARD');
+  }
 
   return raids;
 }
@@ -217,7 +224,7 @@ function computeRunsCost(runsMembers: Character[][], dim: BalanceDimension): num
 // - 그 외(8인): 같은 직업 DPS 최대 2명
 // ==========================================
 function getMaxSameJobDpsInRun(raidId: RaidId): number {
-  return isSerkaRaid(raidId) ? 1 : 2;
+  return isFourPlayerRaid(raidId) ? 1 : 2;
 }
 
 // ==========================================
@@ -373,7 +380,7 @@ function packSupportsToTwoPerRunIfPossible(
   fillTwoSupports: boolean,
 ): Character[][] {
   if (!fillTwoSupports) return runsMembers;
-  if (isSerkaRaid(raidId)) return runsMembers;
+  if (isFourPlayerRaid(raidId)) return runsMembers;
 
   const runs = runsMembers.map((r) => [...r]);
 
@@ -461,7 +468,7 @@ function maximizeRunsFrontloaded(
   };
 
   // 1) 랏폿 ON이면 앞 런부터 2서폿 확보(가능하면)
-  if (fillTwoSupports && !isSerkaRaid(raidId)) {
+  if (fillTwoSupports && !isFourPlayerRaid(raidId)) {
     for (let i = 0; i < runs.length; i++) {
       while (supCount(runs[i]) < 2) {
         let moved = false;
@@ -502,7 +509,7 @@ function maximizeRunsFrontloaded(
         if (runs[j].length === 0) continue;
 
         const wantSupport =
-          fillTwoSupports && !isSerkaRaid(raidId) && supCount(runs[i]) < 2;
+          fillTwoSupports && !isFourPlayerRaid(raidId) && supCount(runs[i]) < 2;
 
         const candidates = [...runs[j]].sort((a, b) => {
           if (wantSupport && a.role !== b.role) return a.role === 'SUPPORT' ? -1 : 1;
@@ -749,8 +756,8 @@ function minimizeSameJobInRuns(
   const runCount = runs.length;
   if (runCount <= 1) return runs;
 
-  const dupThreshold = isSerkaRaid(raidId) ? 2 : 3;
-  const keepUntil = isSerkaRaid(raidId) ? 1 : 2;
+  const dupThreshold = isFourPlayerRaid(raidId) ? 2 : 3;
+  const keepUntil = isFourPlayerRaid(raidId) ? 1 : 2;
   const targetMaxSameJob = getMaxSameJobDpsInRun(raidId);
 
   const buildPlayerCounts = (members: Character[]) => {
@@ -818,7 +825,7 @@ function swapSameUserCharactersToFixDuplicates(
   const runCount = runs.length;
   if (runCount <= 1) return runs;
 
-  const dupThreshold = isSerkaRaid(raidId) ? 2 : 3;
+  const dupThreshold = isFourPlayerRaid(raidId) ? 2 : 3;
 
   for (let ri = 0; ri < runCount; ri++) {
     const run = runs[ri];
@@ -914,6 +921,8 @@ function groupCharactersByRaid(
   exclusions: RaidExclusionMap = {},
 ): RaidBucket[] {
   const map: Record<RaidId, Character[]> = {
+    ACT2_HARD: [], // 🌟 추가
+    ACT3_HARD: [], // 🌟 추가
     ACT4_NORMAL: [],
     ACT4_HARD: [],
     SERKA_NORMAL: [],
@@ -921,6 +930,9 @@ function groupCharactersByRaid(
     SERKA_NIGHTMARE: [],
     FINAL_NORMAL: [],
     FINAL_HARD: [],
+    HORIZON_STEP1: [], 
+    HORIZON_STEP2: [], 
+    HORIZON_STEP3: [],
   };
 
   characters.forEach((ch) => {
@@ -981,7 +993,7 @@ function distributeCharactersIntoRuns(
     .slice()
     .sort((a, b) => b.combatPower - a.combatPower || a.id.localeCompare(b.id));
 
-  const targetSupPerRun = isSerkaRaid(raidId) ? 1 : (fillTwoSupports ? 2 : 1);
+  const targetSupPerRun = isFourPlayerRaid(raidId) ? 1 : (fillTwoSupports ? 2 : 1);
 
   const placeIntoRun = (runIdx: number, ch: Character) => {
     runsMembers[runIdx].push(ch);
@@ -1073,7 +1085,7 @@ function distributeCharactersIntoRuns(
 
         const metric = dim === 'overall' ? runsTotalPower[i] : runsDpsPower[i];
         const supCnt = run.filter((m) => m.role === 'SUPPORT').length;
-        const supBoost = fillTwoSupports && !isSerkaRaid(raidId) ? supCnt : 0;
+        const supBoost = fillTwoSupports && !isFourPlayerRaid(raidId) ? supCnt : 0;
 
         const score: [number, number, number, number] = [metric, -supBoost, run.length, i];
 
@@ -1219,7 +1231,7 @@ function distributeCharactersIntoRuns(
 // => 결과: (0서폿 런: 3+3), (1서폿 런: 4+3), (2서폿 런: 4+4)
 // ==========================================
 function splitIntoPartiesLossless(members: Character[], raidId: RaidId): RaidRunParty[] {
-  const maxParties = isSerkaRaid(raidId) ? 1 : 2;
+  const maxParties = isFourPlayerRaid(raidId) ? 1 : 2;
 
   const supports = [...members]
     .filter((m) => m.role === 'SUPPORT')
@@ -1231,7 +1243,7 @@ function splitIntoPartiesLossless(members: Character[], raidId: RaidId): RaidRun
 
   // ✅ 파티 수 결정(수정): "4명 + 서폿0"이면 2파티로 쪼개서 인원 증발 방지
   let partyCount = 1;
-  if (!isSerkaRaid(raidId)) {
+  if (!isFourPlayerRaid(raidId)) {
     const noSupportRun = supports.length === 0;
 
     if (members.length > 4) {
@@ -1252,7 +1264,7 @@ function splitIntoPartiesLossless(members: Character[], raidId: RaidId): RaidRun
   const usedIds = new Set<string>();
 
   const maxSize = (party: FixedRaidRunParty) => {
-    if (isSerkaRaid(raidId)) return 4;
+    if (isFourPlayerRaid(raidId)) return 4;
     const hasSup = party.members.some((m) => m.role === 'SUPPORT');
     return hasSup ? 4 : 3;
   };
@@ -1424,6 +1436,8 @@ function rebalanceSupportsGlobal(runs: RaidRun[]): RaidRun[] {
 // ==============================
 function cloneSchedule(schedule: RaidSchedule): RaidSchedule {
   const result: RaidSchedule = {
+    ACT2_HARD: [], // 🌟 추가
+    ACT3_HARD: [], // 🌟 추가
     ACT4_NORMAL: [],
     ACT4_HARD: [],
     SERKA_NORMAL: [],
@@ -1431,6 +1445,9 @@ function cloneSchedule(schedule: RaidSchedule): RaidSchedule {
     SERKA_NIGHTMARE: [],
     FINAL_NORMAL: [],
     FINAL_HARD: [],
+    HORIZON_STEP1: [], 
+    HORIZON_STEP2: [], 
+    HORIZON_STEP3: [],
   };
 
   (Object.keys(result) as RaidId[]).forEach((raidId) => {
@@ -1617,6 +1634,8 @@ export function buildRaidSchedule(
   const seededRng = createSeededRandom(SEED);
 
   const schedule: RaidSchedule = {
+    ACT2_HARD: [], // 🌟 추가
+    ACT3_HARD: [], // 🌟 추가
     ACT4_NORMAL: [],
     ACT4_HARD: [],
     SERKA_NORMAL: [],
@@ -1624,9 +1643,13 @@ export function buildRaidSchedule(
     SERKA_NIGHTMARE: [],
     FINAL_NORMAL: [],
     FINAL_HARD: [],
+    HORIZON_STEP1: [], 
+    HORIZON_STEP2: [], 
+    HORIZON_STEP3: [],
   };
 
   buckets.forEach(({ raidId, characters }) => {
+    if (raidId === 'ACT2_HARD' || raidId === 'ACT3_HARD') return;
     const fillTwoSupports = Boolean(raidSettings?.[raidId]); // ✅ 랏폿 체크
 
     // ✅ 랏폿 체크 ON이면 승격을 통해 2서폿 런 우선 생성이 쉬워짐
@@ -1664,6 +1687,8 @@ export function buildRaidCandidatesMap(
   const filtered = characters.filter((c) => c.itemLevel >= 1700);
 
   const map: Record<RaidId, Character[]> = {
+    ACT2_HARD: [], // 🌟 추가
+    ACT3_HARD: [], // 🌟 추가
     ACT4_NORMAL: [],
     ACT4_HARD: [],
     SERKA_NORMAL: [],
@@ -1671,10 +1696,14 @@ export function buildRaidCandidatesMap(
     SERKA_NIGHTMARE: [],
     FINAL_NORMAL: [],
     FINAL_HARD: [],
+    HORIZON_STEP1: [], 
+    HORIZON_STEP2: [], 
+    HORIZON_STEP3: [],
   };
 
   filtered.forEach((ch) => {
     const targetRaids = getTargetRaidsForCharacter(ch);
+    
     targetRaids.forEach((raidId) => {
       if (map[raidId]) map[raidId].push(ch);
     });
