@@ -20,6 +20,7 @@ import {
   Check,
   UserCheck,
   UserX,
+  Filter,
 } from 'lucide-react';
 import { SwapModal } from './SwapModal';
 
@@ -60,6 +61,31 @@ interface Props {
   allUserNames?: string[];
   inactiveUsers?: Set<string>;
   onToggleUser?: (name: string) => void;
+}
+
+function getDifficultyStyle(diff: string) {
+  if (diff === 'NORMAL') {
+    return {
+      btn: 'bg-sky-50 border-sky-200 text-sky-700 dark:bg-sky-950/30 dark:border-sky-900 dark:text-sky-200 shadow-sm',
+      dot: 'bg-sky-500',
+    };
+  }
+  if (diff === 'HARD') {
+    return {
+      btn: 'bg-rose-50 border-rose-200 text-rose-700 dark:bg-rose-950/30 dark:border-rose-900 dark:text-rose-200 shadow-sm',
+      dot: 'bg-rose-500',
+    };
+  }
+  if (diff === 'STEP1' || diff === 'STEP2' || diff === 'STEP3') {
+    return {
+      btn: 'bg-orange-50 border-orange-200 text-orange-700 dark:bg-orange-950/30 dark:border-orange-900 dark:text-orange-200 shadow-sm',
+      dot: 'bg-orange-500',
+    };
+  }
+  return {
+    btn: 'bg-violet-50 border-violet-200 text-violet-700 dark:bg-violet-950/30 dark:border-violet-900 dark:text-violet-200 shadow-sm',
+    dot: 'bg-violet-500',
+  };
 }
 
 export const RaidScheduleView: React.FC<Props> = ({
@@ -224,37 +250,80 @@ export const RaidScheduleView: React.FC<Props> = ({
 
   const raidIds = RAID_ORDER.filter((raidId) => (schedule[raidId]?.length ?? 0) > 0);
 
+  const scrollToRaid = (raidId: RaidId) => {
+    const el = document.getElementById(`raid-section-${raidId}`);
+    if (!el) return;
+
+    el.scrollIntoView({
+      behavior: 'smooth',
+      block: 'start',
+    });
+  };
+
   return (
     <div className="grid gap-6">
-      {/* ✅ [추가] 유저 필터 UI */}
-      {allUserNames.length > 0 && onToggleUser && (
-        <div className="sticky top-0 z-30 flex flex-col gap-2 rounded-2xl border border-zinc-200 bg-white/90 px-4 py-3 shadow-sm backdrop-blur-md dark:border-zinc-800 dark:bg-zinc-900/90">
-          <div className="flex items-center gap-2 text-sm font-semibold text-zinc-600 dark:text-zinc-400">
-            <Users className="h-4 w-4" />
-            <span>참여 인원 (토글 시 전체 레이드 배정에서 제외 후 재배정)</span>
+      <div className="sticky top-0 z-30 flex flex-col gap-3 rounded-2xl border border-zinc-200 bg-white/90 px-4 py-3 shadow-sm backdrop-blur-md dark:border-zinc-800 dark:bg-zinc-900/90">
+        {/* ✅ 유저 필터 UI */}
+        {allUserNames.length > 0 && onToggleUser && (
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center gap-2 text-sm font-semibold text-zinc-600 dark:text-zinc-400">
+              <Users className="h-4 w-4" />
+              <span>참여 인원 (토글 시 전체 레이드 배정에서 제외 후 재배정)</span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {allUserNames.map((name) => {
+                const isInactive = inactiveUsers.has(name);
+                const isSelected = !isInactive;
+                return (
+                  <button
+                    key={name}
+                    onClick={() => onToggleUser(name)}
+                    className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-bold transition-all border ${
+                      isSelected
+                        ? 'bg-indigo-50 border-indigo-200 text-indigo-700 dark:bg-indigo-950/30 dark:border-indigo-900 dark:text-indigo-200'
+                        : 'bg-transparent border-zinc-200 text-zinc-400 decoration-zinc-400 line-through dark:border-zinc-800 dark:text-zinc-600'
+                    }`}
+                  >
+                    {isSelected ? <UserCheck className="h-3 w-3" /> : <UserX className="h-3 w-3" />}
+                    {name}
+                  </button>
+                );
+              })}
+            </div>
           </div>
+        )}
+
+        {allUserNames.length > 0 && onToggleUser && (
+          <div className="h-px w-full bg-zinc-100 dark:bg-zinc-800" />
+        )}
+
+        {/* ✅ 레이드 바로가기 */}
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center gap-2 text-sm font-semibold text-zinc-600 dark:text-zinc-400">
+            <Filter className="h-4 w-4" />
+            <span>레이드 바로가기</span>
+          </div>
+
           <div className="flex flex-wrap gap-2">
-            {allUserNames.map((name) => {
-              const isInactive = inactiveUsers.has(name);
-              const isSelected = !isInactive;
+            {raidIds.map((raidId) => {
+              const meta = RAID_META[raidId];
+              const diffStyle = getDifficultyStyle(meta.difficulty);
+
               return (
                 <button
-                  key={name}
-                  onClick={() => onToggleUser(name)}
-                  className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-bold transition-all border ${
-                    isSelected
-                      ? 'bg-indigo-50 border-indigo-200 text-indigo-700 dark:bg-indigo-950/30 dark:border-indigo-900 dark:text-indigo-200'
-                      : 'bg-transparent border-zinc-200 text-zinc-400 decoration-zinc-400 line-through dark:border-zinc-800 dark:text-zinc-600'
-                  }`}
+                  key={raidId}
+                  type="button"
+                  onClick={() => scrollToRaid(raidId as RaidId)}
+                  className={`flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-bold transition-all border select-none ${diffStyle.btn}`}
                 >
-                  {isSelected ? <UserCheck className="h-3 w-3" /> : <UserX className="h-3 w-3" />}
-                  {name}
+                  <div className={`h-2 w-2 rounded-full ${diffStyle.dot}`} />
+                  {meta.label}
                 </button>
               );
             })}
           </div>
         </div>
-      )}
+      </div>
       {raidIds.map((raidId) => {
         const runs = schedule[raidId];
         if (!runs || runs.length === 0) return null;
@@ -300,8 +369,9 @@ export const RaidScheduleView: React.FC<Props> = ({
 
         return (
           <div
+            id={`raid-section-${raidId}`}
             key={raidId}
-            className={`overflow-hidden rounded-2xl border shadow-sm dark:bg-zinc-900 ${containerBorder}`}
+            className={`scroll-mt-36 overflow-hidden rounded-2xl border shadow-sm dark:bg-zinc-900 ${containerBorder}`}
           >
             <button
               type="button"

@@ -62,8 +62,8 @@ const INITIAL_RAID_ORDER: RaidId[] = [
   'SERKA_NORMAL',
   'SERKA_HARD',
   'SERKA_NIGHTMARE',
-  'HORIZON_STEP1', 
-  'HORIZON_STEP2', 
+  'HORIZON_STEP1',
+  'HORIZON_STEP2',
   'HORIZON_STEP3'
 ];
 
@@ -424,11 +424,10 @@ function StartRoster({
                   >
                     <div className="flex items-center gap-2.5">
                       <div
-                        className={`flex h-7 w-7 items-center justify-center rounded-lg ${
-                          resolveRole(m) === 'SUPPORT'
+                        className={`flex h-7 w-7 items-center justify-center rounded-lg ${resolveRole(m) === 'SUPPORT'
                             ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-300'
                             : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300'
-                        }`}
+                          }`}
                       >
                         <RoleIcon role={resolveRole(m)} className="h-4 w-4" />
                       </div>
@@ -644,8 +643,8 @@ export const RaidSequenceView: React.FC<Props> = ({
       SERKA_NIGHTMARE: [],
       FINAL_NORMAL: [],
       FINAL_HARD: [],
-      HORIZON_STEP1: [], 
-      HORIZON_STEP2: [], 
+      HORIZON_STEP1: [],
+      HORIZON_STEP2: [],
       HORIZON_STEP3: [],
     };
 
@@ -791,9 +790,9 @@ export const RaidSequenceView: React.FC<Props> = ({
     const overallAvg =
       currentVisibleMembers.length > 0
         ? Math.round(
-            currentVisibleMembers.reduce((sum, m) => sum + m.combatPower, 0) /
-              currentVisibleMembers.length,
-          )
+          currentVisibleMembers.reduce((sum, m) => sum + m.combatPower, 0) /
+          currentVisibleMembers.length,
+        )
         : null;
 
     const renderCharacterWithSwap = (char: Character, raidId: RaidId) => (
@@ -1170,7 +1169,7 @@ export const RaidSequenceView: React.FC<Props> = ({
       {/* ✅ User Filter Controls */}
       <div className="sticky top-0 z-30 flex flex-col gap-3 rounded-2xl border border-zinc-200 bg-white/90 px-4 py-3 shadow-sm backdrop-blur-md dark:border-zinc-800 dark:bg-zinc-900/90">
         {/* 유저 필터 */}
-{/* ✅ [수정] 글로벌 유저 필터 컨트롤 */}
+        {/* ✅ [수정] 글로벌 유저 필터 컨트롤 */}
         {allUserNames.length > 0 && onToggleUser && (
           <div className="flex flex-col gap-2">
             <div className="flex items-center gap-2 text-sm font-semibold text-zinc-600 dark:text-zinc-400">
@@ -1186,11 +1185,10 @@ export const RaidSequenceView: React.FC<Props> = ({
                   <button
                     key={name}
                     onClick={() => onToggleUser(name)}
-                    className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-bold transition-all border ${
-                      isSelected
+                    className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-bold transition-all border ${isSelected
                         ? 'bg-indigo-50 border-indigo-200 text-indigo-700 dark:bg-indigo-950/30 dark:border-indigo-900 dark:text-indigo-200'
                         : 'bg-transparent border-zinc-200 text-zinc-400 decoration-zinc-400 line-through dark:border-zinc-800 dark:text-zinc-600'
-                    }`}
+                      }`}
                   >
                     {isSelected ? <UserCheck className="h-3 w-3" /> : <UserX className="h-3 w-3" />}
                     {name}
@@ -1203,28 +1201,30 @@ export const RaidSequenceView: React.FC<Props> = ({
 
         <div className="h-px w-full bg-zinc-100 dark:bg-zinc-800" />
 
-        {/* 레이드 필터 + 정렬 */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 text-sm font-semibold text-zinc-600 dark:text-zinc-400">
-            <Filter className="h-4 w-4" />
-            <span>오늘 진행할 레이드 (드래그하여 순서 변경)</span>
-          </div>
-        </div>
-
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-          <SortableContext items={visibleRaidIds} strategy={horizontalListSortingStrategy}>
-            <div className="flex flex-wrap gap-2">
-              {visibleRaidIds.map((raidId) => (
-                <SortableFilterItem
-                  key={raidId}
-                  raidId={raidId}
-                  isActive={selectedRaids.has(raidId)}
-                  onToggle={() => toggleRaid(raidId)}
-                />
-              ))}
+        <div className="flex flex-col gap-2">
+          {/* 레이드 필터 + 정렬 */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-sm font-semibold text-zinc-600 dark:text-zinc-400">
+              <Filter className="h-4 w-4" />
+              <span>오늘 진행할 레이드 (드래그하여 순서 변경)</span>
             </div>
-          </SortableContext>
-        </DndContext>
+          </div>
+
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+            <SortableContext items={visibleRaidIds} strategy={horizontalListSortingStrategy}>
+              <div className="flex flex-wrap gap-2">
+                {visibleRaidIds.map((raidId) => (
+                  <SortableFilterItem
+                    key={raidId}
+                    raidId={raidId}
+                    isActive={selectedRaids.has(raidId)}
+                    onToggle={() => toggleRaid(raidId)}
+                  />
+                ))}
+              </div>
+            </SortableContext>
+          </DndContext>
+        </div>
       </div>
 
       {isBlocking && (
@@ -1260,9 +1260,8 @@ export const RaidSequenceView: React.FC<Props> = ({
 
                 {/* Group Header */}
                 <div
-                  className={`relative mb-8 flex items-start gap-4 ${
-                    isConcurrent ? 'flex-col xl:flex-row xl:items-center' : 'items-center'
-                  }`}
+                  className={`relative mb-8 flex items-start gap-4 ${isConcurrent ? 'flex-col xl:flex-row xl:items-center' : 'items-center'
+                    }`}
                 >
                   <div className="relative z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-md shadow-indigo-200 dark:bg-indigo-500 dark:shadow-none">
                     {isConcurrent ? <Split className="h-5 w-5" /> : <Users className="h-5 w-5" />}
