@@ -53,7 +53,8 @@ export function UserRaidProgressPanel({
 
         const arr = Array.from(byUser.entries()).map(([discordName, chars]) => ({
             discordName,
-            chars: chars.slice().sort((a, b) => b.combatPower - a.combatPower),
+            // 🌟 강제 전투력 정렬 제거! (구글 시트 저장 순서대로 노출)
+            chars: chars, 
         }));
 
         arr.sort((a, b) => b.chars.length - a.chars.length || a.discordName.localeCompare(b.discordName));
@@ -72,7 +73,6 @@ export function UserRaidProgressPanel({
 
     return (
         <div className="space-y-6">
-            {/* 🌟 1. 유저를 감싸는 컨테이너를 세로 리스트(flex-col)로 변경 */}
             <div className="flex flex-col gap-6">
                 {users.map(({ discordName, chars }) => {
                     const mainChar = chars.reduce((max, curr) => curr.itemLevel > max.itemLevel ? curr : max, chars[0]);
@@ -156,13 +156,12 @@ export function UserRaidProgressPanel({
                                 </span>
                             </div>
 
-                            {/* 🌟 2. 캐릭터 리스트 영역을 가로 배치용 그리드(Grid)로 변경 */}
+                            {/* 그리드 영역 */}
                             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
                                 {charDataList.map(({ c, isSup, isMain, raidsForChar, top3Ids, charTotalGeneral, charTotalBound, charCollectedGeneral, charCollectedBound }) => (
                                     <div key={c.id} className="group flex h-full flex-col justify-between gap-3 rounded-xl bg-zinc-50/50 p-4 shadow-sm ring-1 ring-zinc-900/5 transition-all hover:shadow-md dark:bg-zinc-950/50 dark:ring-zinc-800">
                                         
                                         <div className="flex flex-col gap-3">
-                                            {/* 캐릭터 기본 정보 */}
                                             <div className="flex items-center justify-between">
                                                 <div className="flex items-center gap-3">
                                                     <div className={`flex h-9 w-9 items-center justify-center rounded-lg transition-colors ${isSup ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-white shadow-sm ring-1 ring-zinc-200 text-zinc-500 dark:bg-zinc-800 dark:ring-zinc-700 dark:text-zinc-400'}`}>
@@ -181,7 +180,6 @@ export function UserRaidProgressPanel({
                                                 </div>
                                             </div>
 
-                                            {/* 캐릭터 골드 획득 현황 패널 */}
                                             <div className="flex flex-col gap-1.5 rounded-lg bg-amber-50/70 p-2.5 dark:bg-amber-950/20 border border-amber-100/50 dark:border-amber-900/30">
                                                 <div className="flex items-center justify-between mb-0.5">
                                                     <div className="flex items-center gap-1.5 text-amber-700 dark:text-amber-400">
@@ -208,7 +206,6 @@ export function UserRaidProgressPanel({
                                             </div>
                                         </div>
 
-                                        {/* 체크박스 형태의 레이드 표기 영역 (컨펌 창 추가) */}
                                         <div className="flex flex-col gap-1.5 border-t border-zinc-100 pt-3 dark:border-zinc-800 mt-1">
                                             {raidsForChar.length === 0 ? (
                                                 <span className="text-xs text-zinc-400 text-center py-2">잔여 레이드 없음</span>
@@ -235,8 +232,7 @@ export function UserRaidProgressPanel({
                                                                     disabled={isDone}
                                                                     onChange={(e) => {
                                                                         if (e.target.checked && !isDone) {
-                                                                            // 컨펌 창 띄우기
-                                                                            const confirmed = window.confirm(`${c.discordName}님의 Lv.${c.itemLevel} ${c.jobCode}, \n${meta.label} 레이드를 완료하시겠습니까?`);
+                                                                            const confirmed = window.confirm(`Lv.${c.itemLevel} ${c.jobCode}, ${meta.label} 완료하시겠습니까?`);
                                                                             if (confirmed) {
                                                                                 onMarkRaidComplete?.(raidId, c.id);
                                                                             }
