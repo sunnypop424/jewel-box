@@ -232,7 +232,7 @@ export function UserRaidProgressPanel({
                                                                     disabled={isDone}
                                                                     onChange={(e) => {
                                                                         if (e.target.checked && !isDone) {
-                                                                            const confirmed = window.confirm(`Lv.${c.itemLevel} ${c.jobCode}, ${meta.label} 완료하시겠습니까?`);
+                                                                            const confirmed = window.confirm(`${c.discordName}님의 Lv.${c.itemLevel} ${c.jobCode}, \n${meta.label} 레이드를 완료하시겠습니까?`);
                                                                             if (confirmed) {
                                                                                 onMarkRaidComplete?.(raidId, c.id);
                                                                             }
