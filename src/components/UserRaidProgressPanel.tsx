@@ -157,7 +157,7 @@ export function UserRaidProgressPanel({
                                     }
                                 }).sort((a, b) => b.effectiveGold - a.effectiveGold);
                                 
-                                const top3Yields = raidYields.slice(0, 3);
+                                const top3Yields = raidYields.filter(y => y.effectiveGold > 0).slice(0, 3);
                                 const top3Ids = new Set(top3Yields.map(y => y.id));
                                 
                                 // 합산할 때는 원래의 gold 값으로 더해줍니다.
