@@ -33,6 +33,7 @@ import {
   Menu,
   X,
   Users,
+  ChevronDown // 🌟 셀렉트 화살표용 아이콘 추가
 } from 'lucide-react';
 
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
@@ -46,6 +47,7 @@ interface Squad {
 }
 
 const THEME_KEY = 'raidTheme_v1';
+const USER_FILTER_KEY = 'raid_user_filter_v1'; // 🌟 유저 필터 로컬스토리지 키
 
 // ==============================
 // ✅ App Main
@@ -156,38 +158,56 @@ const App: React.FC = () => {
   }, []);
 
   const effectiveCharacters = useMemo(() => {
-    // 로컬 스토리지 제거로 인해, 새로고침 시 discordName이 비어있으면 전체 캐릭터를 보여줌
     if (!localSquad.discordName) return allCharacters;
     const others = allCharacters.filter((c) => c.discordName !== localSquad.discordName);
     return [...others, ...localSquad.characters];
   }, [allCharacters, localSquad]);
 
-  // ✅ [추가] 유저 토글 상태 관리 (기본값 Toggle ON = 비활성 유저 없음)
   const [inactiveUsers, setInactiveUsers] = useState<Set<string>>(new Set());
 
-  // ✅ [추가] 비활성화된 유저를 제외한 스케줄용 캐릭터 풀
   const schedulingCharacters = useMemo(() => {
     return effectiveCharacters.filter((c) => !inactiveUsers.has(c.discordName));
   }, [effectiveCharacters, inactiveUsers]);
 
-  // ✅ [수정] effectiveCharacters 대신 schedulingCharacters 기반으로 스케줄 생성
   const schedule = useMemo(
     () => buildRaidSchedule(schedulingCharacters, raidExclusions, balanceMode, raidSettings, raidSwaps),
     [schedulingCharacters, raidExclusions, balanceMode, raidSettings, raidSwaps],
   );
 
-  // ✅ [수정] effectiveCharacters 대신 schedulingCharacters 기반으로 후보군 생성
   const raidCandidates = useMemo(
     () => buildRaidCandidatesMap(schedulingCharacters, raidExclusions, raidSettings),
     [schedulingCharacters, raidExclusions, raidSettings],
   );
 
-  // ✅ [추가] 토글 UI를 위한 전체 유저 목록 (가나다 순)
   const allUserNames = useMemo(() => {
     return Array.from(new Set(effectiveCharacters.map((c) => c.discordName))).sort();
   }, [effectiveCharacters]);
 
-  // ✅ [추가] 유저 토글 핸들러
+  // 🌟 [추가] 로컬 스토리지 기반 개인별 진행 현황 유저 필터 상태
+  const [selectedUserFilter, setSelectedUserFilter] = useState<string>(() => {
+    if (typeof window === 'undefined') return 'ALL';
+    return window.localStorage.getItem(USER_FILTER_KEY) || 'ALL';
+  });
+
+  // 🌟 [추가] 필터 변경 시 로컬 스토리지 저장 및 검증
+  useEffect(() => {
+    window.localStorage.setItem(USER_FILTER_KEY, selectedUserFilter);
+  }, [selectedUserFilter]);
+
+  // 🌟 [추가] 저장된 유저 이름이 삭제되거나 없을 경우 'ALL'로 초기화 (안전장치)
+  useEffect(() => {
+    if (selectedUserFilter !== 'ALL' && allUserNames.length > 0 && !allUserNames.includes(selectedUserFilter)) {
+      setSelectedUserFilter('ALL');
+    }
+  }, [allUserNames, selectedUserFilter]);
+
+  // 🌟 [추가] 개인별 진행 현황 패널로 넘길 필터링된 캐릭터 배열
+  const filteredCharactersForProgress = useMemo(() => {
+    if (selectedUserFilter === 'ALL') return effectiveCharacters;
+    return effectiveCharacters.filter(c => c.discordName === selectedUserFilter);
+  }, [effectiveCharacters, selectedUserFilter]);
+
+
   const handleToggleUserActive = (name: string) => {
     setInactiveUsers((prev) => {
       const next = new Set(prev);
@@ -216,7 +236,6 @@ const App: React.FC = () => {
       setSaving(true);
       await saveCharacters(discordName, characters);
       
-      // 메모리 상의 state만 업데이트 (새로고침 시 사라짐)
       const newSquad: Squad = { discordName, characters };
       setLocalSquad(newSquad);
 
@@ -475,11 +494,31 @@ const App: React.FC = () => {
                 path="/"
                 element={
                   <section className="animate-fade-in space-y-6">
-                    <div className="flex items-center justify-between">
-                      <h2 className="text-xl font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
-                        <LayoutDashboard className="text-indigo-500" />
-                        개인별 진행 현황
-                      </h2>
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                      <div className="flex items-center gap-4">
+                        <h2 className="text-xl font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
+                          <LayoutDashboard className="text-indigo-500" />
+                          개인별 진행 현황
+                        </h2>
+                        
+                        {/* 🌟 사용자 필터 셀렉트 박스 */}
+                        <div className="relative">
+                          <select
+                            value={selectedUserFilter}
+                            onChange={(e) => setSelectedUserFilter(e.target.value)}
+                            className="appearance-none rounded-lg border border-zinc-200 bg-white pl-2 pr-9 py-[3px] text-sm font-bold text-zinc-700 shadow-sm hover:border-indigo-300 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 cursor-pointer transition-colors"
+                          >
+                            <option value="ALL">전체 유저</option>
+                            {allUserNames.map((name) => (
+                              <option key={name} value={name}>{name}</option>
+                            ))}
+                          </select>
+                          <div className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400">
+                            <ChevronDown size={14} strokeWidth={3} />
+                          </div>
+                        </div>
+                      </div>
+
                       <div className="flex gap-3 text-xs font-medium text-zinc-500 dark:text-zinc-400">
                         <span className="flex items-center gap-1.5">
                           <span className="h-2 w-2 rounded-full bg-amber-400 ring-1 ring-amber-400/50" />
@@ -496,10 +535,12 @@ const App: React.FC = () => {
                       </div>
                     </div>
                     <UserRaidProgressPanel
-                      characters={effectiveCharacters}
+                      // 🌟 필터링된 캐릭터 목록 전달
+                      characters={filteredCharactersForProgress}
                       raidCandidates={raidCandidates}
                       exclusions={raidExclusions}
                       schedule={schedule}
+                      onMarkRaidComplete={handleExcludeCharacterFromRaid} 
                     />
                   </section>
                 }
