@@ -22,6 +22,7 @@ import { fetchSwaps, addSwap } from './api/swapApi';
 import { Modal } from './components/Modal';
 import { LadderGame } from './components/LadderGame';
 import { RouletteGame } from './components/RouletteGame';
+import { PinballGame } from './components/PinballGame';
 import {
   Swords,
   Sun,
@@ -38,6 +39,7 @@ import {
   ChevronDown,
   Waypoints,
   CircleDot,
+  Orbit,
 } from 'lucide-react';
 
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
@@ -71,6 +73,7 @@ const App: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isLadderModalOpen, setIsLadderModalOpen] = useState(false);
   const [isRouletteModalOpen, setIsRouletteModalOpen] = useState(false);
+  const [isPinballModalOpen, setIsPinballModalOpen] = useState(false);
 
   const [raidExclusions, setRaidExclusions] = useState<RaidExclusionMap>({});
   const [loadingExclusions, setLoadingExclusions] = useState(false);
@@ -342,7 +345,7 @@ const App: React.FC = () => {
       )}
 
       <aside
-        className={`fixed inset-y-0 left-0 z-50 flex w-72 flex-col border-r border-zinc-200 bg-white shadow-xl md:shadow-none transition-transform duration-300 dark:border-zinc-800 dark:bg-zinc-900 md:relative md:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-50 flex w-72 flex-col border-r border-zinc-200 bg-white shadow-xl transition-transform duration-300 dark:border-zinc-800 dark:bg-zinc-900 md:relative md:translate-x-0 md:shadow-none ${
           isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
@@ -461,7 +464,15 @@ const App: React.FC = () => {
               className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-bold text-zinc-600 transition-colors hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
             >
               <CircleDot size={18} />
-              룰렛 돌리기
+              경매 룰렛
+            </button>
+
+            <button
+              onClick={() => setIsPinballModalOpen(true)}
+              className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-bold text-zinc-600 transition-colors hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+            >
+              <Orbit size={18} />
+              마블 레이스
             </button>
           </nav>
         </div>
@@ -503,9 +514,9 @@ const App: React.FC = () => {
                 path="/"
                 element={
                   <section className="animate-fade-in space-y-6">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
                       <div className="flex items-center gap-4">
-                        <h2 className="text-xl font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
+                        <h2 className="flex items-center gap-2 text-xl font-bold text-zinc-900 dark:text-zinc-100">
                           <LayoutDashboard className="text-indigo-500" />
                           개인별 진행 현황
                         </h2>
@@ -514,7 +525,7 @@ const App: React.FC = () => {
                           <select
                             value={selectedUserFilter}
                             onChange={(e) => setSelectedUserFilter(e.target.value)}
-                            className="appearance-none rounded-lg border border-zinc-200 bg-white pl-3 pr-9 py-1.5 text-sm font-bold text-zinc-700 shadow-sm hover:border-indigo-300 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 cursor-pointer transition-colors"
+                            className="cursor-pointer appearance-none rounded-lg border border-zinc-200 bg-white py-1.5 pl-3 pr-9 text-sm font-bold text-zinc-700 shadow-sm transition-colors hover:border-indigo-300 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200"
                           >
                             <option value="ALL">전체 유저</option>
                             {allUserNames.map((name) => (
@@ -544,6 +555,7 @@ const App: React.FC = () => {
                         </span>
                       </div>
                     </div>
+
                     <UserRaidProgressPanel
                       characters={filteredCharactersForProgress}
                       raidCandidates={raidCandidates}
@@ -560,7 +572,7 @@ const App: React.FC = () => {
                 element={
                   <section className="animate-fade-in space-y-6">
                     <div className="flex items-center justify-between">
-                      <h2 className="text-xl font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
+                      <h2 className="flex items-center gap-2 text-xl font-bold text-zinc-900 dark:text-zinc-100">
                         <ClipboardList className="text-indigo-500" />
                         레이드 배정 결과
                       </h2>
@@ -571,9 +583,11 @@ const App: React.FC = () => {
                         <div className="mb-4 rounded-full bg-zinc-100 p-4 dark:bg-zinc-800">
                           <Users size={32} className="text-zinc-400" />
                         </div>
-                        <p className="text-lg font-medium text-zinc-600 dark:text-zinc-300">등록된 캐릭터가 없습니다.</p>
+                        <p className="text-lg font-medium text-zinc-600 dark:text-zinc-300">
+                          등록된 캐릭터가 없습니다.
+                        </p>
                         <p className="mt-1 text-sm text-zinc-500">
-                          좌측 메뉴의 \"내 원정대 관리\"에서 캐릭터를 등록해주세요.
+                          좌측 메뉴의 &quot;내 원정대 관리&quot;에서 캐릭터를 등록해주세요.
                         </p>
                       </div>
                     ) : (
@@ -605,11 +619,12 @@ const App: React.FC = () => {
                 element={
                   <section className="animate-fade-in space-y-6">
                     <div className="flex items-center justify-between">
-                      <h2 className="text-xl font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
+                      <h2 className="flex items-center gap-2 text-xl font-bold text-zinc-900 dark:text-zinc-100">
                         <ChartGantt className="text-indigo-500" />
                         레이드 진행 순서
                       </h2>
                     </div>
+
                     <RaidSequenceView
                       schedule={schedule}
                       balanceMode={balanceMode}
@@ -658,6 +673,15 @@ const App: React.FC = () => {
           maxWidth="max-w-4xl"
         >
           <RouletteGame allUserNames={allUserNames} />
+        </Modal>
+
+        <Modal
+          open={isPinballModalOpen}
+          title="경매 아이템 마블 레이스"
+          onClose={() => setIsPinballModalOpen(false)}
+          maxWidth="max-w-4xl"
+        >
+          <PinballGame onClose={() => setIsPinballModalOpen(false)} allUserNames={allUserNames} />
         </Modal>
       </main>
     </div>
