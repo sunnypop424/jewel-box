@@ -127,20 +127,19 @@ export const PinballGame: React.FC<Props> = ({ allUserNames = [] }) => {
   useEffect(() => {
     if (step !== 'game' || !canvasRef.current) return;
 
-    // 실제 맵 크기 (600x1500) 및 카메라 화각 크기 (450x450, 정사각형) 설정
     const worldWidth = 600;
-    const worldHeight = 1500;
-    const cameraViewSize = 600; 
+    const worldHeight = 1800;
     
-    // 캔버스 디스플레이 크기는 600x600 고정
+    const cameraViewSize = 600; 
     const canvasDisplaySize = 600;
 
+    // 출구 위치: 240 ~ 360 (너비 120)
     const exitLeft = 240;
     const exitRight = 360;
-    const finishZoneTop = 1445; 
+    const finishZoneTop = 1745; 
 
     const engine = Matter.Engine.create({
-      gravity: { x: 0, y: 0.85 },
+      gravity: { x: 0, y: 0.65 },
     });
     engineRef.current = engine;
 
@@ -153,7 +152,7 @@ export const PinballGame: React.FC<Props> = ({ allUserNames = [] }) => {
         background: 'transparent',
         wireframes: false,
         pixelRatio: window.devicePixelRatio || 1,
-        hasBounds: true, // 카메라 시점 이동 및 줌을 위한 필수 옵션
+        hasBounds: true, 
       },
     });
     renderRef.current = render;
@@ -194,29 +193,31 @@ export const PinballGame: React.FC<Props> = ({ allUserNames = [] }) => {
     const WALL_COLOR = '#27272a';
 
     const leftPathPoints = [
-      { x: 12, y: -100 }, { x: 12, y: 1350 }, { x: 240, y: 1450 }, { x: 240, y: 1600 }
+      { x: 12, y: -100 }, { x: 12, y: 1650 }, { x: 240, y: 1750 }, { x: 240, y: 1900 }
     ];
     const rightPathPoints = [
-      { x: 588, y: -100 }, { x: 588, y: 1350 }, { x: 360, y: 1450 }, { x: 360, y: 1600 }
+      { x: 588, y: -100 }, { x: 588, y: 1650 }, { x: 360, y: 1750 }, { x: 360, y: 1900 }
     ];
     const leftContinuousWall = createWallFromPath(leftPathPoints, WALL_THICKNESS, WALL_COLOR);
     const rightContinuousWall = createWallFromPath(rightPathPoints, WALL_THICKNESS, WALL_COLOR);
 
-    // 입구 깔때기 (벽에 완전 밀착)
     const entranceWalls = [
       Matter.Bodies.rectangle(115, 90, 240, 14, { isStatic: true, angle: Math.PI / 6, render: { fillStyle: WALL_COLOR } }),
       Matter.Bodies.rectangle(485, 90, 240, 14, { isStatic: true, angle: -Math.PI / 6, render: { fillStyle: WALL_COLOR } }),
     ];
 
     const fixedWalls = [
-      Matter.Bodies.rectangle(100, 360, 300, 14, { isStatic: true, angle: 0.2, render: { fillStyle: WALL_COLOR } }),
-      Matter.Bodies.rectangle(420, 460, 200, 14, { isStatic: true, angle: -0.15, render: { fillStyle: WALL_COLOR } }),
-      Matter.Bodies.rectangle(500, 560, 300, 14, { isStatic: true, angle: -0.25, render: { fillStyle: WALL_COLOR } }),
-      Matter.Bodies.rectangle(200, 840, 220, 14, { isStatic: true, angle: 0.15, render: { fillStyle: WALL_COLOR } }),
-      Matter.Bodies.rectangle(80, 960, 260, 14, { isStatic: true, angle: 0.3, render: { fillStyle: WALL_COLOR } }),
-      Matter.Bodies.rectangle(400, 1060, 160, 14, { isStatic: true, angle: 0, render: { fillStyle: WALL_COLOR } }),
-      Matter.Bodies.rectangle(520, 1160, 260, 14, { isStatic: true, angle: -0.2, render: { fillStyle: WALL_COLOR } }),
-      Matter.Bodies.rectangle(150, 1260, 180, 14, { isStatic: true, angle: 0.2, render: { fillStyle: WALL_COLOR } }),
+      Matter.Bodies.rectangle(120, 420, 280, 14, { isStatic: true, angle: 0.35, render: { fillStyle: WALL_COLOR } }), 
+      Matter.Bodies.rectangle(480, 520, 280, 14, { isStatic: true, angle: -0.35, render: { fillStyle: WALL_COLOR } }), 
+      
+      Matter.Bodies.rectangle(230, 800, 160, 14, { isStatic: true, angle: -0.4, render: { fillStyle: WALL_COLOR } }),
+      Matter.Bodies.rectangle(370, 800, 160, 14, { isStatic: true, angle: 0.4, render: { fillStyle: WALL_COLOR } }),
+
+      Matter.Bodies.rectangle(100, 1150, 260, 14, { isStatic: true, angle: 0.4, render: { fillStyle: WALL_COLOR } }),
+      Matter.Bodies.rectangle(500, 1250, 260, 14, { isStatic: true, angle: -0.4, render: { fillStyle: WALL_COLOR } }),
+
+      Matter.Bodies.rectangle(130, 1580, 240, 14, { isStatic: true, angle: 0.45, render: { fillStyle: WALL_COLOR } }),
+      Matter.Bodies.rectangle(470, 1580, 240, 14, { isStatic: true, angle: -0.45, render: { fillStyle: WALL_COLOR } }),
     ];
 
     const pegPositions: {x: number, y: number}[] = [];
@@ -236,41 +237,75 @@ export const PinballGame: React.FC<Props> = ({ allUserNames = [] }) => {
       }
     };
 
-    addPlinko(180, 4, 7, 6, 156, 180); 
-    addPlinko(650, 4, 8, 7, 132, 156);
-    addPlinko(1340, 2, 7, 6, 156, 180);
+    addPlinko(180, 4, 11, 10, 60, 84);  
+    addPlinko(580, 4, 11, 10, 60, 84);  
+    addPlinko(900, 4, 11, 10, 60, 84);  
+    addPlinko(1340, 4, 11, 10, 60, 84); 
 
     const pegs = pegPositions.map(p => 
       Matter.Bodies.circle(p.x, p.y, PEG_RADIUS, { isStatic: true, render: { fillStyle: WALL_COLOR } })
     );
 
+    const BUMPER_RADIUS = 15;
+    const bumperPositions = [
+      { x: 300, y: 380 }, { x: 150, y: 500 }, { x: 450, y: 450 },
+      { x: 75, y: 880 }, { x: 525, y: 880 },
+      { x: 200, y: 1080 }, { x: 400, y: 1080 }, { x: 300, y: 1280 }
+    ];
+    
+    const bumpers = bumperPositions.map(p => 
+      Matter.Bodies.circle(p.x, p.y, BUMPER_RADIUS, { 
+        isStatic: true, 
+        render: { fillStyle: '#fbbf24' } 
+      })
+    );
+
+    // 출구 양옆에 배치할 쌍둥이 회전판 추가
     const spinnerConfigs = [
-      { x: 300, y: 310, width: 120, speed: 0.05 },
-      { x: 180, y: 510, width: 100, speed: -0.06 },
-      { x: 260, y: 610, width: 140, speed: 0.04 },
-      { x: 300, y: 810, width: 160, speed: -0.05 },
-      { x: 420, y: 920, width: 100, speed: 0.06 },
-      { x: 260, y: 1100, width: 120, speed: -0.05 },
-      { x: 300, y: 1420, width: 120, speed: 0.05 },
+      { x: 300, y: 250, width: 120, speed: 0.06 },
+      { x: 100, y: 700, width: 100, speed: -0.07 },
+      { x: 500, y: 700, width: 100, speed: 0.07 },
+      { x: 300, y: 860, width: 140, speed: -0.05 },
+      { x: 200, y: 1000, width: 120, speed: 0.06 },
+      { x: 400, y: 1000, width: 120, speed: -0.06 },
+      { x: 300, y: 1150, width: 160, speed: 0.08 },
+      { x: 150, y: 1300, width: 100, speed: -0.05 },
+      { x: 388, y: 1298, width: 100, speed: 0.05 },
+      { x: 300, y: 1550, width: 150, speed: -0.07 },
+      { x: 60, y: 1675, width: 200, speed: -0.05 },
+      { x: 540, y: 1675, width: 200, speed: 0.07 },
+      
+      // === 출구 양쪽 쌍둥이 수문장 ===
+      // 폭이 120이므로 중심에서 양옆으로 60씩 뻗음 (240 + 60 = 300, 360 - 60 = 300).
+      // 즉, 중앙에서 정확히 맞물려 문이 닫히는 효과.
+      // 회전 속도를 반대로 하여 공을 위로 퍼올리며 방해합니다.
+      { x: 240, y: 1750, width: 95, speed: -0.075 }, // 좌측 (시계 반대방향)
+      { x: 360, y: 1750, width: 95, speed: 0.045 },  // 우측 (시계 방향)
     ];
 
     const spinners = spinnerConfigs.map((cfg, i) =>
       Matter.Bodies.rectangle(cfg.x, cfg.y, cfg.width, 14, {
         isStatic: true,
         chamfer: { radius: 7 },
-        render: { fillStyle: i === spinnerConfigs.length - 1 ? '#ef4444' : '#4f46e5' }, 
+        // 마지막 2개를 붉은색(쌍둥이 수문장)으로 표시
+        render: { fillStyle: i >= spinnerConfigs.length - 2 ? '#ef4444' : '#4f46e5' }, 
       }),
     );
 
     const marbles = activeNames.map((name, i) =>
-      Matter.Bodies.circle(worldWidth / 2 + (Math.random() * 30 - 15), 30 - i * 28, MARBLE_RADIUS, {
-        restitution: 0.95,
-        friction: 0.001,
-        frictionAir: 0.001,
-        density: 0.0012,
-        label: name,
-        render: { fillStyle: COLORS[i % COLORS.length] },
-      }),
+      Matter.Bodies.circle(
+        worldWidth / 2 + (Math.random() * 2 - 1), 
+        0, 
+        MARBLE_RADIUS, 
+        {
+          restitution: 1 ,
+          friction: 0.001,
+          frictionAir: 0.001,
+          density: 0.0012,
+          label: name,
+          render: { fillStyle: COLORS[i % COLORS.length] },
+        }
+      ),
     );
 
     Matter.World.add(world, [
@@ -279,11 +314,11 @@ export const PinballGame: React.FC<Props> = ({ allUserNames = [] }) => {
       ...entranceWalls,
       ...fixedWalls,
       ...pegs,
+      ...bumpers, 
       ...spinners,
       ...marbles,
     ]);
 
-    // 라벨 렌더링 (카메라 줌/이동 시 좌표 매핑)
     const renderLabels = () => {
       const ctx = render.context;
       ctx.save();
@@ -322,17 +357,16 @@ export const PinballGame: React.FC<Props> = ({ allUserNames = [] }) => {
     Matter.Render.run(render);
 
     let localFinishOrder: string[] = [];
-    let isGameFinished = false; // 당첨자가 정해졌는지 여부
+    let isGameFinished = false; 
     let cameraX = (worldWidth - cameraViewSize) / 2;
     let cameraY = 0;
 
     const checkWinner = () => {
-      // 1. 구슬 도착 및 승리 조건 판정
       marbles.forEach((m) => {
         const isInsideExit =
-          m.position.y > finishZoneTop &&
-          m.position.x > exitLeft &&
-          m.position.x < exitRight;
+          m.position.y > 1785 && // 1745에서 1785로 하향
+          m.position.x > 250 &&  // 240에서 250으로 좁힘
+          m.position.x < 350;    // 360에서 350으로 좁힘
 
         if (!localFinishOrder.includes(m.label) && isInsideExit) {
           localFinishOrder.push(m.label);
@@ -340,22 +374,19 @@ export const PinballGame: React.FC<Props> = ({ allUserNames = [] }) => {
 
           if (localFinishOrder.length === winningRank + 1) {
             setWinner(m.label);
-            isGameFinished = true; // 결과 확정 시 플래그 켜기
+            isGameFinished = true; 
             if (engineRef.current) {
-              engineRef.current.timing.timeScale = 0.55; // 슬로우 모션 연출
+              engineRef.current.timing.timeScale = 0.55; 
             }
           }
         }
       });
 
-      // 2. 스피너 회전 연산
       spinners.forEach((s, i) => {
         Matter.Body.setAngle(s, s.angle + spinnerConfigs[i].speed);
       });
 
-      // 3. 다이나믹 카메라 추적 로직 (X축, Y축 모두)
       if (!isGameFinished) {
-        // 아직 도착하지 않은 구슬들 중 가장 아래(Y값이 큰)에 있는 구슬을 1등으로 선정
         const activeMarbles = marbles.filter(m => !localFinishOrder.includes(m.label));
         
         if (activeMarbles.length > 0) {
@@ -363,21 +394,17 @@ export const PinballGame: React.FC<Props> = ({ allUserNames = [] }) => {
             prev.position.y > current.position.y ? prev : current
           );
 
-          // X축 타겟 계산 (리더를 카메라 중앙에)
           let targetX = leader.position.x - (cameraViewSize / 2);
           targetX = Math.max(0, Math.min(targetX, worldWidth - cameraViewSize));
 
-          // Y축 타겟 계산 (진행 방향인 아래쪽이 더 많이 보이게 리더를 살짝 위쪽에 배치)
           let targetY = leader.position.y - (cameraViewSize * 0.4);
           targetY = Math.max(0, Math.min(targetY, worldHeight - cameraViewSize));
 
-          // 부드러운 카메라 이동 (Lerp 스무딩)
           cameraX += (targetX - cameraX) * 0.08;
           cameraY += (targetY - cameraY) * 0.08;
         }
       }
 
-      // 카메라 화면 Bounds 업데이트
       if (render.bounds) {
         render.bounds.min.x = cameraX;
         render.bounds.max.x = cameraX + cameraViewSize;
@@ -385,7 +412,6 @@ export const PinballGame: React.FC<Props> = ({ allUserNames = [] }) => {
         render.bounds.max.y = cameraY + cameraViewSize;
       }
 
-      // 모든 구슬이 도착할 때까지 반복
       if (localFinishOrder.length < activeNames.length) {
         rafRef.current = requestAnimationFrame(checkWinner);
       }
@@ -403,7 +429,6 @@ export const PinballGame: React.FC<Props> = ({ allUserNames = [] }) => {
     <div ref={containerRef} className="flex flex-col gap-6 animate-in fade-in duration-300">
       {step === 'setup' ? (
         <div className="space-y-6">
-          {/* ----- 인원 설정 UI ----- */}
           <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900/50">
             <div className="mb-4 flex items-center justify-between">
               <h3 className="flex items-center gap-2 text-sm font-bold text-zinc-900 dark:text-zinc-100">
@@ -473,7 +498,6 @@ export const PinballGame: React.FC<Props> = ({ allUserNames = [] }) => {
             </div>
           </div>
 
-          {/* ----- 당첨 조건 설정 UI ----- */}
           <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900/50">
             <h3 className="mb-4 flex items-center gap-2 text-sm font-bold text-zinc-900 dark:text-zinc-100">
               <Settings2 size={18} className="text-amber-500" />
@@ -503,7 +527,6 @@ export const PinballGame: React.FC<Props> = ({ allUserNames = [] }) => {
                 꼴찌 (가장 늦게)
               </button>
 
-              {/* 변경하신 디자인이 적용된 Select 박스 */}
               <div className="relative flex-1 min-w-[130px]">
                 <select
                   value={winningRank}
@@ -524,7 +547,7 @@ export const PinballGame: React.FC<Props> = ({ allUserNames = [] }) => {
           </div>
 
           <div className="rounded-2xl border border-dashed border-indigo-200 bg-indigo-50/60 px-4 py-3 text-xs font-bold text-indigo-700 dark:border-indigo-900/50 dark:bg-indigo-950/20 dark:text-indigo-300">
-            카메라가 결과 확정 전까지 "남은 구슬 중 1등"을 X축, Y축 모두 추적하도록 변경되었습니다.
+            출구 양옆에 문이 열리고 닫히는 듯한 '쌍둥이 수문장' 회전판을 배치했습니다.
           </div>
 
           <button
@@ -563,7 +586,6 @@ export const PinballGame: React.FC<Props> = ({ allUserNames = [] }) => {
           </div>
 
           <div className="relative flex w-full justify-center overflow-hidden rounded-3xl border-4 border-zinc-200 bg-gradient-to-b from-zinc-100 to-zinc-50 shadow-inner dark:border-zinc-800 dark:from-zinc-950 dark:to-zinc-900">
-            {/* 정사각형 비율 유지용 캔버스 (크기는 600x600으로 화면에 맞게 출력) */}
             <canvas
               ref={canvasRef}
               width={600}
