@@ -225,7 +225,7 @@ export const CharacterFormList: React.FC<Props> = ({
               disabled={isLoading || isFetching}
             >
               <option value="ALL_MAX">귀속 골드 포함 최대 골드로 받기</option>
-              <option value="GENERAL_MAX"> 귀속 골드 제외 최대 골드로 받기</option>
+              <option value="GENERAL_MAX">귀속 골드 제외 최대 골드로 받기</option>
               <option value="MAIN_ALL_ALT_GENERAL">본캐만 귀속 골드 포함하고 부캐는 귀속 골드 제외하기</option>
             </select>
             
