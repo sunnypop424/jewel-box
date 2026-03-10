@@ -20,8 +20,8 @@ import {
 } from './api/exclusionApi';
 import { fetchSwaps, addSwap } from './api/swapApi';
 import { Modal } from './components/Modal';
-// 🌟 사다리 타기 컴포넌트 임포트
 import { LadderGame } from './components/LadderGame';
+import { RouletteGame } from './components/RouletteGame';
 import {
   Swords,
   Sun,
@@ -36,7 +36,8 @@ import {
   X,
   Users,
   ChevronDown,
-  Waypoints // 🌟 사다리 타기 아이콘 추가
+  Waypoints,
+  CircleDot,
 } from 'lucide-react';
 
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
@@ -50,17 +51,12 @@ interface Squad {
 }
 
 const THEME_KEY = 'raidTheme_v1';
-const USER_FILTER_KEY = 'raid_user_filter_v1'; // 🌟 유저 필터 로컬스토리지 키
-
-// ==============================
-// ✅ App Main
-// ==============================
+const USER_FILTER_KEY = 'raid_user_filter_v1';
 
 const App: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // --- Logic Preserved Start ---
   const [allCharacters, setAllCharacters] = useState<Character[]>([]);
 
   const [localSquad, setLocalSquad] = useState<Squad>({
@@ -73,8 +69,8 @@ const App: React.FC = () => {
   const [status, setStatus] = useState<string | null>(null);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
-  // 🌟 사다리 타기 모달 상태 추가
   const [isLadderModalOpen, setIsLadderModalOpen] = useState(false);
+  const [isRouletteModalOpen, setIsRouletteModalOpen] = useState(false);
 
   const [raidExclusions, setRaidExclusions] = useState<RaidExclusionMap>({});
   const [loadingExclusions, setLoadingExclusions] = useState(false);
@@ -188,30 +184,25 @@ const App: React.FC = () => {
     return Array.from(new Set(effectiveCharacters.map((c) => c.discordName))).sort();
   }, [effectiveCharacters]);
 
-  // 🌟 [추가] 로컬 스토리지 기반 개인별 진행 현황 유저 필터 상태
   const [selectedUserFilter, setSelectedUserFilter] = useState<string>(() => {
     if (typeof window === 'undefined') return 'ALL';
     return window.localStorage.getItem(USER_FILTER_KEY) || 'ALL';
   });
 
-  // 🌟 [추가] 필터 변경 시 로컬 스토리지 저장 및 검증
   useEffect(() => {
     window.localStorage.setItem(USER_FILTER_KEY, selectedUserFilter);
   }, [selectedUserFilter]);
 
-  // 🌟 [추가] 저장된 유저 이름이 삭제되거나 없을 경우 'ALL'로 초기화 (안전장치)
   useEffect(() => {
     if (selectedUserFilter !== 'ALL' && allUserNames.length > 0 && !allUserNames.includes(selectedUserFilter)) {
       setSelectedUserFilter('ALL');
     }
   }, [allUserNames, selectedUserFilter]);
 
-  // 🌟 [추가] 개인별 진행 현황 패널로 넘길 필터링된 캐릭터 배열
   const filteredCharactersForProgress = useMemo(() => {
     if (selectedUserFilter === 'ALL') return effectiveCharacters;
-    return effectiveCharacters.filter(c => c.discordName === selectedUserFilter);
+    return effectiveCharacters.filter((c) => c.discordName === selectedUserFilter);
   }, [effectiveCharacters, selectedUserFilter]);
-
 
   const handleToggleUserActive = (name: string) => {
     setInactiveUsers((prev) => {
@@ -240,7 +231,7 @@ const App: React.FC = () => {
     try {
       setSaving(true);
       await saveCharacters(discordName, characters);
-      
+
       const newSquad: Squad = { discordName, characters };
       setLocalSquad(newSquad);
 
@@ -329,9 +320,7 @@ const App: React.FC = () => {
     refreshRaidSettings();
     refreshSwaps();
   };
-  // --- Logic Preserved End ---
 
-  // --- Layout State & Handlers ---
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   const toggleSidebar = () => setIsSidebarOpen(!isSidebarOpen);
@@ -345,8 +334,6 @@ const App: React.FC = () => {
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-zinc-50 font-['Paperozi'] text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
-
-      {/* Mobile Backdrop */}
       {isSidebarOpen && (
         <div
           className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm md:hidden"
@@ -354,12 +341,11 @@ const App: React.FC = () => {
         />
       )}
 
-      {/* Sidebar Navigation */}
       <aside
-        className={`fixed inset-y-0 left-0 z-50 flex w-72 flex-col border-r border-zinc-200 bg-white shadow-xl md:shadow-none transition-transform duration-300 dark:border-zinc-800 dark:bg-zinc-900 md:relative md:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
-          }`}
+        className={`fixed inset-y-0 left-0 z-50 flex w-72 flex-col border-r border-zinc-200 bg-white shadow-xl md:shadow-none transition-transform duration-300 dark:border-zinc-800 dark:bg-zinc-900 md:relative md:translate-x-0 ${
+          isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
+        }`}
       >
-        {/* Sidebar Header */}
         <div className="flex h-20 items-center justify-between px-6">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-lg shadow-indigo-500/30">
@@ -382,7 +368,6 @@ const App: React.FC = () => {
           </button>
         </div>
 
-        {/* Sidebar Menu */}
         <div className="flex-1 overflow-y-auto px-4 py-4">
           <nav className="flex flex-col gap-1.5">
             <div className="mb-2 px-2 text-xs font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
@@ -391,10 +376,11 @@ const App: React.FC = () => {
 
             <button
               onClick={() => handleNavClick('/')}
-              className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-bold transition-all ${isActive('/')
-                ? 'bg-indigo-50 text-indigo-700 shadow-sm ring-1 ring-indigo-200 dark:bg-indigo-900/20 dark:text-indigo-300 dark:ring-indigo-900/40'
-                : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800'
-                }`}
+              className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-bold transition-all ${
+                isActive('/')
+                  ? 'bg-indigo-50 text-indigo-700 shadow-sm ring-1 ring-indigo-200 dark:bg-indigo-900/20 dark:text-indigo-300 dark:ring-indigo-900/40'
+                  : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800'
+              }`}
             >
               <LayoutDashboard size={18} />
               개인별 진행 현황
@@ -402,10 +388,11 @@ const App: React.FC = () => {
 
             <button
               onClick={() => handleNavClick('/schedule')}
-              className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-bold transition-all ${isActive('/schedule')
-                ? 'bg-indigo-50 text-indigo-700 shadow-sm ring-1 ring-indigo-200 dark:bg-indigo-900/20 dark:text-indigo-300 dark:ring-indigo-900/40'
-                : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800'
-                }`}
+              className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-bold transition-all ${
+                isActive('/schedule')
+                  ? 'bg-indigo-50 text-indigo-700 shadow-sm ring-1 ring-indigo-200 dark:bg-indigo-900/20 dark:text-indigo-300 dark:ring-indigo-900/40'
+                  : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800'
+              }`}
             >
               <ClipboardList size={18} />
               레이드 배정 결과
@@ -413,10 +400,11 @@ const App: React.FC = () => {
 
             <button
               onClick={() => handleNavClick('/sequence')}
-              className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-bold transition-all ${isActive('/sequence')
-                ? 'bg-indigo-50 text-indigo-700 shadow-sm ring-1 ring-indigo-200 dark:bg-indigo-900/20 dark:text-indigo-300 dark:ring-indigo-900/40'
-                : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800'
-                }`}
+              className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-bold transition-all ${
+                isActive('/sequence')
+                  ? 'bg-indigo-50 text-indigo-700 shadow-sm ring-1 ring-indigo-200 dark:bg-indigo-900/20 dark:text-indigo-300 dark:ring-indigo-900/40'
+                  : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800'
+              }`}
             >
               <ChartGantt size={18} />
               레이드 진행 순서
@@ -453,14 +441,13 @@ const App: React.FC = () => {
               <Eraser size={18} />
               제외/변경 초기화
             </button>
-            
+
             <div className="my-4 h-px bg-zinc-100 dark:bg-zinc-800" />
 
             <div className="mb-2 px-2 text-xs font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
               Games
             </div>
 
-            {/* 🌟 사다리 게임 메뉴 추가 */}
             <button
               onClick={() => setIsLadderModalOpen(true)}
               className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-bold text-zinc-600 transition-colors hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
@@ -469,10 +456,16 @@ const App: React.FC = () => {
               경매 사다리 타기
             </button>
 
+            <button
+              onClick={() => setIsRouletteModalOpen(true)}
+              className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-bold text-zinc-600 transition-colors hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+            >
+              <CircleDot size={18} />
+              룰렛 돌리기
+            </button>
           </nav>
         </div>
 
-        {/* Sidebar Footer */}
         <div className="border-t border-zinc-100 p-4 dark:border-zinc-800">
           <button
             onClick={() => setTheme((prev) => (prev === 'light' ? 'dark' : 'light'))}
@@ -486,9 +479,7 @@ const App: React.FC = () => {
         </div>
       </aside>
 
-      {/* Main Content Area */}
       <main className="flex flex-1 flex-col overflow-hidden">
-        {/* Mobile Header */}
         <header className="flex h-16 items-center justify-between border-b border-zinc-200 bg-white/90 px-4 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/90 md:hidden">
           <div className="flex items-center gap-3">
             <button
@@ -505,11 +496,9 @@ const App: React.FC = () => {
           </div>
         </header>
 
-        {/* Scrollable Content */}
         <div className="flex-1 overflow-y-auto bg-zinc-50/50 p-4 dark:bg-zinc-950 sm:p-6 lg:p-8">
           <div className="mx-auto space-y-6">
             <Routes>
-              {/* PAGE 1: 개인별 진행 현황 */}
               <Route
                 path="/"
                 element={
@@ -520,7 +509,7 @@ const App: React.FC = () => {
                           <LayoutDashboard className="text-indigo-500" />
                           개인별 진행 현황
                         </h2>
-                        
+
                         <div className="relative">
                           <select
                             value={selectedUserFilter}
@@ -529,7 +518,9 @@ const App: React.FC = () => {
                           >
                             <option value="ALL">전체 유저</option>
                             {allUserNames.map((name) => (
-                              <option key={name} value={name}>{name}</option>
+                              <option key={name} value={name}>
+                                {name}
+                              </option>
                             ))}
                           </select>
                           <div className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400">
@@ -558,13 +549,12 @@ const App: React.FC = () => {
                       raidCandidates={raidCandidates}
                       exclusions={raidExclusions}
                       schedule={schedule}
-                      onMarkRaidComplete={handleExcludeCharacterFromRaid} 
+                      onMarkRaidComplete={handleExcludeCharacterFromRaid}
                     />
                   </section>
                 }
               />
 
-              {/* PAGE 2: 레이드 배정 결과 */}
               <Route
                 path="/schedule"
                 element={
@@ -583,7 +573,7 @@ const App: React.FC = () => {
                         </div>
                         <p className="text-lg font-medium text-zinc-600 dark:text-zinc-300">등록된 캐릭터가 없습니다.</p>
                         <p className="mt-1 text-sm text-zinc-500">
-                          좌측 메뉴의 "내 원정대 관리"에서 캐릭터를 등록해주세요.
+                          좌측 메뉴의 \"내 원정대 관리\"에서 캐릭터를 등록해주세요.
                         </p>
                       </div>
                     ) : (
@@ -610,7 +600,6 @@ const App: React.FC = () => {
                 }
               />
 
-              {/* PAGE 3: 레이드 진행 순서 */}
               <Route
                 path="/sequence"
                 element={
@@ -640,12 +629,7 @@ const App: React.FC = () => {
           </div>
         </div>
 
-        {/* Modal Preserved */}
-        <Modal
-          open={isModalOpen}
-          title="내 원정대 관리"
-          onClose={() => !saving && setIsModalOpen(false)}
-        >
+        <Modal open={isModalOpen} title="내 원정대 관리" onClose={() => !saving && setIsModalOpen(false)}>
           <CharacterFormList
             discordName={localSquad.discordName}
             characters={localSquad.characters}
@@ -658,19 +642,23 @@ const App: React.FC = () => {
           />
         </Modal>
 
-        {/* 🌟 사다리 타기 모달 추가 */}
         <Modal
           open={isLadderModalOpen}
           title="경매 아이템 사다리 타기"
           onClose={() => setIsLadderModalOpen(false)}
           maxWidth="max-w-5xl"
         >
-          <LadderGame 
-            onClose={() => setIsLadderModalOpen(false)} 
-            allUserNames={allUserNames} // 🌟 이 줄을 추가하여 전체 닉네임 리스트 전달
-          />
+          <LadderGame onClose={() => setIsLadderModalOpen(false)} allUserNames={allUserNames} />
         </Modal>
 
+        <Modal
+          open={isRouletteModalOpen}
+          title="경매 아이템 룰렛"
+          onClose={() => setIsRouletteModalOpen(false)}
+          maxWidth="max-w-4xl"
+        >
+          <RouletteGame allUserNames={allUserNames} />
+        </Modal>
       </main>
     </div>
   );
