@@ -665,7 +665,10 @@ const App: React.FC = () => {
           onClose={() => setIsLadderModalOpen(false)}
           maxWidth="max-w-5xl"
         >
-          <LadderGame onClose={() => setIsLadderModalOpen(false)} />
+          <LadderGame 
+            onClose={() => setIsLadderModalOpen(false)} 
+            allUserNames={allUserNames} // 🌟 이 줄을 추가하여 전체 닉네임 리스트 전달
+          />
         </Modal>
 
       </main>
