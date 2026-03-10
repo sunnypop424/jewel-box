@@ -7,9 +7,17 @@ interface ModalProps {
   title?: string;
   onClose: () => void;
   children: ReactNode;
+  // 🌟 너비를 커스텀할 수 있도록 프롭 추가
+  maxWidth?: 'max-w-md' | 'max-w-lg' | 'max-w-xl' | 'max-w-2xl' | 'max-w-3xl' | 'max-w-4xl' | 'max-w-5xl' | 'max-w-6xl' | 'max-w-7xl';
 }
 
-export const Modal: React.FC<ModalProps> = ({ open, title, onClose, children }) => {
+export const Modal: React.FC<ModalProps> = ({ 
+  open, 
+  title, 
+  onClose, 
+  children,
+  maxWidth = 'max-w-3xl' // 🌟 기본값은 기존과 동일하게 유지
+}) => {
   if (!open) return null;
 
   return (
@@ -21,7 +29,8 @@ export const Modal: React.FC<ModalProps> = ({ open, title, onClose, children }) 
       />
       
       {/* Content */}
-      <div className="font-['Paperozi'] relative z-10 w-full max-w-3xl transform overflow-hidden rounded-3xl bg-white shadow-2xl ring-1 ring-zinc-900/5 transition-all dark:bg-zinc-900 dark:ring-zinc-800">
+      {/* 🌟 max-w-3xl 자리에 maxWidth 변수 적용 */}
+      <div className={`font-['Paperozi'] relative z-10 w-full ${maxWidth} transform overflow-hidden rounded-3xl bg-white shadow-2xl ring-1 ring-zinc-900/5 transition-all dark:bg-zinc-900 dark:ring-zinc-800`}>
         <div className="flex items-center justify-between border-b border-zinc-100 bg-white/50 px-6 py-4 backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/50">
           <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">
             {title ?? '정보'}
@@ -35,7 +44,7 @@ export const Modal: React.FC<ModalProps> = ({ open, title, onClose, children }) 
           </button>
         </div>
 
-        <div className="max-h-[75vh] overflow-y-auto px-6 py-6 scrollbar-thin scrollbar-thumb-zinc-300 dark:scrollbar-thumb-zinc-700">
+        <div className="max-h-[85vh] overflow-y-auto px-6 py-6 scrollbar-thin scrollbar-thumb-zinc-300 dark:scrollbar-thumb-zinc-700">
           {children}
         </div>
       </div>

@@ -346,7 +346,7 @@ export const CharacterFormList: React.FC<Props> = ({
                 setRows(prev => prev.map(r => ({ ...r, discordName: v })));
               }}
               onKeyDown={handleKeyDown}
-              placeholder="Nickname#1234"
+              placeholder="Nickname"
               disabled={isSaving}
             />
           </div>

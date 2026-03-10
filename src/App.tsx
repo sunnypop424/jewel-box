@@ -20,6 +20,8 @@ import {
 } from './api/exclusionApi';
 import { fetchSwaps, addSwap } from './api/swapApi';
 import { Modal } from './components/Modal';
+// 🌟 사다리 타기 컴포넌트 임포트
+import { LadderGame } from './components/LadderGame';
 import {
   Swords,
   Sun,
@@ -33,7 +35,8 @@ import {
   Menu,
   X,
   Users,
-  ChevronDown // 🌟 셀렉트 화살표용 아이콘 추가
+  ChevronDown,
+  Waypoints // 🌟 사다리 타기 아이콘 추가
 } from 'lucide-react';
 
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
@@ -70,6 +73,8 @@ const App: React.FC = () => {
   const [status, setStatus] = useState<string | null>(null);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
+  // 🌟 사다리 타기 모달 상태 추가
+  const [isLadderModalOpen, setIsLadderModalOpen] = useState(false);
 
   const [raidExclusions, setRaidExclusions] = useState<RaidExclusionMap>({});
   const [loadingExclusions, setLoadingExclusions] = useState(false);
@@ -448,6 +453,21 @@ const App: React.FC = () => {
               <Eraser size={18} />
               제외/변경 초기화
             </button>
+            
+            <div className="my-4 h-px bg-zinc-100 dark:bg-zinc-800" />
+
+            <div className="mb-2 px-2 text-xs font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+              Games
+            </div>
+
+            {/* 🌟 사다리 게임 메뉴 추가 */}
+            <button
+              onClick={() => setIsLadderModalOpen(true)}
+              className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-bold text-zinc-600 transition-colors hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+            >
+              <Waypoints size={18} />
+              경매 사다리 타기
+            </button>
 
           </nav>
         </div>
@@ -501,12 +521,11 @@ const App: React.FC = () => {
                           개인별 진행 현황
                         </h2>
                         
-                        {/* 🌟 사용자 필터 셀렉트 박스 */}
                         <div className="relative">
                           <select
                             value={selectedUserFilter}
                             onChange={(e) => setSelectedUserFilter(e.target.value)}
-                            className="appearance-none rounded-lg border border-zinc-200 bg-white pl-2 pr-9 py-[3px] text-sm font-bold text-zinc-700 shadow-sm hover:border-indigo-300 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 cursor-pointer transition-colors"
+                            className="appearance-none rounded-lg border border-zinc-200 bg-white pl-3 pr-9 py-1.5 text-sm font-bold text-zinc-700 shadow-sm hover:border-indigo-300 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 cursor-pointer transition-colors"
                           >
                             <option value="ALL">전체 유저</option>
                             {allUserNames.map((name) => (
@@ -535,7 +554,6 @@ const App: React.FC = () => {
                       </div>
                     </div>
                     <UserRaidProgressPanel
-                      // 🌟 필터링된 캐릭터 목록 전달
                       characters={filteredCharactersForProgress}
                       raidCandidates={raidCandidates}
                       exclusions={raidExclusions}
@@ -639,6 +657,17 @@ const App: React.FC = () => {
             }}
           />
         </Modal>
+
+        {/* 🌟 사다리 타기 모달 추가 */}
+        <Modal
+          open={isLadderModalOpen}
+          title="경매 아이템 사다리 타기"
+          onClose={() => setIsLadderModalOpen(false)}
+          maxWidth="max-w-5xl"
+        >
+          <LadderGame onClose={() => setIsLadderModalOpen(false)} />
+        </Modal>
+
       </main>
     </div>
   );
