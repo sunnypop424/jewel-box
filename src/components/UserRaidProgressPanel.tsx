@@ -1,5 +1,5 @@
-import { useMemo } from 'react';
-import { User, Shield, Swords, Coins } from 'lucide-react';
+import { useState, useMemo } from 'react';
+import { User, Shield, Swords, Coins, RefreshCw } from 'lucide-react';
 import { RAID_META } from '../constants';
 import type { Character, RaidId, RaidExclusionMap, RaidSchedule } from '../types';
 
@@ -33,6 +33,7 @@ interface UserRaidProgressPanelProps {
     exclusions?: RaidExclusionMap;
     schedule: RaidSchedule | null;
     onMarkRaidComplete?: (raidId: RaidId, charId: string, isDone: boolean) => void;
+    onRefreshCharacter?: (char: Character) => Promise<void>;
 }
 
 export function UserRaidProgressPanel({
@@ -41,7 +42,9 @@ export function UserRaidProgressPanel({
     exclusions,
     schedule,
     onMarkRaidComplete,
+    onRefreshCharacter,
 }: UserRaidProgressPanelProps) {
+    const [refreshingId, setRefreshingId] = useState<string | null>(null);
     const assignedByRaid = useMemo(() => buildAssignedIndex(schedule), [schedule]);
 
     const users = useMemo(() => {
@@ -196,10 +199,38 @@ export function UserRaidProgressPanel({
                                                         )}
                                                     </div>
                                                 </div>
-                                                <div className="text-right">
-                                                    <div className="text-sm font-bold text-zinc-700 dark:text-zinc-300">Lv.{c.itemLevel}</div>
-                                                    <div className="text-[11px] font-medium text-zinc-400">CP {c.combatPower.toLocaleString()}</div>
+                                                
+                                                {/* ⬇️ 변경된 부분 시작 (우측 상단 레벨/전투력 표시부) */}
+                                                <div className="flex items-center">
+                                                    <div className="flex flex-col items-end">
+                                                        <div className="text-sm font-bold text-zinc-700 dark:text-zinc-300">Lv.{c.itemLevel}</div>
+                                                        <div className="text-[11px] font-medium text-zinc-400">CP {c.combatPower.toLocaleString()}</div>
+                                                    </div>
+                                                    {/* 캐릭터 이름이 등록된 경우에만 새로고침 버튼 표시 */}
+                                                        {c.lostArkName && (
+                                                            <button
+                                                                onClick={async () => {
+                                                                    if (onRefreshCharacter && !refreshingId) {
+                                                                        // ✅ 확인 창 띄우기
+                                                                        const isConfirmed = window.confirm(`${c.lostArkName}의 정보를 업데이트 하시겠습니까?`);
+                                                                        
+                                                                        // 사용자가 '취소'를 누르면 여기서 함수 종료
+                                                                        if (!isConfirmed) return;
+
+                                                                        setRefreshingId(c.id);
+                                                                        await onRefreshCharacter(c);
+                                                                        setRefreshingId(null);
+                                                                    }
+                                                                }}
+                                                                disabled={refreshingId === c.id}
+                                                                className="p-1 ml-2 rounded text-zinc-400 hover:text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-all disabled:opacity-50"
+                                                                title={`${c.lostArkName} 정보 업데이트`}
+                                                            >
+                                                                <RefreshCw size={13} className={refreshingId === c.id ? "animate-spin" : ""} />
+                                                            </button>
+                                                        )}
                                                 </div>
+                                                {/* ⬆️ 변경된 부분 끝 */}
                                             </div>
 
                                             <div className="flex flex-col gap-1.5 rounded-lg bg-amber-50/70 p-2.5 dark:bg-amber-950/20 border border-amber-100/50 dark:border-amber-900/30">

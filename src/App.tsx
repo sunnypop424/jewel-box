@@ -16,7 +16,7 @@ import {
   fetchSwaps, addSwap, resetSwaps,
   fetchRaidExclusions, toggleCharacterOnRaid, excludeCharactersOnRaid, resetRaidExclusions 
 } from './api/firebaseApi';
-import { syncCharactersWithLostArkAPI } from './api/lostArkApi';
+import { syncCharactersWithLostArkAPI, fetchProfile } from './api/lostArkApi';
 import { Modal } from './components/Modal';
 import { LadderGame } from './components/LadderGame';
 import { RouletteGame } from './components/RouletteGame';
@@ -297,6 +297,43 @@ const App: React.FC = () => {
     }
   };
 
+  // ✅ 단일 캐릭터 스펙 갱신 핸들러
+  const handleRefreshSingleCharacter = async (char: Character) => {
+    if (!char.lostArkName) {
+      alert('로스트아크 캐릭터 이름이 설정되지 않았습니다. (원정대 관리에서 설정해주세요)');
+      return;
+    }
+    try {
+      setStatus(`${char.discordName}님의 ${char.lostArkName} 갱신 중...`);
+      
+      const profile = await fetchProfile(char.lostArkName);
+      
+      if (profile && profile.ItemAvgLevel && profile.CombatPower) {
+        const lv = parseFloat(profile.ItemAvgLevel.replace(/,/g, ''));
+        const cp = parseFloat(profile.CombatPower.replace(/,/g, ''));
+
+        // 1. 상태 업데이트
+        const nextAllChars = allCharacters.map(c => 
+          c.id === char.id ? { ...c, itemLevel: Math.floor(lv), combatPower: Math.floor(cp) } : c
+        );
+        setAllCharacters(nextAllChars);
+
+        // 2. DB 저장 (해당 유저의 캐릭터 배열만 추출해서 저장)
+        const userCharsToSave = nextAllChars.filter(c => c.discordName === char.discordName);
+        await saveCharacters(char.discordName, userCharsToSave);
+        
+        setStatus(`${char.lostArkName} 갱신 완료`);
+      } else {
+        alert('캐릭터 정보를 찾을 수 없거나 올바르지 않은 응답입니다.');
+        setStatus('갱신 실패');
+      }
+    } catch (e: any) {
+      console.error(e);
+      alert(`갱신 실패: ${e?.message ?? e}`);
+      setStatus('갱신 실패');
+    }
+  };
+
   // ✅ 주간 초기화 시 로아 API 호출하여 공대원 전체 스펙 최신화
   const handleResetExclusions = async () => {
     const ok = window.confirm(
@@ -571,6 +608,7 @@ const App: React.FC = () => {
                       exclusions={raidExclusions}
                       schedule={schedule}
                       onMarkRaidComplete={handleExcludeCharacterFromRaid}
+                      onRefreshCharacter={handleRefreshSingleCharacter}
                     />
                   </section>
                 }
