@@ -624,7 +624,7 @@ export const RaidScheduleView: React.FC<Props> = ({
                                             <span className="text-sm font-bold dark:text-zinc-100">{m.jobCode}</span>
                                           </div>
                                           {/* 게스트는 lostArkName 대신 "임시 게스트" 표시 */}
-                                          <div className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400">
+                                          <div className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400 max-w-[80px] overflow-hidden text-ellipsis whitespace-nowrap">
                                             {m.isGuest ? "임시 게스트" : m.lostArkName}
                                           </div>
                                         </div>
