@@ -329,33 +329,38 @@ function CharacterBadge({
   let bgClass = '';
   let textClass = '';
   let borderClass = '';
-
-  switch (type) {
-    case 'leave':
-      bgClass = 'bg-red-50 dark:bg-red-950/40';
-      textClass = 'text-red-700 dark:text-red-200';
-      borderClass = 'border-red-100 dark:border-red-900/50';
-      break;
-    case 'enter':
-      bgClass = 'bg-emerald-50 dark:bg-emerald-950/40';
-      textClass = 'text-emerald-700 dark:text-emerald-200';
-      borderClass = 'border-emerald-100 dark:border-emerald-900/50';
-      break;
-    case 'switch-from':
-      bgClass = 'bg-zinc-50 dark:bg-zinc-800/50';
-      textClass = 'text-zinc-500 dark:text-zinc-400 decoration-zinc-400 line-through';
-      borderClass = 'border-zinc-200 dark:border-zinc-700';
-      break;
-    case 'switch-to':
-      bgClass = 'bg-amber-50 dark:bg-amber-950/40';
-      textClass = 'text-amber-800 dark:text-amber-100 font-bold';
-      borderClass =
-        'border-amber-200 dark:border-amber-900/50 ring-1 ring-amber-300/50 dark:ring-amber-700/50';
-      break;
-    default:
-      bgClass = 'bg-zinc-50 dark:bg-zinc-900';
-      textClass = 'text-zinc-700 dark:text-zinc-300';
-      borderClass = 'border-zinc-200 dark:border-zinc-800';
+  if (char.isGuest) {
+    bgClass = 'bg-amber-50 dark:bg-amber-950/40';
+    textClass = 'text-amber-700 dark:text-amber-400 font-bold';
+    borderClass = 'border-amber-100 dark:border-amber-900/50';
+  } else {
+    switch (type) {
+      case 'leave':
+        bgClass = 'bg-red-50 dark:bg-red-950/40';
+        textClass = 'text-red-700 dark:text-red-200';
+        borderClass = 'border-red-100 dark:border-red-900/50';
+        break;
+      case 'enter':
+        bgClass = 'bg-emerald-50 dark:bg-emerald-950/40';
+        textClass = 'text-emerald-700 dark:text-emerald-200';
+        borderClass = 'border-emerald-100 dark:border-emerald-900/50';
+        break;
+      case 'switch-from':
+        bgClass = 'bg-zinc-50 dark:bg-zinc-800/50';
+        textClass = 'text-zinc-500 dark:text-zinc-400 decoration-zinc-400 line-through';
+        borderClass = 'border-zinc-200 dark:border-zinc-700';
+        break;
+      case 'switch-to':
+        bgClass = 'bg-amber-50 dark:bg-amber-950/40';
+        textClass = 'text-amber-800 dark:text-amber-100 font-bold';
+        borderClass =
+          'border-amber-200 dark:border-amber-900/50 ring-1 ring-amber-300/50 dark:ring-amber-700/50';
+        break;
+      default:
+        bgClass = 'bg-zinc-50 dark:bg-zinc-900';
+        textClass = 'text-zinc-700 dark:text-zinc-300';
+        borderClass = 'border-zinc-200 dark:border-zinc-800';
+    }
   }
 
   return (
@@ -425,10 +430,6 @@ function StartRoster({
                     <div className="flex items-center gap-2">
                       <div className="flex items-center gap-1.5">
                         <span className="text-xs font-bold dark:text-zinc-100">{m.jobCode}</span>
-                        {/* ✅ 삭제는 안 만들어도 '게스트' 표시만 달아주면 구분이 편합니다 */}
-                        {m.isGuest && (
-                          <span className="rounded bg-amber-100 px-1 py-0.5 text-[8px] font-bold text-amber-600 dark:bg-amber-900/50 dark:text-amber-400">GUEST</span>
-                        )}
                       </div>
                       <span className="text-[10px] text-zinc-500 dark:text-zinc-400 truncate max-w-[70px]">
                         {/* ✅ 게스트면 "임시 게스트"라고 보여주기 */}
@@ -441,9 +442,9 @@ function StartRoster({
                         <div className="text-xs font-bold text-zinc-700 dark:text-zinc-300">
                           Lv.{m.itemLevel}
                         </div>
-                        <div className="text-[10px] text-zinc-400">
-                          CP {m.combatPower.toLocaleString()}
-                        </div>
+                        {!m.isGuest && ( // ✅ 게스트가 아닐 때만 노출
+                          <div className="text-[10px] text-zinc-400">CP {m.combatPower.toLocaleString()}</div>
+                        )}
                       </div>
 
                       {!m.isGuest && canSwap && onSwapClick && (
@@ -771,8 +772,9 @@ export const RaidSequenceView: React.FC<Props> = ({
     const completeBtnKey = `${step.raidId}-${step.run.runIndex}`;
     const isCompleting = completingKey === completeBtnKey;
 
-    const dpsMembers = currentVisibleMembers.filter((m) => resolveRole(m) === 'DPS');
-    const supMembers = currentVisibleMembers.filter((m) => resolveRole(m) === 'SUPPORT');
+    const realMembers = currentVisibleMembers.filter(m => !m.isGuest); // ✅ 실제 인원만 추출
+    const dpsMembers = realMembers.filter((m) => resolveRole(m) === 'DPS');
+    const supMembers = realMembers.filter((m) => resolveRole(m) === 'SUPPORT');
 
     const avgDps =
       dpsMembers.length > 0
@@ -795,7 +797,7 @@ export const RaidSequenceView: React.FC<Props> = ({
     const renderCharacterWithSwap = (char: Character, raidId: RaidId) => (
       <div key={char.id} className="group relative flex gap-2 items-center">
         <CharacterBadge char={char} type="neutral" />
-        {onSwapCharacter && (
+        {!char.isGuest && onSwapCharacter && (
           <button
             disabled={swapDisabled}
             onClick={() => {

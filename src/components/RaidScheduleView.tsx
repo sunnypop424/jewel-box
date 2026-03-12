@@ -466,39 +466,24 @@ export const RaidScheduleView: React.FC<Props> = ({
                     p.members.filter((m) => !excludedIdsForRaid.includes(m.id)),
                   );
 
-                  const dpsMembers = visibleMembers.filter((m) => m.role === 'DPS');
-                  const supMembers = visibleMembers.filter(
-                    (m) => m.role === 'SUPPORT',
-                  );
+                  const realMembers = visibleMembers.filter(m => !m.isGuest);
+
+                  const dpsMembers = realMembers.filter((m) => m.role === 'DPS');
+                  const supMembers = realMembers.filter((m) => m.role === 'SUPPORT');
 
                   const overallAvg =
-                    visibleMembers.length > 0
-                      ? Math.round(
-                          visibleMembers.reduce(
-                            (sum, m) => sum + m.combatPower,
-                            0,
-                          ) / visibleMembers.length,
-                        )
+                    realMembers.length > 0
+                      ? Math.round(realMembers.reduce((sum, m) => sum + m.combatPower, 0) / realMembers.length)
                       : 0;
 
                   const dpsAvg =
                     dpsMembers.length > 0
-                      ? Math.round(
-                          dpsMembers.reduce(
-                            (sum, m) => sum + m.combatPower,
-                            0,
-                          ) / dpsMembers.length,
-                        )
+                      ? Math.round(dpsMembers.reduce((sum, m) => sum + m.combatPower, 0) / dpsMembers.length)
                       : 0;
 
                   const supAvg =
                     supMembers.length > 0
-                      ? Math.round(
-                          supMembers.reduce(
-                            (sum, m) => sum + m.combatPower,
-                            0,
-                          ) / supMembers.length,
-                        )
+                      ? Math.round(supMembers.reduce((sum, m) => sum + m.combatPower, 0) / supMembers.length)
                       : 0;
 
                   const completeBtnKey = `${raidId}-${run.runIndex}`;
@@ -620,9 +605,11 @@ export const RaidScheduleView: React.FC<Props> = ({
                                       <div className="flex items-center gap-3">
                                         <div
                                           className={`flex h-8 w-8 items-center justify-center rounded-lg ${
-                                            m.role === 'SUPPORT'
-                                              ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400'
-                                              : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400'
+                                            m.isGuest 
+                                              ? 'bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400' 
+                                              : m.role === 'SUPPORT'
+                                                ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400'
+                                                : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400'
                                           }`}
                                         >
                                           {m.role === 'SUPPORT' ? (
@@ -634,10 +621,6 @@ export const RaidScheduleView: React.FC<Props> = ({
                                         <div>
                                           <div className="flex items-center gap-1.5">
                                             <span className="text-sm font-bold dark:text-zinc-100">{m.jobCode}</span>
-                                            {/* ✅ 게스트 배지 추가 */}
-                                            {m.isGuest && (
-                                              <span className="rounded bg-amber-100 px-1 py-0.5 text-[9px] font-bold text-amber-600 dark:bg-amber-900/50 dark:text-amber-400">GUEST</span>
-                                            )}
                                           </div>
                                           {/* 게스트는 lostArkName 대신 "임시 게스트" 표시 */}
                                           <div className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400">
@@ -651,9 +634,11 @@ export const RaidScheduleView: React.FC<Props> = ({
                                           <div className="text-xs font-bold dark:text-zinc-300">
                                             Lv.{m.itemLevel}
                                           </div>
-                                          <div className="text-[10px] text-zinc-400">
-                                            CP {m.combatPower.toLocaleString()}
-                                          </div>
+                                          {!m.isGuest && (
+                                            <div className="text-[10px] text-zinc-400">
+                                              CP {m.combatPower.toLocaleString()}
+                                            </div>
+                                          )}
                                         </div>
 
                                         {/* ✅ 게스트일 경우 '변경' 대신 '삭제' 버튼 노출 */}
@@ -917,9 +902,11 @@ function RaidMemberCard({
       <div className="flex items-center gap-3">
         <div
           className={`flex h-8 w-8 items-center justify-center rounded-lg ${
-            member.role === 'SUPPORT'
-              ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400'
-              : 'bg-white/60 text-zinc-600 dark:bg-zinc-900/40 dark:text-zinc-300'
+            member.isGuest // ✅ 여기에도 게스트 조건 추가
+              ? 'bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400'
+              : member.role === 'SUPPORT'
+                ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400'
+                : 'bg-white/60 text-zinc-600 dark:bg-zinc-900/40 dark:text-zinc-300'
           }`}
         >
           {member.role === 'SUPPORT' ? <Shield size={16} /> : <Swords size={16} />}
