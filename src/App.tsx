@@ -166,9 +166,12 @@ const App: React.FC = () => {
 
   // 2. 게스트 추가 핸들러
   const handleAddGuest = (raidId: RaidId, role: 'DPS' | 'SUPPORT', jobCode: string) => {
+
+    const shortHash = Math.random().toString(36).substring(2, 6);
+
     const newGuest: Character = {
       id: `guest_${Date.now()}`,
-      discordName: `게스트_${Date.now()}`, // 중복 방지용 고유 이름
+      discordName: `게스트_${shortHash}`, // 중복 방지용 고유 이름
       jobCode: jobCode,
       role: role,
       itemLevel: 1800, // 레이드 참여 가능 레벨로 고정
