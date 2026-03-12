@@ -344,18 +344,34 @@ const App: React.FC = () => {
     try {
       setStatus('내역 초기화 및 스펙 갱신 중... (페이지를 닫지 마세요)');
       
-      // 1. 내역 초기화
       await resetRaidExclusions();
       await resetSwaps();
       
-      // 2. 로아 API 연동 (스펙 자동 갱신)
       let list = await fetchCharacters();
-      list = await syncCharactersWithLostArkAPI(list, saveCharacters);
+      
+      // ✅ 1. 스킵된 메시지를 차곡차곡 모을 빈 배열 생성
+      const skippedMessages: string[] = [];
+      
+      // ✅ 2. 세 번째 인자로 콜백을 넣어 배열에 메시지 수집
+      list = await syncCharactersWithLostArkAPI(list, saveCharacters, (msg) => {
+        skippedMessages.push(msg);
+      });
+      
       setAllCharacters(list);
       
-      // 3. 화면 새로고침
       await Promise.all([refreshExclusions(), refreshSwaps()]);
       setStatus('모든 내역이 초기화되고 캐릭터 스펙이 갱신되었습니다.');
+
+      // ✅ 3. 모든 통신이 끝나고 배열에 내용이 있다면, 한 번의 alert로 합쳐서 출력
+      if (skippedMessages.length > 0) {
+        alert(
+          `[카던 세팅 등 전투력 보호 알림]\n\n` +
+          `아래 캐릭터들은 현재 전투력이 기존보다 낮아 스펙이 유지되었습니다:\n\n` +
+          `${skippedMessages.join('\n')}\n\n` + // 배열에 모인 여러 줄을 하나로 합침
+          `의도적으로 스펙을 낮추신 경우, 개인별 현황에서 개별 새로고침(🔄)을 진행해주세요.`
+        );
+      }
+
     } catch (e) {
       console.error(e);
       alert('초기화 실패');

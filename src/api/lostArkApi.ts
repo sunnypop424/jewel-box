@@ -24,14 +24,14 @@ export async function fetchProfile(characterName: string) {
 // 🌟 주간 초기화 시 일괄 스펙 업데이트 
 export async function syncCharactersWithLostArkAPI(
   characters: Character[], 
-  saveFn: (discordName: string, chars: Character[]) => Promise<void>
+  saveFn: (discordName: string, chars: Character[]) => Promise<void>,
+  onSkip?: (msg: string) => void // ✅ 외부로 메시지를 보낼 콜백
 ): Promise<Character[]> {
   const charsToUpdate = characters.filter(c => c.lostArkName);
   if(charsToUpdate.length === 0) return characters;
 
   const updatedMap = new Map<string, Character>();
   
-  // 5개씩 끊어서 요청 (안전장치)
   const chunkSize = 5;
   for (let i = 0; i < charsToUpdate.length; i += chunkSize) {
     const chunk = charsToUpdate.slice(i, i + chunkSize);
@@ -41,7 +41,15 @@ export async function syncCharactersWithLostArkAPI(
         if (profile && profile.ItemAvgLevel && profile.CombatPower) {
           const lv = parseFloat(profile.ItemAvgLevel.replace(/,/g, ''));
           const cp = parseFloat(profile.CombatPower.replace(/,/g, ''));
-          updatedMap.set(c.id, { ...c, itemLevel: Math.floor(lv), combatPower: Math.floor(cp) });
+          
+          if (cp >= c.combatPower) {
+            updatedMap.set(c.id, { ...c, itemLevel: Math.floor(lv), combatPower: Math.floor(cp) });
+          } else {
+            // ✅ 스킵된 캐릭터의 정보를 콜백으로 전달
+            const msg = `- ${c.lostArkName} (기존 ${c.combatPower} ➔ 현재 ${Math.floor(cp)})`;
+            console.log(`[스킵됨] ${msg}`);
+            if (onSkip) onSkip(msg);
+          }
         }
       } catch(e) { console.error(`[로아 API 오류] ${c.lostArkName}:`, e); }
     }));
