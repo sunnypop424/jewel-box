@@ -34,6 +34,7 @@ interface UserRaidProgressPanelProps {
     schedule: RaidSchedule | null;
     onMarkRaidComplete?: (raidId: RaidId, charId: string, isDone: boolean) => void;
     onRefreshCharacter?: (char: Character) => Promise<void>;
+    onRefreshUser?: (discordName: string, chars: Character[]) => Promise<void>;
 }
 
 export function UserRaidProgressPanel({
@@ -43,8 +44,10 @@ export function UserRaidProgressPanel({
     schedule,
     onMarkRaidComplete,
     onRefreshCharacter,
+    onRefreshUser,
 }: UserRaidProgressPanelProps) {
     const [refreshingId, setRefreshingId] = useState<string | null>(null);
+    const [refreshingUser, setRefreshingUser] = useState<string | null>(null);
     const assignedByRaid = useMemo(() => buildAssignedIndex(schedule), [schedule]);
 
     const users = useMemo(() => {
@@ -159,7 +162,24 @@ export function UserRaidProgressPanel({
                                         <User size={20} />
                                     </div>
                                     <div className="flex flex-col gap-1">
+                                        <div className="flex items-center gap-2">
                                         <span className="text-lg font-bold text-zinc-900 dark:text-zinc-100">{discordName}</span>
+                                        {onRefreshUser && (
+                                            <button
+                                                onClick={async () => {
+                                                    if (refreshingUser) return;
+                                                    setRefreshingUser(discordName);
+                                                    await onRefreshUser(discordName, chars);
+                                                    setRefreshingUser(null);
+                                                }}
+                                                disabled={refreshingUser === discordName}
+                                                className="p-1 rounded text-zinc-400 hover:bg-indigo-50 hover:text-indigo-600 dark:hover:bg-indigo-900/30 dark:hover:text-indigo-400 transition-colors disabled:opacity-50"
+                                                title={`${discordName}님의 원정대 정보 업데이트`}
+                                            >
+                                                <RefreshCw size={15} className={refreshingUser === discordName ? "animate-spin" : ""} />
+                                            </button>
+                                        )}
+                                        </div>
                                         <div className="flex items-center gap-3 text-xs font-semibold">
                                             <span className="text-zinc-500 dark:text-zinc-400">
                                                 일반 <span className="text-amber-600 dark:text-amber-400">{userCollectedGeneral.toLocaleString()}G</span> / {userTotalGeneral.toLocaleString()}G

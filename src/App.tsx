@@ -297,6 +297,47 @@ const App: React.FC = () => {
     }
   };
 
+  // ✅ 유저 단위 스펙 갱신 핸들러
+  const handleRefreshUserCharacters = async (discordName: string, userChars: Character[]) => {
+    const ok = window.confirm(
+      `${discordName}님의 원정대 정보를 업데이트 하시겠습니까?\n(약간의 시간이 소요될 수 있습니다)`
+    );
+    if (!ok) return;
+
+    try {
+      setStatus(`${discordName}님의 원정대 정보 업데이트 중...`);
+
+      const skippedMessages: string[] = [];
+
+      // 이미 작성해둔 전체 갱신 API 함수를 해당 유저의 캐릭터 배열에만 적용
+      const updatedUserChars = await syncCharactersWithLostArkAPI(userChars, saveCharacters, (msg) => {
+        skippedMessages.push(msg);
+      });
+
+      // 전체 캐릭터 목록 중 해당 유저의 캐릭터만 업데이트된 정보로 교체
+      setAllCharacters(prev => {
+        const others = prev.filter(c => c.discordName !== discordName);
+        return [...others, ...updatedUserChars];
+      });
+
+      setStatus(`${discordName}님의 원정대 정보다 업데이트 되었습니다.`);
+
+      // 스킵된 캐릭터가 있다면 팝업으로 알림
+      if (skippedMessages.length > 0) {
+        alert(
+          `[카던 세팅 등 전투력 보호 알림]\n\n` +
+          `아래 캐릭터들은 현재 전투력이 기존보다 낮아 전투력이 유지되었습니다:\n\n` +
+          `${skippedMessages.join('\n')}\n\n` +
+          `의도적으로 전투력을 낮추신 경우, 개별 새로고침(🔄)을 진행해주세요.`
+        );
+      }
+    } catch (e: any) {
+      console.error(e);
+      alert(`갱신 실패: ${e?.message ?? e}`);
+      setStatus(`${discordName}님 갱신 실패`);
+    }
+  };
+
   // ✅ 단일 캐릭터 스펙 갱신 핸들러
   const handleRefreshSingleCharacter = async (char: Character) => {
     if (!char.lostArkName) {
@@ -355,13 +396,13 @@ const App: React.FC = () => {
 
   const handleRefresh = async () => {
     const ok = window.confirm(
-      '로아 API를 통해 모든 캐릭터의 스펙을 최신화하시겠습니까?\n(약 5~10초 정도 소요될 수 있습니다)'
+      '로아 API를 통해 모든 유저의 정보를 업데이트 하시겠습니까?\n(약 5~10초 정도 소요될 수 있습니다)'
     );
     if (!ok) return;
 
     try {
       setLoading(true);
-      setStatus('전체 캐릭터 스펙 갱신 중... (페이지를 닫지 마세요)');
+      setStatus('전체 유저 정보 업데이트 중... (페이지를 닫지 마세요)');
       
       // DB에서 최신 캐릭터 목록을 먼저 가져옴
       let list = await fetchCharacters();
@@ -638,6 +679,7 @@ const App: React.FC = () => {
                       schedule={schedule}
                       onMarkRaidComplete={handleExcludeCharacterFromRaid}
                       onRefreshCharacter={handleRefreshSingleCharacter}
+                      onRefreshUser={handleRefreshUserCharacters}
                     />
                   </section>
                 }
