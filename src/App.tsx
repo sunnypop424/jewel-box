@@ -334,44 +334,18 @@ const App: React.FC = () => {
     }
   };
 
-  // ✅ 주간 초기화 시 로아 API 호출하여 공대원 전체 스펙 최신화
   const handleResetExclusions = async () => {
-    const ok = window.confirm(
-      '모든 제외 내역과 캐릭터 변경(Swap) 내역을 초기화하고, \n로아 API를 통해 캐릭터 스펙을 최신화하시겠습니까?\n(약 5~10초 정도 소요될 수 있습니다)'
-    );
+    const ok = window.confirm('모든 제외 내역과 캐릭터 변경(Swap) 내역을 초기화하시겠습니까?');
     if (!ok) return;
 
     try {
-      setStatus('내역 초기화 및 스펙 갱신 중... (페이지를 닫지 마세요)');
+      setStatus('내역 초기화 중...');
       
       await resetRaidExclusions();
       await resetSwaps();
       
-      let list = await fetchCharacters();
-      
-      // ✅ 1. 스킵된 메시지를 차곡차곡 모을 빈 배열 생성
-      const skippedMessages: string[] = [];
-      
-      // ✅ 2. 세 번째 인자로 콜백을 넣어 배열에 메시지 수집
-      list = await syncCharactersWithLostArkAPI(list, saveCharacters, (msg) => {
-        skippedMessages.push(msg);
-      });
-      
-      setAllCharacters(list);
-      
       await Promise.all([refreshExclusions(), refreshSwaps()]);
-      setStatus('모든 내역이 초기화되고 캐릭터 스펙이 갱신되었습니다.');
-
-      // ✅ 3. 모든 통신이 끝나고 배열에 내용이 있다면, 한 번의 alert로 합쳐서 출력
-      if (skippedMessages.length > 0) {
-        alert(
-          `[카던 세팅 등 전투력 보호 알림]\n\n` +
-          `아래 캐릭터들은 현재 전투력이 기존보다 낮아 스펙이 유지되었습니다:\n\n` +
-          `${skippedMessages.join('\n')}\n\n` + // 배열에 모인 여러 줄을 하나로 합침
-          `의도적으로 스펙을 낮추신 경우, 개인별 현황에서 개별 새로고침(🔄)을 진행해주세요.`
-        );
-      }
-
+      setStatus('모든 내역이 초기화되었습니다.');
     } catch (e) {
       console.error(e);
       alert('초기화 실패');
@@ -379,11 +353,50 @@ const App: React.FC = () => {
     }
   };
 
-  const handleRefresh = () => {
-    refreshAllCharacters();
-    refreshExclusions();
-    refreshRaidSettings();
-    refreshSwaps();
+  const handleRefresh = async () => {
+    const ok = window.confirm(
+      '로아 API를 통해 모든 캐릭터의 스펙을 최신화하시겠습니까?\n(약 5~10초 정도 소요될 수 있습니다)'
+    );
+    if (!ok) return;
+
+    try {
+      setLoading(true);
+      setStatus('전체 캐릭터 스펙 갱신 중... (페이지를 닫지 마세요)');
+      
+      // DB에서 최신 캐릭터 목록을 먼저 가져옴
+      let list = await fetchCharacters();
+      
+      // 스킵 메시지 수집용 배열
+      const skippedMessages: string[] = [];
+      
+      // 로아 API 연동 (스킵 발생 시 콜백으로 메시지 수집)
+      list = await syncCharactersWithLostArkAPI(list, saveCharacters, (msg) => {
+        skippedMessages.push(msg);
+      });
+      
+      setAllCharacters(list);
+      
+      // 기타 설정들도 최신화
+      await Promise.all([refreshExclusions(), refreshRaidSettings(), refreshSwaps()]);
+      setStatus('모든 캐릭터의 정보가 갱신되었습니다.');
+
+      // 스킵된 캐릭터가 있다면 모아서 알림
+      if (skippedMessages.length > 0) {
+        alert(
+          `[전투력 미갱신 알림]\n\n` +
+          `아래 캐릭터들은 현재 전투력이 기존보다 낮아 기존 전투력으로 유지되었습니다:\n\n` +
+          `${skippedMessages.join('\n')}\n\n` +
+          `의도적으로 전투력을 낮추신 경우, 개인별 현황에서 개별 새로고침(🔄)을 진행해주세요.`
+        );
+      }
+
+    } catch (e) {
+      console.error(e);
+      alert('정보 갱신 실패');
+      setStatus('정보 갱신 중 오류가 발생했습니다.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -495,7 +508,7 @@ const App: React.FC = () => {
               className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-bold text-zinc-600 transition-colors hover:bg-zinc-100 disabled:opacity-50 dark:text-zinc-400 dark:hover:bg-zinc-800"
             >
               <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
-              새로고침
+              전체 전투력 갱신
             </button>
 
             <button
