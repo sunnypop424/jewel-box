@@ -461,18 +461,40 @@ export const CharacterFormList: React.FC<Props> = ({
                             <div className="mt-2 space-y-3 animate-in fade-in slide-in-from-top-2 duration-300">
                                 <div className="grid grid-cols-2 gap-1.5 max-h-40 overflow-y-auto pr-1 scrollbar-thin">
                                     {rosterList.map((char) => (
-                                        <label key={char.CharacterName} className={`flex cursor-pointer items-center gap-2 rounded-lg border px-2 py-1.5 text-xs transition ${checkedRosterNames.has(char.CharacterName) ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/30' : 'bg-zinc-50 dark:bg-zinc-800/50 border-transparent hover:border-zinc-300'}`}>
-                                            <input type="checkbox" checked={checkedRosterNames.has(char.CharacterName)} onChange={() => {
+                                    <label 
+                                        key={char.CharacterName} 
+                                        className={`flex cursor-pointer items-center gap-2 rounded-lg border px-2 py-1.5 text-xs transition ${
+                                            checkedRosterNames.has(char.CharacterName) 
+                                            ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/30' 
+                                            : 'bg-zinc-50 dark:bg-zinc-800/50 border-transparent hover:border-zinc-300'
+                                        }`}
+                                    >
+                                        <input 
+                                            type="checkbox" 
+                                            checked={checkedRosterNames.has(char.CharacterName)} 
+                                            onChange={() => {
                                                 const next = new Set<string>(checkedRosterNames);
                                                 if(next.has(char.CharacterName)) next.delete(char.CharacterName);
-                                                else { if(next.size >= 6) { alert('최대 6개까지 선택 가능합니다.'); return; } next.add(char.CharacterName); }
+                                                else { 
+                                                    if(next.size >= 6) { alert('최대 6개까지 선택 가능합니다.'); return; } 
+                                                    next.add(char.CharacterName); 
+                                                }
                                                 setCheckedRosterNames(next);
-                                            }} className="h-3 w-3 rounded text-indigo-600 focus:ring-indigo-500" />
-                                            <div className="flex flex-col truncate">
-                                                <span className="truncate font-bold dark:text-zinc-200">{char.CharacterName}</span>
-                                                <span className="text-[10px] text-zinc-500">Lv.{char.ItemAvgLevel}</span>
+                                            }} 
+                                            className="h-3 w-3 rounded text-indigo-600 focus:ring-indigo-500" 
+                                        />
+                                        <div className="flex flex-col truncate w-full">
+                                            <span className="truncate font-bold dark:text-zinc-200">
+                                                {char.CharacterName}
+                                            </span>
+                                            {/* 직업명과 레벨을 나란히 표시 */}
+                                            <div className="flex items-center gap-1 text-[10px] text-zinc-500">
+                                                <span>{char.CharacterClassName}</span>
+                                                <span className="text-zinc-300 dark:text-zinc-600">|</span>
+                                                <span>Lv.{char.ItemAvgLevel}</span>
                                             </div>
-                                        </label>
+                                        </div>
+                                    </label>
                                     ))}
                                 </div>
                                 <button onClick={handleAddSelectedRoster} disabled={isSearchingRoster} className="w-full rounded-lg bg-indigo-600 py-2 text-xs font-bold text-white shadow-sm hover:bg-indigo-500">선택한 {checkedRosterNames.size}개 캐릭터 추가</button>
