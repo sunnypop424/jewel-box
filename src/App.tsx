@@ -11,14 +11,11 @@ import { CharacterFormList } from './components/CharacterFormList';
 import { RaidScheduleView } from './components/RaidScheduleView';
 import { RaidSequenceView } from './components/RaidSequenceView';
 import { UserRaidProgressPanel } from './components/UserRaidProgressPanel';
-import { fetchCharacters, saveCharacters, fetchRaidSettings, setRaidSetting } from './api/sheetApi';
-import {
-  fetchRaidExclusions,
-  excludeCharacterOnRaid,
-  resetRaidExclusions,
-  excludeCharactersOnRaid,
-} from './api/exclusionApi';
-import { fetchSwaps, addSwap } from './api/swapApi';
+import { 
+  fetchCharacters, saveCharacters, fetchRaidSettings, setRaidSetting,
+  fetchSwaps, addSwap, resetSwaps,
+  fetchRaidExclusions, toggleCharacterOnRaid, excludeCharactersOnRaid, resetRaidExclusions 
+} from './api/firebaseApi';
 import { Modal } from './components/Modal';
 import { LadderGame } from './components/LadderGame';
 import { RouletteGame } from './components/RouletteGame';
@@ -250,19 +247,19 @@ const App: React.FC = () => {
     }
   };
 
-  const handleExcludeCharacterFromRaid = async (raidId: RaidId, charId: string) => {
+  const handleExcludeCharacterFromRaid = async (raidId: RaidId, charId: string, isCurrentlyExcluded: boolean = false) => {
     try {
       if (isSwapping) {
         alert('캐릭터 변경 반영 중입니다. 잠시 후 다시 시도해주세요.');
         return;
       }
-      setStatus('레이드 제외 처리 중...');
-      const next = await excludeCharacterOnRaid(raidId, charId);
+      setStatus(isCurrentlyExcluded ? '레이드 완료 취소 중...' : '레이드 제외 처리 중...');
+      const next = await toggleCharacterOnRaid(raidId, charId, isCurrentlyExcluded);
       setRaidExclusions(next);
-      setStatus('레이드 제외 내역이 업데이트되었습니다.');
+      setStatus(isCurrentlyExcluded ? '완료가 취소되었습니다.' : '레이드가 완료 처리되었습니다.');
     } catch (e) {
       console.error(e);
-      alert('레이드 제외 처리에 실패했습니다. 잠시 후 다시 시도해주세요.');
+      alert('상태 변경에 실패했습니다. 잠시 후 다시 시도해주세요.');
     }
   };
 
@@ -309,6 +306,7 @@ const App: React.FC = () => {
     try {
       setStatus('내역 초기화 중...');
       await resetRaidExclusions();
+      await resetSwaps();
       await Promise.all([refreshExclusions(), refreshSwaps()]);
       setStatus('모든 내역이 초기화되었습니다.');
     } catch (e) {

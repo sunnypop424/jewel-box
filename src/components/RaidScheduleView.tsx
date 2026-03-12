@@ -32,10 +32,7 @@ interface Props {
   exclusions?: RaidExclusionMap;
 
   // ✅ Promise 허용
-  onExcludeCharacter?: (
-    raidId: RaidId,
-    characterId: string,
-  ) => void | Promise<void>;
+  onExcludeCharacter?: (raidId: RaidId, characterId: string, isCurrentlyExcluded: boolean) => void | Promise<void>;
 
   balanceMode?: BalanceMode;
   raidSettings?: RaidSettingsMap;
@@ -203,10 +200,7 @@ export const RaidScheduleView: React.FC<Props> = ({
   };
 
   const handleExcludeClick = async (
-    raidId: RaidId,
-    characterId: string,
-    characterName: string,
-    raidLabel: string,
+    raidId: RaidId, characterId: string, characterName: string, raidLabel: string, isCurrentlyExcluded: boolean
   ) => {
     if (!onExcludeCharacter) return;
     if (isSwapping) {
@@ -214,12 +208,11 @@ export const RaidScheduleView: React.FC<Props> = ({
       return;
     }
 
-    const ok = window.confirm(
-      `${characterName} 캐릭터를 "${raidLabel}" 레이드에서 완료(제외) 처리하시겠습니까?`,
-    );
+    const actionText = isCurrentlyExcluded ? '완료 취소(복구)' : '완료(제외)';
+    const ok = window.confirm(`${characterName} 캐릭터를 "${raidLabel}" 레이드에서 ${actionText} 처리하시겠습니까?`);
     if (!ok) return;
 
-    await onExcludeCharacter(raidId, characterId);
+    await onExcludeCharacter(raidId, characterId, isCurrentlyExcluded);
   };
 
   if (isLoading) {
@@ -439,13 +432,8 @@ export const RaidScheduleView: React.FC<Props> = ({
                   }
                   runs={runs}
                   excludedIds={excludedIdsForRaid}
-                  onExclude={(m: Character) =>
-                    handleExcludeClick(
-                      raidId as RaidId,
-                      m.id,
-                      m.discordName,
-                      meta.label,
-                    )
+                  onExclude={(m: Character, isCompleted: boolean) =>
+                    handleExcludeClick(raidId as RaidId, m.id, m.discordName, meta.label, isCompleted)
                   }
                   canExclude={Boolean(onExcludeCharacter) && !isSwapping}
                   getUserCardClass={getUserCardClass}
@@ -678,6 +666,7 @@ export const RaidScheduleView: React.FC<Props> = ({
                                                 m.id,
                                                 m.discordName,
                                                 meta.label,
+                                                false,
                                               );
                                             }}
                                             className="inline-flex items-center gap-1 rounded bg-white px-2 py-1 text-xs font-bold text-zinc-600 shadow-sm ring-1 ring-zinc-200 hover:bg-emerald-50 hover:text-emerald-700 hover:ring-emerald-200 dark:bg-zinc-800 dark:text-zinc-400 dark:ring-zinc-700 dark:hover:bg-emerald-900/30 dark:hover:text-emerald-300 dark:hover:ring-emerald-800 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -748,7 +737,7 @@ function RaidStatusBoard(props: {
   runs: RaidRun[];
   excludedIds: string[];
   canExclude: boolean;
-  onExclude: (m: Character) => void | Promise<void>;
+  onExclude: (m: Character, isCompleted: boolean) => void | Promise<void>;
   getUserCardClass: (discordName: string) => string;
   userColorMap: Map<string, number>;
 }) {
@@ -827,23 +816,20 @@ function RaidStatusBoard(props: {
           ))}
         </StatusColumn>
 
-        <StatusColumn
-          title="완료"
-          count={completed.length}
-          icon={<CheckCircle2 size={16} />}
-          color="zinc"
-        >
+        <StatusColumn title="완료" count={completed.length} icon={<CheckCircle2 size={16} />} color="zinc">
           {completed.map((m) => (
-            <div key={m.id} className="opacity-50 grayscale">
+            <div key={m.id} className="opacity-60">
               <RaidMemberCard
                 member={m}
                 {...props}
-                isReadOnly
+                isCompleted={true}
+                canExclude={props.canExclude} // ✅ 수정
                 userCardClass={getUserCardClass(m.discordName)}
               />
             </div>
           ))}
         </StatusColumn>
+
       </div>
     </div>
   );
@@ -888,7 +874,7 @@ function RaidMemberCard({
   member,
   canExclude,
   onExclude,
-  isReadOnly,
+  isCompleted, // isReadOnly 대신 isCompleted 사용
   userCardClass = '',
 }: any) {
   return (
@@ -928,13 +914,18 @@ function RaidMemberCard({
           </div>
         </div>
 
-        {!isReadOnly && canExclude && (
+        {canExclude && (
           <button
-            onClick={() => onExclude(member)}
-            className="inline-flex items-center gap-1 rounded bg-white px-2 py-1 text-xs font-bold text-zinc-600 shadow-sm ring-1 ring-zinc-200 hover:bg-emerald-50 hover:text-emerald-700 hover:ring-emerald-200 dark:bg-zinc-800 dark:text-zinc-400 dark:ring-zinc-700 dark:hover:bg-emerald-900/30 dark:hover:text-emerald-300 dark:hover:ring-emerald-800"
+            onClick={() => onExclude(member, isCompleted)}
+            className={`inline-flex items-center gap-1 rounded bg-white px-2 py-1 text-xs font-bold shadow-sm ring-1 transition-colors ${
+              isCompleted 
+                ? 'text-rose-600 ring-rose-200 hover:bg-rose-50 dark:bg-zinc-800 dark:text-rose-400 dark:ring-rose-900/50 dark:hover:bg-rose-900/30' 
+                : 'text-zinc-600 ring-zinc-200 hover:bg-emerald-50 hover:text-emerald-700 hover:ring-emerald-200 dark:bg-zinc-800 dark:text-zinc-400 dark:ring-zinc-700 dark:hover:bg-emerald-900/30 dark:hover:text-emerald-300'
+            }`}
+            title={isCompleted ? "완료 취소" : "완료(제외) 처리"}
           >
-            <Check size={12} />
-            완료
+            {isCompleted ? <ArrowLeftRight size={12} /> : <Check size={12} />}
+            {isCompleted ? '취소' : '완료'}
           </button>
         )}
       </div>

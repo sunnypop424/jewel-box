@@ -25,7 +25,7 @@ import {
   UserX,
   ArrowLeftRight,
 } from 'lucide-react';
-import { excludeCharactersOnRaid } from '../api/exclusionApi';
+import { excludeCharactersOnRaid } from '../api/firebaseApi';
 
 import {
   DndContext,

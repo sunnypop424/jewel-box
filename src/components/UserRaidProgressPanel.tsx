@@ -31,7 +31,7 @@ interface UserRaidProgressPanelProps {
     raidCandidates?: Partial<Record<RaidId, Character[]>>;
     exclusions?: RaidExclusionMap;
     schedule: RaidSchedule | null;
-    onMarkRaidComplete?: (raidId: RaidId, charId: string) => void;
+    onMarkRaidComplete?: (raidId: RaidId, charId: string, isDone: boolean) => void;
 }
 
 export function UserRaidProgressPanel({
@@ -229,16 +229,14 @@ export function UserRaidProgressPanel({
                                                                 <input 
                                                                     type="checkbox" 
                                                                     checked={isDone}
-                                                                    disabled={isDone}
-                                                                    onChange={(e) => {
-                                                                        if (e.target.checked && !isDone) {
-                                                                            const confirmed = window.confirm(`${c.discordName}님의 Lv.${c.itemLevel} ${c.jobCode}, \n${meta.label} 레이드를 완료하시겠습니까?`);
-                                                                            if (confirmed) {
-                                                                                onMarkRaidComplete?.(raidId, c.id);
-                                                                            }
+                                                                    onChange={() => {
+                                                                        const actionText = isDone ? '완료를 취소' : '완료';
+                                                                        const confirmed = window.confirm(`${c.discordName}님의 Lv.${c.itemLevel} ${c.jobCode}, \n${meta.label} 레이드를 ${actionText}하시겠습니까?`);
+                                                                        if (confirmed) {
+                                                                            onMarkRaidComplete?.(raidId, c.id, isDone);
                                                                         }
                                                                     }}
-                                                                    className="h-3.5 w-3.5 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500 disabled:cursor-not-allowed dark:border-zinc-600 dark:bg-zinc-800"
+                                                                    className="h-3.5 w-3.5 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer dark:border-zinc-600 dark:bg-zinc-800"
                                                                 />
                                                                 <span className={`text-xs font-bold transition-colors ${isDone ? 'text-zinc-400 line-through dark:text-zinc-600' : 'text-zinc-700 dark:text-zinc-200'}`}>
                                                                     {meta.label}
