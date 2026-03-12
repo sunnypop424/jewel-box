@@ -231,8 +231,11 @@ export function UserRaidProgressPanel({
                                                             <button
                                                                 onClick={async () => {
                                                                     if (onRefreshCharacter && !refreshingId) {
-                                                                        // ✅ 확인 창 띄우기
-                                                                        const isConfirmed = window.confirm(`${c.lostArkName}의 정보를 업데이트 하시겠습니까?`);
+                                                                        // ✅ 확인 창 텍스트에 안내 문구 추가 (백틱 ` 과 \n 을 활용하여 줄바꿈 적용)
+                                                                        const isConfirmed = window.confirm(
+                                                                            `${c.lostArkName}의 정보를 업데이트 하시겠습니까?\n\n` +
+                                                                            `※ 안내: 전체 갱신과 달리, 캐릭터 정보 업데이트는 현재 전투력이 이전보다 낮아진 경우(의도적인 스펙 하락)에도 그대로 반영됩니다.`
+                                                                        );
                                                                         
                                                                         // 사용자가 '취소'를 누르면 여기서 함수 종료
                                                                         if (!isConfirmed) return;
