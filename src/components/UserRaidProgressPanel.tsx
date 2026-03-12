@@ -6,6 +6,7 @@ import type { Character, RaidId, RaidExclusionMap, RaidSchedule } from '../types
 type RaidProgressState = 'DONE' | 'ASSIGNED' | 'UNASSIGNED';
 
 const RAID_ORDER_FOR_PROGRESS: RaidId[] = [
+    'ACT1_HARD', 'ACT2_NORMAL', 'ACT3_NORMAL',
     'ACT2_HARD', 'ACT3_HARD',
     'ACT4_NORMAL', 'FINAL_NORMAL', 'SERKA_NORMAL',
     'ACT4_HARD', 'FINAL_HARD', 'SERKA_HARD', 'SERKA_NIGHTMARE',
@@ -53,7 +54,6 @@ export function UserRaidProgressPanel({
 
         const arr = Array.from(byUser.entries()).map(([discordName, chars]) => ({
             discordName,
-            // 🌟 강제 전투력 정렬 제거! (구글 시트 저장 순서대로 노출)
             chars: chars, 
         }));
 
@@ -95,8 +95,17 @@ export function UserRaidProgressPanel({
                         
                         const raidYields = raidsForChar.map(id => {
                             const meta = RAID_META[id];
-                            const effectiveGold = (ignoreBoundGold && meta.goldType === 'BOUND') ? -1 : meta.gold;
-                            return { id, ...meta, effectiveGold };
+                            // 🌟 싱글 여부 확인
+                            const isSingle = c.singleRaids?.includes(id);
+
+                            let effectiveGold = meta.gold;
+                            if (isSingle && (id === 'ACT2_NORMAL' || id === 'ACT3_NORMAL')) {
+                                // 싱글 모드일 경우 귀속 제외 옵션이라도 일반 골드(50%)는 무조건 획득하므로 계산식 변경
+                                effectiveGold = (meta.gold / 2) + (ignoreBoundGold ? 0 : meta.gold / 2);
+                            } else if (ignoreBoundGold && meta.goldType === 'BOUND') {
+                                effectiveGold = -1;
+                            }
+                            return { id, ...meta, effectiveGold, isSingle }; // 🌟 isSingle 추가
                         }).sort((a, b) => b.effectiveGold - a.effectiveGold);
                         
                         const top3Yields = raidYields.filter(y => y.effectiveGold > 0).slice(0, 3);
@@ -107,20 +116,27 @@ export function UserRaidProgressPanel({
 
                         top3Yields.forEach(y => {
                             const isDone = getState(y.id, c.id) === 'DONE';
-                            if (y.goldType === 'GENERAL') {
-                                charTotalGeneral += y.gold;
-                                userTotalGeneral += y.gold;
-                                if (isDone) {
-                                    charCollectedGeneral += y.gold;
-                                    userCollectedGeneral += y.gold;
-                                }
-                            } else if (y.goldType === 'BOUND') {
-                                charTotalBound += y.gold;
-                                userTotalBound += y.gold;
-                                if (isDone) {
-                                    charCollectedBound += y.gold;
-                                    userCollectedBound += y.gold;
-                                }
+                            let g = 0; let b = 0;
+
+                            // 🌟 싱글 모드 5:5 골드 분할 로직 추가
+                            if (y.isSingle && (y.id === 'ACT2_NORMAL' || y.id === 'ACT3_NORMAL')) {
+                                g = y.gold / 2;
+                                b = y.gold / 2;
+                            } else {
+                                if (y.goldType === 'GENERAL') g = y.gold;
+                                else b = y.gold;
+                            }
+
+                            charTotalGeneral += g;
+                            charTotalBound += b;
+                            userTotalGeneral += g;
+                            userTotalBound += b;
+
+                            if (isDone) {
+                                charCollectedGeneral += g;
+                                charCollectedBound += b;
+                                userCollectedGeneral += g;
+                                userCollectedBound += b;
                             }
                         });
 
@@ -215,6 +231,7 @@ export function UserRaidProgressPanel({
                                                     const meta = RAID_META[raidId];
                                                     const isTop3 = top3Ids.has(raidId);
                                                     const isDone = state === 'DONE';
+                                                    const isSingle = c.singleRaids?.includes(raidId); // 🌟 싱글 확인
 
                                                     return (
                                                         <label 
@@ -240,12 +257,18 @@ export function UserRaidProgressPanel({
                                                                 />
                                                                 <span className={`text-xs font-bold transition-colors ${isDone ? 'text-zinc-400 line-through dark:text-zinc-600' : 'text-zinc-700 dark:text-zinc-200'}`}>
                                                                     {meta.label}
+                                                                    {/* 🌟 싱글 표시 추가 */}
+                                                                    {isSingle && <span className="ml-1 text-blue-400">(싱글)</span>}
                                                                 </span>
                                                             </div>
                                                             
                                                             {isTop3 ? (
-                                                                <span className={`text-xs font-bold ${isDone ? 'text-zinc-400 dark:text-zinc-500' : 'text-amber-600 dark:text-amber-400'}`}>
-                                                                    {meta.goldType === 'GENERAL' ? '' : '귀속 '}{meta.gold.toLocaleString()}G
+                                                                <span className={`text-[11px] font-bold ${isDone ? 'text-zinc-400 dark:text-zinc-500' : 'text-amber-600 dark:text-amber-400'}`}>
+                                                                    {/* 🌟 싱글 모드 골드 텍스트 변경 */}
+                                                                    {isSingle && (raidId === 'ACT2_NORMAL' || raidId === 'ACT3_NORMAL')
+                                                                        ? `${(meta.gold/2).toLocaleString()}G + 귀속 ${(meta.gold/2).toLocaleString()}G`
+                                                                        : `${meta.goldType === 'GENERAL' ? '' : '귀속 '}${meta.gold.toLocaleString()}G`
+                                                                    }
                                                                 </span>
                                                             ) : (
                                                                 <span className="text-xs font-medium text-zinc-400 dark:text-zinc-600">

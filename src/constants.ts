@@ -47,6 +47,9 @@ export const RAID_META: Record<
     goldType: 'GENERAL' | 'BOUND' 
   }
 > = {
+  ACT1_HARD: { label: '1막 하드', difficulty: 'HARD', colorClass: 'bg-amber-500', gold: 18000, goldType: 'GENERAL' },
+  ACT2_NORMAL: { label: '2막 노말', difficulty: 'NORMAL', colorClass: 'bg-sky-400', gold: 16500, goldType: 'GENERAL' },
+  ACT3_NORMAL: { label: '3막 노말', difficulty: 'NORMAL', colorClass: 'bg-sky-400', gold: 21000, goldType: 'GENERAL' },
   ACT2_HARD: { label: '2막 하드', difficulty: 'HARD', colorClass: 'bg-amber-600', gold: 23000, goldType: 'GENERAL' },
   ACT3_HARD: { label: '3막 하드', difficulty: 'HARD', colorClass: 'bg-orange-400', gold: 27000, goldType: 'GENERAL' },
   ACT4_NORMAL: { label: '4막 노말', difficulty: 'NORMAL', colorClass: 'bg-sky-400', gold: 33000, goldType: 'GENERAL' },

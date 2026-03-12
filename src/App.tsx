@@ -16,6 +16,7 @@ import {
   fetchSwaps, addSwap, resetSwaps,
   fetchRaidExclusions, toggleCharacterOnRaid, excludeCharactersOnRaid, resetRaidExclusions 
 } from './api/firebaseApi';
+import { syncCharactersWithLostArkAPI } from './api/lostArkApi';
 import { Modal } from './components/Modal';
 import { LadderGame } from './components/LadderGame';
 import { RouletteGame } from './components/RouletteGame';
@@ -206,7 +207,7 @@ const App: React.FC = () => {
 
   const handleToggleUserActive = (name: string) => {
     setInactiveUsers((prev) => {
-      const next = new Set(prev);
+      const next = new Set<string>(prev);
       if (next.has(name)) next.delete(name);
       else next.add(name);
       return next;
@@ -216,8 +217,7 @@ const App: React.FC = () => {
   const handleToggleSupportShortage = async (raidId: RaidId, next: boolean) => {
     try {
       setStatus('랏폿 설정 저장 중...');
-      const updatedBy = localSquad.discordName || '';
-      const rs = await setRaidSetting(raidId, next, updatedBy);
+      const rs = await setRaidSetting(raidId, next);
       setRaidSettings(rs);
       setStatus('랏폿 설정이 저장되었습니다.');
     } catch (e) {
@@ -273,8 +273,7 @@ const App: React.FC = () => {
       if (uniqIds.length === 0) return;
 
       setStatus('공격대 완료 처리 중...');
-      const updatedBy = localSquad.discordName || 'User';
-      const next = await excludeCharactersOnRaid(raidId, uniqIds, updatedBy);
+      const next = await excludeCharactersOnRaid(raidId, uniqIds);
       setRaidExclusions(next);
       setStatus('공격대가 완료 처리되었습니다.');
     } catch (e) {
@@ -287,8 +286,7 @@ const App: React.FC = () => {
     try {
       setIsSwapping(true);
       setStatus('캐릭터 교체 중...');
-      const updatedBy = localSquad.discordName || 'User';
-      const nextSwaps = await addSwap(raidId, charId1, charId2, updatedBy);
+      const nextSwaps = await addSwap(raidId, charId1, charId2);
       setRaidSwaps(nextSwaps);
       setStatus('캐릭터 교체가 완료되었습니다.');
     } catch (e) {
@@ -299,19 +297,32 @@ const App: React.FC = () => {
     }
   };
 
+  // ✅ 주간 초기화 시 로아 API 호출하여 공대원 전체 스펙 최신화
   const handleResetExclusions = async () => {
-    const ok = window.confirm('모든 제외 내역과 캐릭터 변경(Swap) 내역을 초기화하시겠습니까?');
+    const ok = window.confirm(
+      '모든 제외 내역과 캐릭터 변경(Swap) 내역을 초기화하고, \n로아 API를 통해 캐릭터 스펙을 최신화하시겠습니까?\n(약 5~10초 정도 소요될 수 있습니다)'
+    );
     if (!ok) return;
 
     try {
-      setStatus('내역 초기화 중...');
+      setStatus('내역 초기화 및 스펙 갱신 중... (페이지를 닫지 마세요)');
+      
+      // 1. 내역 초기화
       await resetRaidExclusions();
       await resetSwaps();
+      
+      // 2. 로아 API 연동 (스펙 자동 갱신)
+      let list = await fetchCharacters();
+      list = await syncCharactersWithLostArkAPI(list, saveCharacters);
+      setAllCharacters(list);
+      
+      // 3. 화면 새로고침
       await Promise.all([refreshExclusions(), refreshSwaps()]);
-      setStatus('모든 내역이 초기화되었습니다.');
+      setStatus('모든 내역이 초기화되고 캐릭터 스펙이 갱신되었습니다.');
     } catch (e) {
       console.error(e);
       alert('초기화 실패');
+      setStatus('초기화 중 오류가 발생했습니다.');
     }
   };
 
@@ -642,7 +653,7 @@ const App: React.FC = () => {
           </div>
         </div>
 
-        <Modal open={isModalOpen} title="내 원정대 관리" onClose={() => !saving && setIsModalOpen(false)}>
+        <Modal open={isModalOpen} title="내 원정대 관리" onClose={() => !saving && setIsModalOpen(false)} maxWidth="max-w-6xl">
           <CharacterFormList
             discordName={localSquad.discordName}
             characters={localSquad.characters}

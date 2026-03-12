@@ -2,19 +2,17 @@ export type Role = 'DPS' | 'SUPPORT';
 
 export type GoldOption = 'ALL_MAX' | 'GENERAL_MAX' | 'MAIN_ALL_ALT_GENERAL';
 
-export type RaidId =
-  | 'ACT2_HARD'     // 🌟 추가 (1690)
-  | 'ACT3_HARD'     // 🌟 추가 (1700)
-  | 'ACT4_NORMAL' // 1700
-  | 'FINAL_NORMAL' // 1710
-  | 'SERKA_NORMAL' // 1710 (4인)
-  | 'ACT4_HARD' // 1720
-  | 'FINAL_HARD' // 1730
-  | 'SERKA_HARD' // 1730 (4인)
-  | 'SERKA_NIGHTMARE' // 1740 (4인)
-  | 'HORIZON_STEP1' // 1700
-  | 'HORIZON_STEP2' // 1720
-  | 'HORIZON_STEP3'; // 1750
+export type RaidId = 
+  | 'ACT1_HARD' 
+  | 'ACT2_NORMAL' | 'ACT2_HARD' 
+  | 'ACT3_NORMAL' | 'ACT3_HARD' 
+  | 'ACT4_NORMAL' | 'ACT4_HARD' 
+  | 'FINAL_NORMAL' | 'FINAL_HARD' 
+  | 'SERKA_NORMAL' | 'SERKA_HARD' | 'SERKA_NIGHTMARE'
+  | 'HORIZON_STEP1' | 'HORIZON_STEP2' | 'HORIZON_STEP3';
+
+// 싱글 모드 저장용 타입 추가
+export type RaidSingleMap = Partial<Record<RaidId, string[]>>; // RaidId별 싱글로 클리어한 캐릭터 ID 배열
 
 export type Character = {
   id: string;
@@ -31,6 +29,8 @@ export type Character = {
   valkyCanSupport?: boolean;
 
   goldOption?: GoldOption;
+  lostArkName?: string;
+  singleRaids?: RaidId[];
 };
 
 export type RaidRunParty = {

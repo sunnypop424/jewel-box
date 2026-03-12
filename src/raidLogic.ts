@@ -146,10 +146,15 @@ function getTargetRaidsForCharacter(ch: Character): RaidId[] {
   if (il >= 1720) raids.push('ACT4_HARD');
   else if (il >= 1700) raids.push('ACT4_NORMAL');
 
-  // 🌟 5) 3막, 2막 (1710 미만이라 상위 레이드가 부족한 캐릭터만 추가)
+  // 🌟 5) 3막, 2막, 1막 (1710 미만 캐릭터용)
   if (il < 1710) {
     if (il >= 1700) raids.push('ACT3_HARD');
+    else if (il >= 1680) raids.push('ACT3_NORMAL');
+
     if (il >= 1690) raids.push('ACT2_HARD');
+    else if (il >= 1680) raids.push('ACT2_NORMAL');
+
+    if (il >= 1680) raids.push('ACT1_HARD');
   }
 
   return raids;
@@ -921,6 +926,9 @@ function groupCharactersByRaid(
   exclusions: RaidExclusionMap = {},
 ): RaidBucket[] {
   const map: Record<RaidId, Character[]> = {
+    ACT1_HARD: [], // 🌟 추가
+    ACT2_NORMAL: [], // 🌟 추가
+    ACT3_NORMAL: [], // 🌟 추가
     ACT2_HARD: [], // 🌟 추가
     ACT3_HARD: [], // 🌟 추가
     ACT4_NORMAL: [],
@@ -1436,6 +1444,9 @@ function rebalanceSupportsGlobal(runs: RaidRun[]): RaidRun[] {
 // ==============================
 function cloneSchedule(schedule: RaidSchedule): RaidSchedule {
   const result: RaidSchedule = {
+    ACT1_HARD: [], // 🌟 추가
+    ACT2_NORMAL: [], // 🌟 추가
+    ACT3_NORMAL: [], // 🌟 추가
     ACT2_HARD: [], // 🌟 추가
     ACT3_HARD: [], // 🌟 추가
     ACT4_NORMAL: [],
@@ -1634,6 +1645,9 @@ export function buildRaidSchedule(
   const seededRng = createSeededRandom(SEED);
 
   const schedule: RaidSchedule = {
+    ACT1_HARD: [], // 🌟 추가
+    ACT2_NORMAL: [], // 🌟 추가
+    ACT3_NORMAL: [], // 🌟 추가
     ACT2_HARD: [], // 🌟 추가
     ACT3_HARD: [], // 🌟 추가
     ACT4_NORMAL: [],
@@ -1649,7 +1663,7 @@ export function buildRaidSchedule(
   };
 
   buckets.forEach(({ raidId, characters }) => {
-    if (raidId === 'ACT2_HARD' || raidId === 'ACT3_HARD') return;
+    if (raidId === 'ACT1_HARD' || raidId === 'ACT2_NORMAL' || raidId === 'ACT2_HARD' || raidId === 'ACT3_NORMAL' || raidId === 'ACT3_HARD') return;
     const fillTwoSupports = Boolean(raidSettings?.[raidId]); // ✅ 랏폿 체크
 
     // ✅ 랏폿 체크 ON이면 승격을 통해 2서폿 런 우선 생성이 쉬워짐
@@ -1684,9 +1698,12 @@ export function buildRaidCandidatesMap(
   exclusions: RaidExclusionMap = {},
   raidSettings: RaidSettingsMap = {},
 ): Record<RaidId, Character[]> {
-  const filtered = characters.filter((c) => c.itemLevel >= 1700);
+  const filtered = characters.filter((c) => c.itemLevel >= 1680);
 
   const map: Record<RaidId, Character[]> = {
+    ACT1_HARD: [], // 🌟 추가
+    ACT2_NORMAL: [], // 🌟 추가
+    ACT3_NORMAL: [], // 🌟 추가
     ACT2_HARD: [], // 🌟 추가
     ACT3_HARD: [], // 🌟 추가
     ACT4_NORMAL: [],

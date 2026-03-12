@@ -33,7 +33,7 @@ export async function fetchRaidSettings(): Promise<RaidSettingsMap> {
   return snap.exists() ? (snap.data().supportShortageByRaid || {}) : {};
 }
 
-export async function setRaidSetting(raidId: RaidId, supportShortage: boolean, updatedBy?: string): Promise<RaidSettingsMap> {
+export async function setRaidSetting(raidId: RaidId, supportShortage: boolean): Promise<RaidSettingsMap> {
   await setDoc(SETTINGS_DOC_REF, { supportShortageByRaid: { [raidId]: supportShortage } }, { merge: true });
   return await fetchRaidSettings();
 }
@@ -49,7 +49,7 @@ export async function fetchSwaps(): Promise<RaidSwap[]> {
   return snap.exists() ? (snap.data().swaps || []) : [];
 }
 
-export async function addSwap(raidId: string, charId1: string, charId2: string, updatedBy?: string): Promise<RaidSwap[]> {
+export async function addSwap(raidId: string, charId1: string, charId2: string): Promise<RaidSwap[]> {
   const snap = await getDoc(SWAPS_DOC_REF);
   if (!snap.exists()) await setDoc(SWAPS_DOC_REF, { swaps: [] });
   
@@ -79,7 +79,7 @@ export async function toggleCharacterOnRaid(raidId: RaidId, characterId: string,
   return await fetchRaidExclusions();
 }
 
-export async function excludeCharactersOnRaid(raidId: RaidId, characterIds: string[], updatedBy?: string): Promise<RaidExclusionMap> {
+export async function excludeCharactersOnRaid(raidId: RaidId, characterIds: string[]): Promise<RaidExclusionMap> {
   const snap = await getDoc(EXCLUSION_DOC_REF);
   if (!snap.exists()) await setDoc(EXCLUSION_DOC_REF, {});
 
