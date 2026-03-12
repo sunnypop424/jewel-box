@@ -616,8 +616,8 @@ export const RaidScheduleView: React.FC<Props> = ({
                                           <div className="text-sm font-bold dark:text-zinc-100">
                                             {m.jobCode}
                                           </div>
-                                          <div className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400">
-                                            {m.discordName}
+                                          <div className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400 text-ellipsis max-w-[80px] overflow-hidden whitespace-nowrap">
+                                            {m.lostArkName}
                                           </div>
                                         </div>
                                       </div>
@@ -899,7 +899,9 @@ function RaidMemberCard({
             {member.jobCode}
           </div>
           <div className="text-[11px] font-medium text-zinc-600 dark:text-zinc-300">
-            {member.discordName}
+            {member.discordName} · {member.lostArkName}
+          </div>
+          <div className="text-[11px] font-medium text-zinc-600 dark:text-zinc-300">
           </div>
         </div>
       </div>
