@@ -31,6 +31,9 @@ export type Character = {
   goldOption?: GoldOption;
   lostArkName?: string;
   singleRaids?: RaidId[];
+
+  // 게스트 필드 추가
+  isGuest?: boolean;
 };
 
 export type RaidRunParty = {

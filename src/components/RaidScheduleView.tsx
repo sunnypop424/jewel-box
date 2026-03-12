@@ -58,6 +58,9 @@ interface Props {
   allUserNames?: string[];
   inactiveUsers?: Set<string>;
   onToggleUser?: (name: string) => void;
+  // 게스트 추가
+  onOpenGuestAdd?: (raidId: RaidId) => void;
+  onRemoveGuest?: (raidId: RaidId, guestId: string) => void;
 }
 
 function getDifficultyStyle(diff: string) {
@@ -103,6 +106,8 @@ export const RaidScheduleView: React.FC<Props> = ({
   allUserNames = [],
   inactiveUsers = new Set(),
   onToggleUser,
+  onOpenGuestAdd,
+  onRemoveGuest,
 }) => {
   const [raidOpenState, setRaidOpenState] = useState<Record<string, boolean>>(
     {},
@@ -382,6 +387,19 @@ export const RaidScheduleView: React.FC<Props> = ({
                 <h4 className={`text-base font-bold ${titleColor}`}>
                   {meta.label}
                 </h4>
+                {onOpenGuestAdd && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation(); // 아코디언 닫힘 방지
+                      
+                      // 반드시 'onOpenGuestAdd'를 호출해서 App.tsx에 있는 모달 열기 로직을 실행해야 합니다.
+                      onOpenGuestAdd(raidId as RaidId); 
+                    }}
+                    className="ml-2 rounded-md bg-indigo-50 px-2 py-1 text-[10px] font-bold text-indigo-600 hover:bg-indigo-100 dark:bg-indigo-900/40 dark:text-indigo-300 transition-colors"
+                  >
+                    + 게스트 추가
+                  </button>
+                )}
               </div>
 
               <div className="flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400">
@@ -584,6 +602,7 @@ export const RaidScheduleView: React.FC<Props> = ({
                               >
                                 <div className="mb-3 flex items-center justify-between px-1 text-xs font-bold text-zinc-500 dark:text-zinc-400">
                                   <div className="flex items-center gap-1.5">
+
                                     <Users size={14} />
                                     <span>PARTY {party.partyIndex}</span>
                                   </div>
@@ -613,11 +632,16 @@ export const RaidScheduleView: React.FC<Props> = ({
                                           )}
                                         </div>
                                         <div>
-                                          <div className="text-sm font-bold dark:text-zinc-100">
-                                            {m.jobCode}
+                                          <div className="flex items-center gap-1.5">
+                                            <span className="text-sm font-bold dark:text-zinc-100">{m.jobCode}</span>
+                                            {/* ✅ 게스트 배지 추가 */}
+                                            {m.isGuest && (
+                                              <span className="rounded bg-amber-100 px-1 py-0.5 text-[9px] font-bold text-amber-600 dark:bg-amber-900/50 dark:text-amber-400">GUEST</span>
+                                            )}
                                           </div>
-                                          <div className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400 text-ellipsis max-w-[80px] overflow-hidden whitespace-nowrap">
-                                            {m.lostArkName}
+                                          {/* 게스트는 lostArkName 대신 "임시 게스트" 표시 */}
+                                          <div className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400">
+                                            {m.isGuest ? "임시 게스트" : m.lostArkName}
                                           </div>
                                         </div>
                                       </div>
@@ -632,28 +656,35 @@ export const RaidScheduleView: React.FC<Props> = ({
                                           </div>
                                         </div>
 
-                                        {/* ✅ 변경 버튼 (isSwapping 잠금) */}
-                                        {onSwapCharacter && (
+                                        {/* ✅ 게스트일 경우 '변경' 대신 '삭제' 버튼 노출 */}
+                                        {m.isGuest ? (
                                           <button
-                                            disabled={isSwapping}
-                                            onClick={() => {
-                                              if (isSwapping) {
-                                                alert(
-                                                  '캐릭터 변경 반영 중입니다. 잠시 후 다시 시도해주세요.',
-                                                );
-                                                return;
-                                              }
-                                              setSwapTarget({
-                                                raidId: raidId as RaidId,
-                                                char: m,
-                                              });
-                                            }}
-                                            className="inline-flex items-center gap-1 rounded bg-white px-2 py-1 text-xs font-bold text-zinc-600 shadow-sm ring-1 ring-zinc-200 hover:bg-amber-50 hover:text-amber-700 hover:ring-amber-200 dark:bg-zinc-800 dark:text-zinc-400 dark:ring-zinc-700 dark:hover:bg-amber-900/30 dark:hover:text-amber-300 dark:hover:ring-amber-800 disabled:opacity-50 disabled:cursor-not-allowed"
-                                            title="다른 캐릭터로 변경"
+                                            onClick={() => onRemoveGuest?.(raidId as RaidId, m.id)}
+                                            className="inline-flex items-center gap-1 rounded bg-rose-50 px-2 py-1 text-xs font-bold text-rose-600 shadow-sm ring-1 ring-rose-200 hover:bg-rose-100 dark:bg-rose-950/30 dark:text-rose-400 dark:ring-rose-900/50"
                                           >
-                                            <ArrowLeftRight size={12} />
-                                            변경
+                                            삭제
                                           </button>
+                                        ) : (
+                                          onSwapCharacter && (
+                                            <button
+                                              disabled={isSwapping}
+                                              onClick={() => {
+                                                if (isSwapping) {
+                                                  alert('캐릭터 변경 반영 중입니다. 잠시 후 다시 시도해주세요.');
+                                                  return;
+                                                }
+                                                setSwapTarget({
+                                                  raidId: raidId as RaidId,
+                                                  char: m,
+                                                });
+                                              }}
+                                              className="inline-flex items-center gap-1 rounded bg-white px-2 py-1 text-xs font-bold text-zinc-600 shadow-sm ring-1 ring-zinc-200 hover:bg-amber-50 hover:text-amber-700 hover:ring-amber-200 dark:bg-zinc-800 dark:text-zinc-400 dark:ring-zinc-700 dark:hover:bg-amber-900/30 dark:hover:text-amber-300 dark:hover:ring-amber-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                                              title="다른 캐릭터로 변경"
+                                            >
+                                              <ArrowLeftRight size={12} />
+                                              변경
+                                            </button>
+                                          )
                                         )}
 
                                         {/* ✅ 개별 완료 버튼 (isSwapping 잠금 + await) */}

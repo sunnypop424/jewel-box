@@ -1641,6 +1641,7 @@ export function buildRaidSchedule(
   balanceMode: BalanceMode = 'speed',
   raidSettings: RaidSettingsMap = {},
   swaps: RaidSwap[] = [],
+  guests: Partial<Record<RaidId, Character[]>> = {},
 ): RaidSchedule {
   const filtered = characters.filter((c) => c.itemLevel >= 1700);
   const buckets = groupCharactersByRaid(filtered, exclusions);
@@ -1675,10 +1676,14 @@ export function buildRaidSchedule(
       ? promoteValkyToSupportIfNeeded(raidId, characters, fillTwoSupports)
       : characters;
 
+    // ✅ 해당 레이드에 게스트가 있다면 인원 풀에 합침
+    const raidGuests = guests[raidId] || [];
+    const poolWithGuests = [...pool, ...raidGuests];
+
     if (schedule[raidId] !== undefined) {
       schedule[raidId] = distributeCharactersIntoRuns(
         raidId,
-        pool,
+        poolWithGuests, // ✅ pool 대신 게스트가 포함된 poolWithGuests 사용
         balanceMode,
         seededRng,
         fillTwoSupports,

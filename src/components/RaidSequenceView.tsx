@@ -422,23 +422,18 @@ function StartRoster({
                     key={m.id}
                     className="flex items-center justify-between rounded-xl bg-white px-3 py-2 shadow-sm ring-1 ring-zinc-900/5 dark:bg-zinc-900 dark:ring-zinc-800"
                   >
-                    <div className="flex items-center gap-2.5">
-                      <div
-                        className={`flex h-7 w-7 items-center justify-center rounded-lg ${resolveRole(m) === 'SUPPORT'
-                            ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-300'
-                            : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300'
-                          }`}
-                      >
-                        <RoleIcon role={resolveRole(m)} className="h-4 w-4" />
+                    <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-bold dark:text-zinc-100">{m.jobCode}</span>
+                        {/* ✅ 삭제는 안 만들어도 '게스트' 표시만 달아주면 구분이 편합니다 */}
+                        {m.isGuest && (
+                          <span className="rounded bg-amber-100 px-1 py-0.5 text-[8px] font-bold text-amber-600 dark:bg-amber-900/50 dark:text-amber-400">GUEST</span>
+                        )}
                       </div>
-                      <div className="min-w-0">
-                        <div className="truncate text-sm font-bold text-zinc-900 dark:text-zinc-100">
-                          {m.jobCode}
-                        </div>
-                        <div className="truncate text-[11px] font-medium text-zinc-500 dark:text-zinc-400">
-                          {m.discordName}
-                        </div>
-                      </div>
+                      <span className="text-[10px] text-zinc-500 dark:text-zinc-400 truncate max-w-[70px]">
+                        {/* ✅ 게스트면 "임시 게스트"라고 보여주기 */}
+                        {m.isGuest ? "임시 게스트" : m.lostArkName}
+                      </span>
                     </div>
 
                     <div className="flex items-center gap-3">
@@ -451,7 +446,7 @@ function StartRoster({
                         </div>
                       </div>
 
-                      {canSwap && onSwapClick && (
+                      {!m.isGuest && canSwap && onSwapClick && (
                         <button
                           disabled={swapDisabled}
                           onClick={() => {
@@ -568,7 +563,6 @@ export const RaidSequenceView: React.FC<Props> = ({
   schedule,
   exclusions,
   balanceMode = 'overall',
-  updatedBy,
   onExclusionsUpdated,
   onSwapCharacter,
   allCharacters = [],
@@ -646,6 +640,9 @@ export const RaidSequenceView: React.FC<Props> = ({
       HORIZON_STEP1: [],
       HORIZON_STEP2: [],
       HORIZON_STEP3: [],
+      ACT1_HARD: [],
+      ACT2_NORMAL: [],
+      ACT3_NORMAL: []
     };
 
     selectedRaids.forEach((raidId) => {
@@ -889,9 +886,8 @@ export const RaidSequenceView: React.FC<Props> = ({
 
                       try {
                         setCompletingKey(completeBtnKey);
-                        const by = updatedBy || 'User';
 
-                        const next = await excludeCharactersOnRaid(step.raidId, completeTargetIds, by);
+                        const next = await excludeCharactersOnRaid(step.raidId, completeTargetIds);
 
                         setLocalExclusions(next);
                         onExclusionsUpdated?.(next);
@@ -1064,8 +1060,7 @@ export const RaidSequenceView: React.FC<Props> = ({
 
                     try {
                       setCompletingKey(completeBtnKey);
-                      const by = updatedBy || 'User';
-                      const next = await excludeCharactersOnRaid(step.raidId, completeTargetIds, by);
+                      const next = await excludeCharactersOnRaid(step.raidId, completeTargetIds);
 
                       setLocalExclusions(next);
                       onExclusionsUpdated?.(next);

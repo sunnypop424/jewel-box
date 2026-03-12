@@ -6,6 +6,8 @@ import type {
   RaidSettingsMap,
   RaidSwap,
 } from './types';
+import { GuestAddModal } from './components/GuestAddModal'; 
+import { RAID_META } from './constants'; 
 import { buildRaidCandidatesMap, buildRaidSchedule } from './raidLogic';
 import { CharacterFormList } from './components/CharacterFormList';
 import { RaidScheduleView } from './components/RaidScheduleView';
@@ -159,6 +161,53 @@ const App: React.FC = () => {
     refreshSwaps().catch(console.error);
   }, []);
 
+  // 1. 상태 추가 (기존 useState들이 모인 곳)
+  const [raidGuests, setRaidGuests] = useState<Partial<Record<RaidId, Character[]>>>({});
+
+  // 2. 게스트 추가 핸들러
+  const handleAddGuest = (raidId: RaidId, role: 'DPS' | 'SUPPORT', jobCode: string) => {
+    const newGuest: Character = {
+      id: `guest_${Date.now()}`,
+      discordName: `게스트_${Date.now()}`, // 중복 방지용 고유 이름
+      jobCode: jobCode,
+      role: role,
+      itemLevel: 1800, // 레이드 참여 가능 레벨로 고정
+      combatPower: role === 'SUPPORT' ? 4000000 : 5000000, // 밸런스 평균값 임시 부여
+      isGuest: true,
+    };
+
+    setRaidGuests(prev => ({
+      ...prev,
+      [raidId]: [...(prev[raidId] || []), newGuest]
+    }));
+  };
+
+  // 3. 게스트 삭제 핸들러
+  const handleRemoveGuest = (raidId: RaidId, guestId: string) => {
+    setRaidGuests(prev => ({
+      ...prev,
+      [raidId]: (prev[raidId] || []).filter(g => g.id !== guestId)
+    }));
+  };
+
+  const [guestModalData, setGuestModalData] = useState<{ isOpen: boolean; raidId: RaidId | null }>({
+    isOpen: false,
+    raidId: null,
+  });
+
+  // 모달 열기 함수
+  const handleOpenGuestModal = (raidId: RaidId) => {
+    setGuestModalData({ isOpen: true, raidId });
+  };
+
+  // 모달에서 '추가' 클릭 시 실행
+  const handleAddGuestAndClose = (role: 'DPS' | 'SUPPORT', jobCode: string) => {
+    if (guestModalData.raidId) {
+      handleAddGuest(guestModalData.raidId, role, jobCode);
+    }
+    setGuestModalData({ isOpen: false, raidId: null });
+  };
+
   const effectiveCharacters = useMemo(() => {
     if (!localSquad.discordName) return allCharacters;
     const others = allCharacters.filter((c) => c.discordName !== localSquad.discordName);
@@ -172,8 +221,8 @@ const App: React.FC = () => {
   }, [effectiveCharacters, inactiveUsers]);
 
   const schedule = useMemo(
-    () => buildRaidSchedule(schedulingCharacters, raidExclusions, balanceMode, raidSettings, raidSwaps),
-    [schedulingCharacters, raidExclusions, balanceMode, raidSettings, raidSwaps],
+    () => buildRaidSchedule(schedulingCharacters, raidExclusions, balanceMode, raidSettings, raidSwaps, raidGuests),
+    [schedulingCharacters, raidExclusions, balanceMode, raidSettings, raidSwaps, raidGuests], // raidGuests 추가
   );
 
   const raidCandidates = useMemo(
@@ -726,6 +775,8 @@ const App: React.FC = () => {
                         allUserNames={allUserNames}
                         inactiveUsers={inactiveUsers}
                         onToggleUser={handleToggleUserActive}
+                        onOpenGuestAdd={handleOpenGuestModal}
+                        onRemoveGuest={handleRemoveGuest}
                       />
                     )}
                   </section>
@@ -801,6 +852,14 @@ const App: React.FC = () => {
         >
           <PinballGame onClose={() => setIsPinballModalOpen(false)} allUserNames={allUserNames} />
         </Modal>
+
+        <GuestAddModal
+          isOpen={guestModalData.isOpen}
+          onClose={() => setGuestModalData({ isOpen: false, raidId: null })}
+          onAdd={handleAddGuestAndClose}
+          raidLabel={guestModalData.raidId ? RAID_META[guestModalData.raidId].label : ''}
+        />
+
       </main>
     </div>
   );
