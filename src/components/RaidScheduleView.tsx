@@ -21,6 +21,7 @@ import {
   UserCheck,
   UserX,
   Filter,
+  Trash,
 } from 'lucide-react';
 import { SwapModal } from './SwapModal';
 
@@ -630,16 +631,16 @@ export const RaidScheduleView: React.FC<Props> = ({
                                       </div>
 
                                       <div className="flex items-center gap-2">
-                                        <div className="text-right">
-                                          <div className="text-xs font-bold dark:text-zinc-300">
-                                            Lv.{m.itemLevel}
-                                          </div>
                                           {!m.isGuest && (
-                                            <div className="text-[10px] text-zinc-400">
-                                              CP {m.combatPower.toLocaleString()}
+                                            <div className="text-right">
+                                              <div className="text-xs font-bold dark:text-zinc-300">
+                                                Lv.{m.itemLevel}
+                                              </div>
+                                                <div className="text-[10px] text-zinc-400">
+                                                  CP {m.combatPower.toLocaleString()}
+                                                </div>
                                             </div>
                                           )}
-                                        </div>
 
                                         {/* ✅ 게스트일 경우 '변경' 대신 '삭제' 버튼 노출 */}
                                         {m.isGuest ? (
@@ -647,6 +648,7 @@ export const RaidScheduleView: React.FC<Props> = ({
                                             onClick={() => onRemoveGuest?.(raidId as RaidId, m.id)}
                                             className="inline-flex items-center gap-1 rounded bg-rose-50 px-2 py-1 text-xs font-bold text-rose-600 shadow-sm ring-1 ring-rose-200 hover:bg-rose-100 dark:bg-rose-950/30 dark:text-rose-400 dark:ring-rose-900/50"
                                           >
+                                            <Trash size={12} />
                                             삭제
                                           </button>
                                         ) : (

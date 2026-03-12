@@ -425,7 +425,7 @@ function StartRoster({
                 {visibleMembers.map((m) => (
                   <div
                     key={m.id}
-                    className="flex items-center justify-between rounded-xl bg-white px-3 py-2 shadow-sm ring-1 ring-zinc-900/5 dark:bg-zinc-900 dark:ring-zinc-800"
+                    className="flex items-center justify-between rounded-xl bg-white px-3 py-2 shadow-sm ring-1 ring-zinc-900/5 dark:bg-zinc-900 dark:ring-zinc-800 h-12"
                   >
                     <div className="flex items-center gap-2">
                       <div className="flex items-center gap-1.5">
@@ -438,14 +438,15 @@ function StartRoster({
                     </div>
 
                     <div className="flex items-center gap-3">
+                      
+                        {!m.isGuest && ( // ✅ 게스트가 아닐 때만 노출
                       <div className="text-right">
                         <div className="text-xs font-bold text-zinc-700 dark:text-zinc-300">
                           Lv.{m.itemLevel}
                         </div>
-                        {!m.isGuest && ( // ✅ 게스트가 아닐 때만 노출
                           <div className="text-[10px] text-zinc-400">CP {m.combatPower.toLocaleString()}</div>
-                        )}
                       </div>
+                        )}
 
                       {!m.isGuest && canSwap && onSwapClick && (
                         <button
