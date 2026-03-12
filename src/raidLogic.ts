@@ -152,12 +152,16 @@ function getTargetRaidsForCharacter(ch: Character): RaidId[] {
     else if (il >= 1680) raids.push('ACT3_NORMAL');
 
     if (il >= 1690) raids.push('ACT2_HARD');
-    else if (il >= 1680) raids.push('ACT2_NORMAL');
+    else if (il >= 1670) raids.push('ACT2_NORMAL');
 
     if (il >= 1680) raids.push('ACT1_HARD');
   }
 
-  return raids;
+  // ✅ [수정된 부분] 지평의 성당 제외, 일반 레이드 상위 3개만 남기기
+  const horizonRaids = raids.filter(r => r.startsWith('HORIZON_'));
+  const normalRaids = raids.filter(r => !r.startsWith('HORIZON_'));
+
+  return [...horizonRaids, ...normalRaids.slice(0, 3)];
 }
 
 interface RaidBucket {

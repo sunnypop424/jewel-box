@@ -175,7 +175,7 @@ export function UserRaidProgressPanel({
                             {/* 그리드 영역 */}
                             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
                                 {charDataList.map(({ c, isSup, isMain, raidsForChar, top3Ids, charTotalGeneral, charTotalBound, charCollectedGeneral, charCollectedBound }) => (
-                                    <div key={c.id} className="group flex h-full flex-col justify-between gap-3 rounded-xl bg-zinc-50/50 p-4 shadow-sm ring-1 ring-zinc-900/5 transition-all hover:shadow-md dark:bg-zinc-950/50 dark:ring-zinc-800">
+                                    <div key={c.id} className="group flex h-full flex-col gap-3 rounded-xl bg-zinc-50/50 p-4 shadow-sm ring-1 ring-zinc-900/5 transition-all hover:shadow-md dark:bg-zinc-950/50 dark:ring-zinc-800">
                                         
                                         <div className="flex flex-col gap-3">
                                             <div className="flex items-center justify-between">
@@ -183,11 +183,17 @@ export function UserRaidProgressPanel({
                                                     <div className={`flex h-9 w-9 items-center justify-center rounded-lg transition-colors ${isSup ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-white shadow-sm ring-1 ring-zinc-200 text-zinc-500 dark:bg-zinc-800 dark:ring-zinc-700 dark:text-zinc-400'}`}>
                                                         {isSup ? <Shield size={18} /> : <Swords size={18} />}
                                                     </div>
-                                                    <div>
+                                                    <div className='flex flex-col'>
                                                         <div className="flex items-center gap-1.5">
                                                             <span className="text-[15px] font-bold text-zinc-800 dark:text-zinc-100">{c.jobCode}</span>
                                                             {isMain && <span className="rounded bg-indigo-100 px-1.5 py-0.5 text-[9px] font-bold text-indigo-600 dark:bg-indigo-900/50 dark:text-indigo-400">본캐</span>}
                                                         </div>
+                                                        {/* ✅ 캐릭터 이름 추가 */}
+                                                        {c.lostArkName && (
+                                                            <span className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400 truncate">
+                                                                {c.lostArkName}
+                                                            </span>
+                                                        )}
                                                     </div>
                                                 </div>
                                                 <div className="text-right">
