@@ -152,47 +152,77 @@ export function UserRaidProgressPanel({
                         };
                     });
 
+                    // ✅ 통합 진행도 계산 로직
+                    const totalPossibleGold = userTotalGeneral + userTotalBound;
+                    const totalCollectedGold = userCollectedGeneral + userCollectedBound;
+                    const generalPercent = totalPossibleGold > 0 ? (userCollectedGeneral / totalPossibleGold) * 100 : 0;
+                    const boundPercent = totalPossibleGold > 0 ? (userCollectedBound / totalPossibleGold) * 100 : 0;
+                    const totalPercent = totalPossibleGold > 0 ? (totalCollectedGold / totalPossibleGold) * 100 : 0;
+
                     return (
                         <div key={discordName} className="flex flex-col gap-4 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm transition-all hover:shadow-md dark:border-zinc-800 dark:bg-zinc-900/80">
                             
-                            {/* 헤더 영역 */}
-                            <div className="flex items-start justify-between border-b border-zinc-100 pb-4 dark:border-zinc-800">
-                                <div className="flex items-center gap-3">
-                                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
-                                        <User size={20} />
-                                    </div>
-                                    <div className="flex flex-col gap-1">
-                                        <div className="flex items-center gap-2">
-                                        <span className="text-lg font-bold text-zinc-900 dark:text-zinc-100">{discordName}</span>
-                                        {onRefreshUser && (
-                                            <button
-                                                onClick={async () => {
-                                                    if (refreshingUser) return;
-                                                    setRefreshingUser(discordName);
-                                                    await onRefreshUser(discordName, chars);
-                                                    setRefreshingUser(null);
-                                                }}
-                                                disabled={refreshingUser === discordName}
-                                                className="p-1 rounded text-zinc-400 hover:bg-indigo-50 hover:text-indigo-600 dark:hover:bg-indigo-900/30 dark:hover:text-indigo-400 transition-colors disabled:opacity-50"
-                                                title={`${discordName}님의 원정대 정보 업데이트`}
-                                            >
-                                                <RefreshCw size={15} className={refreshingUser === discordName ? "animate-spin" : ""} />
-                                            </button>
-                                        )}
+                            {/* 헤더 및 진행률 바 영역 */}
+                            <div className="flex flex-col gap-3">
+                                <div className="flex items-start justify-between">
+                                    <div className="flex items-center gap-3">
+                                        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
+                                            <User size={20} />
                                         </div>
-                                        <div className="flex items-center gap-3 text-xs font-semibold">
-                                            <span className="text-zinc-500 dark:text-zinc-400">
-                                                일반 <span className="text-amber-600 dark:text-amber-400">{userCollectedGeneral.toLocaleString()}G</span> / {userTotalGeneral.toLocaleString()}G
-                                            </span>
-                                            <span className="text-zinc-500 dark:text-zinc-400">
-                                                귀속 <span className="text-orange-600 dark:text-orange-400">{userCollectedBound.toLocaleString()}G</span> / {userTotalBound.toLocaleString()}G
-                                            </span>
+                                        <div className="flex flex-col gap-1">
+                                            <div className="flex items-center gap-2">
+                                            <span className="text-lg font-bold text-zinc-900 dark:text-zinc-100">{discordName}</span>
+                                            {onRefreshUser && (
+                                                <button
+                                                    onClick={async () => {
+                                                        if (refreshingUser) return;
+                                                        setRefreshingUser(discordName);
+                                                        await onRefreshUser(discordName, chars);
+                                                        setRefreshingUser(null);
+                                                    }}
+                                                    disabled={refreshingUser === discordName}
+                                                    className="p-1 rounded text-zinc-400 hover:bg-indigo-50 hover:text-indigo-600 dark:hover:bg-indigo-900/30 dark:hover:text-indigo-400 transition-colors disabled:opacity-50"
+                                                    title={`${discordName}님의 원정대 정보 업데이트`}
+                                                >
+                                                    <RefreshCw size={15} className={refreshingUser === discordName ? "animate-spin" : ""} />
+                                                </button>
+                                            )}
+                                            </div>
+                                            <div className="flex items-center gap-3 text-xs font-semibold">
+                                                <span className="text-zinc-500 dark:text-zinc-400">
+                                                    일반 <span className="text-amber-600 dark:text-amber-400">{userCollectedGeneral.toLocaleString()}G</span> / {userTotalGeneral.toLocaleString()}G
+                                                </span>
+                                                <span className="text-zinc-500 dark:text-zinc-400">
+                                                    귀속 <span className="text-orange-600 dark:text-orange-400">{userCollectedBound.toLocaleString()}G</span> / {userTotalBound.toLocaleString()}G
+                                                </span>
+                                            </div>
                                         </div>
                                     </div>
+                                    <span className="shrink-0 rounded-full bg-zinc-100 px-3 py-1 text-xs font-bold text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
+                                        {charDataList.length} Chars
+                                    </span>
                                 </div>
-                                <span className="shrink-0 rounded-full bg-zinc-100 px-3 py-1 text-xs font-bold text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
-                                    {charDataList.length} Chars
-                                </span>
+
+                                {/* ✅ 골드 획득량 통합 진행도 그래프 (우측 퍼센트 추가) */}
+                                <div className="flex items-center gap-3 mt-1">
+                                    <div className="flex flex-1 h-1.5 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-700">
+                                        {/* 일반 골드 게이지 */}
+                                        <div 
+                                            className="bg-amber-400 dark:bg-amber-500 transition-all duration-500 ease-out" 
+                                            style={{ width: `${generalPercent}%` }} 
+                                            title={`일반 골드: ${userCollectedGeneral.toLocaleString()}G / ${userTotalGeneral.toLocaleString()}G`}
+                                        />
+                                        {/* 귀속 골드 게이지 */}
+                                        <div 
+                                            className="bg-orange-400 dark:bg-orange-500 transition-all duration-500 ease-out" 
+                                            style={{ width: `${boundPercent}%` }} 
+                                            title={`귀속 골드: ${userCollectedBound.toLocaleString()}G / ${userTotalBound.toLocaleString()}G`}
+                                        />
+                                    </div>
+                                    <span className="text-xs font-bold text-zinc-500 dark:text-zinc-400 min-w-[2.5rem] text-right">
+                                        {Math.round(totalPercent)}%
+                                    </span>
+                                </div>
                             </div>
 
                             {/* 그리드 영역 */}
@@ -211,7 +241,6 @@ export function UserRaidProgressPanel({
                                                             <span className="text-[15px] font-bold text-zinc-800 dark:text-zinc-100">{c.jobCode}</span>
                                                             {isMain && <span className="rounded bg-indigo-100 px-1.5 py-0.5 text-[9px] font-bold text-indigo-600 dark:bg-indigo-900/50 dark:text-indigo-400">본캐</span>}
                                                         </div>
-                                                        {/* ✅ 캐릭터 이름 추가 */}
                                                         {c.lostArkName && (
                                                             <span className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400 truncate">
                                                                 {c.lostArkName}
@@ -220,40 +249,35 @@ export function UserRaidProgressPanel({
                                                     </div>
                                                 </div>
                                                 
-                                                {/* ⬇️ 변경된 부분 시작 (우측 상단 레벨/전투력 표시부) */}
                                                 <div className="flex items-center">
                                                     <div className="flex flex-col items-end">
                                                         <div className="text-sm font-bold text-zinc-700 dark:text-zinc-300">Lv.{c.itemLevel}</div>
                                                         <div className="text-[11px] font-medium text-zinc-400">CP {c.combatPower.toLocaleString()}</div>
                                                     </div>
-                                                    {/* 캐릭터 이름이 등록된 경우에만 새로고침 버튼 표시 */}
-                                                        {c.lostArkName && (
-                                                            <button
-                                                                onClick={async () => {
-                                                                    if (onRefreshCharacter && !refreshingId) {
-                                                                        // ✅ 확인 창 텍스트에 안내 문구 추가 (백틱 ` 과 \n 을 활용하여 줄바꿈 적용)
-                                                                        const isConfirmed = window.confirm(
-                                                                            `${c.lostArkName}의 정보를 업데이트 하시겠습니까?\n\n` +
-                                                                            `※ 안내: 전체 갱신과 달리, 캐릭터 정보 업데이트는 현재 전투력이 이전보다 낮아진 경우(의도적인 스펙 하락)에도 그대로 반영됩니다.`
-                                                                        );
-                                                                        
-                                                                        // 사용자가 '취소'를 누르면 여기서 함수 종료
-                                                                        if (!isConfirmed) return;
+                                                    {c.lostArkName && (
+                                                        <button
+                                                            onClick={async () => {
+                                                                if (onRefreshCharacter && !refreshingId) {
+                                                                    const isConfirmed = window.confirm(
+                                                                        `${c.lostArkName}의 정보를 업데이트 하시겠습니까?\n\n` +
+                                                                        `※ 안내: 전체 갱신과 달리, 캐릭터 정보 업데이트는 현재 전투력이 이전보다 낮아진 경우(의도적인 스펙 하락)에도 그대로 반영됩니다.`
+                                                                    );
+                                                                    
+                                                                    if (!isConfirmed) return;
 
-                                                                        setRefreshingId(c.id);
-                                                                        await onRefreshCharacter(c);
-                                                                        setRefreshingId(null);
-                                                                    }
-                                                                }}
-                                                                disabled={refreshingId === c.id}
-                                                                className="p-1 ml-2 rounded text-zinc-400 hover:text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-all disabled:opacity-50"
-                                                                title={`${c.lostArkName} 정보 업데이트`}
-                                                            >
-                                                                <RefreshCw size={13} className={refreshingId === c.id ? "animate-spin" : ""} />
-                                                            </button>
-                                                        )}
+                                                                    setRefreshingId(c.id);
+                                                                    await onRefreshCharacter(c);
+                                                                    setRefreshingId(null);
+                                                                }
+                                                            }}
+                                                            disabled={refreshingId === c.id}
+                                                            className="p-1 ml-2 rounded text-zinc-400 hover:text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-all disabled:opacity-50"
+                                                            title={`${c.lostArkName} 정보 업데이트`}
+                                                        >
+                                                            <RefreshCw size={13} className={refreshingId === c.id ? "animate-spin" : ""} />
+                                                        </button>
+                                                    )}
                                                 </div>
-                                                {/* ⬆️ 변경된 부분 끝 */}
                                             </div>
 
                                             <div className="flex flex-col gap-1.5 rounded-lg bg-amber-50/70 p-2.5 dark:bg-amber-950/20 border border-amber-100/50 dark:border-amber-900/30">
@@ -317,14 +341,12 @@ export function UserRaidProgressPanel({
                                                                 />
                                                                 <span className={`text-xs font-bold transition-colors ${isDone ? 'text-zinc-400 line-through dark:text-zinc-600' : 'text-zinc-700 dark:text-zinc-200'}`}>
                                                                     {meta.label}
-                                                                    {/* 🌟 싱글 표시 추가 */}
                                                                     {isSingle && <span className="ml-1 text-blue-400">(싱글)</span>}
                                                                 </span>
                                                             </div>
                                                             
                                                             {isTop3 ? (
                                                                 <span className={`text-[11px] font-bold ${isDone ? 'text-zinc-400 dark:text-zinc-500' : 'text-amber-600 dark:text-amber-400'}`}>
-                                                                    {/* 🌟 싱글 모드 골드 텍스트 변경 */}
                                                                     {isSingle && (raidId === 'ACT2_NORMAL' || raidId === 'ACT3_NORMAL')
                                                                         ? `${(meta.gold/2).toLocaleString()}G + 귀속 ${(meta.gold/2).toLocaleString()}G`
                                                                         : `${meta.goldType === 'GENERAL' ? '' : '귀속 '}${meta.gold.toLocaleString()}G`

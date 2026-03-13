@@ -427,8 +427,8 @@ function StartRoster({
                     key={m.id}
                     className="flex items-center justify-between rounded-xl bg-white px-3 py-2 shadow-sm ring-1 ring-zinc-900/5 dark:bg-zinc-900 dark:ring-zinc-800 h-12"
                   >
-                    <div className="flex items-center gap-2">
-                      <div className="flex items-center gap-1.5">
+                    <div className="flex flex-col">
+                      <div className="flex flex-col items-center gap-1.5">
                         <span className="text-xs font-bold dark:text-zinc-100">{m.jobCode}</span>
                       </div>
                       <span className="text-[10px] text-zinc-500 dark:text-zinc-400 truncate max-w-[70px]">

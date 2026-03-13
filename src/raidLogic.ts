@@ -379,6 +379,7 @@ function packSupportsToTwoPerRunIfPossible(
   return runs;
 }
 
+// ✅ lockIds 추가 적용
 function maximizeRunsFrontloaded(
   raidId: RaidId,
   runsMembers: Character[][],
@@ -386,6 +387,7 @@ function maximizeRunsFrontloaded(
   maxSupportsPerRun: number,
   fillTwoSupports: boolean,
   concurrentRuns: number,
+  lockIds: Set<string> = new Set(), // 🔒 추가됨
 ): Character[][] {
   const runs = runsMembers.map((r) => [...r]);
 
@@ -435,6 +437,7 @@ function maximizeRunsFrontloaded(
         });
 
         for (const ch of candidates) {
+          if (lockIds.has(ch.id)) continue; // 🔒 잠긴 캐릭 이동 불가
           if (playersI.has(ch.discordName)) continue;
 
           if (!canAddToRunLocalSearch(raidId, runs, i, ch, maxPerRun, maxSupportsPerRun, concurrentRuns)) continue;
@@ -480,7 +483,6 @@ function optimizeRunsByStdDev(
     const cIndex = Math.floor(random() * allCharacters.length);
     const ch = allCharacters[cIndex];
     
-    // 🔒 잠긴 캐릭터(약한 딜러)는 밸런스 패치 명목으로 딴데 끌려가지 않음
     if (lockIds.has(ch.id)) continue;
 
     const from = charToRun[ch.id];
@@ -549,7 +551,6 @@ function optimizeCombatPowerBySwapOnly(
     const char1 = runs[r1][c1Idx];
     const char2 = runs[r2][c2Idx];
 
-    // 🔒 잠긴 캐릭터(약한 딜러)는 스왑 대상에서 제외
     if (lockIds.has(char1.id) || lockIds.has(char2.id)) continue;
     if (char1.role !== char2.role) continue;
 
@@ -599,12 +600,14 @@ function optimizeCombatPowerBySwapOnly(
   return runs;
 }
 
+// ✅ lockIds 추가 적용
 function compactRunsFrontloadedForSpeed(
   raidId: RaidId,
   runsMembers: Character[][],
   maxPerRun: number,
   maxSupportsPerRun: number,
   concurrentRuns: number,
+  lockIds: Set<string> = new Set(), // 🔒 추가됨
 ): Character[][] {
   const runs = runsMembers.map((r) => [...r]);
   const buildPlayerCounts = (members: Character[]) => {
@@ -624,6 +627,8 @@ function compactRunsFrontloadedForSpeed(
         const candidates = [...runs[j]].sort((a, b) => b.combatPower - a.combatPower || a.id.localeCompare(b.id));
 
         for (const ch of candidates) {
+          if (lockIds.has(ch.id)) continue; // 🔒 잠긴 캐릭 이동 불가
+
           if (!canAddToRunGreedy(raidId, runs, i, countsI, ch, maxPerRun, maxSupportsPerRun, concurrentRuns)) continue;
 
           const nextI = [...runs[i], ch];
@@ -681,7 +686,7 @@ function minimizeSameJobInRuns(
     if (duplicatedJobCodes.length === 0) continue;
 
     for (const ch of [...run]) {
-      if (lockIds.has(ch.id)) continue; // 🔒 잠긴 캐릭터는 직업 핑계로 다른 공대에 보내지 않음
+      if (lockIds.has(ch.id)) continue;
       if (ch.role !== 'DPS') continue;
       if (!duplicatedJobCodes.includes(ch.jobCode)) continue;
       if (jobCounts[ch.jobCode] <= keepUntil) continue;
@@ -732,7 +737,7 @@ function swapSameUserCharactersToFixDuplicates(raidId: RaidId, runsMembers: Char
     if (dupJobs.length === 0) continue;
 
     for (const ch of [...run]) {
-      if (lockIds.has(ch.id)) continue; // 🔒 잠긴 캐릭터는 유저 겹침 핑계로 다른 공대에 보내지 않음
+      if (lockIds.has(ch.id)) continue;
       if (ch.role !== 'DPS') continue;
       if (!dupJobs.includes(ch.jobCode)) continue;
 
@@ -745,7 +750,7 @@ function swapSameUserCharactersToFixDuplicates(raidId: RaidId, runsMembers: Char
 
         for (let tIdx = 0; tIdx < targetRun.length; tIdx++) {
           const t = targetRun[tIdx];
-          if (lockIds.has(t.id)) continue; // 🔒 타겟 캐릭터도 잠겨있으면 스왑 불가
+          if (lockIds.has(t.id)) continue;
 
           if (t.discordName !== ch.discordName) continue;
           if (t.id === ch.id) continue;
@@ -830,7 +835,7 @@ function groupCharactersByRaid(characters: Character[], exclusions: RaidExclusio
 }
 
 // ==========================================
-// 🌟 런 구성 (약한 딜러 안전 방 우선 배치 및 락 시스템)
+// 🌟 런 구성 (외통수 방지 및 락 시스템 적용)
 // ==========================================
 function distributeCharactersIntoRuns(
   raidId: RaidId,
@@ -846,7 +851,7 @@ function distributeCharactersIntoRuns(
   const maxPerRun = getEffectiveMaxPerRun(raidId, characters, fillTwoSupports);
   const dim = getBalanceDimension(balanceMode);
   const speed = isSpeedMode(balanceMode);
-  const lockIds = new Set<string>(); // 🔒 락 시스템 선언
+  const lockIds = new Set<string>();
 
   const runCount = estimateRunCount(raidId, characters, fillTwoSupports);
 
@@ -942,7 +947,7 @@ function distributeCharactersIntoRuns(
 
   let regularDps = [...dps];
 
-  // 🌟 [NEW] 옵션 A: 전체 인원을 고려해 꽉 찬 4인 파티(안전 방)의 개수를 구한 뒤, 제약이 심한 약한 캐릭터부터 채워 넣음(MRV 로직)
+  // 🌟 [핵심 변경] 옵션 A: 외통수 방지 로직 (MRV - 갈 곳 없는 약한 애들부터 꽂아넣기)
   if (is4Player) {
     const supRunIdxs: number[] = [];
     for (let i = 0; i < runsMembers.length; i++) {
@@ -954,8 +959,6 @@ function distributeCharactersIntoRuns(
     if (supRunIdxs.length > 0) {
       const totalCharsCount = characters.length;
       const fullRunCount = Math.floor(totalCharsCount / 4);
-      
-      // ✅ 안전한 풀파티(4인)가 될 수 있는 서포터 방들
       const safeSupRuns = supRunIdxs.slice(0, fullRunCount);
 
       const nonGuestDps = regularDps.filter(c => !c.isGuest);
@@ -969,7 +972,6 @@ function distributeCharactersIntoRuns(
       const runsWeakCount = new Array(runsMembers.length).fill(0);
       const assignedWeakIds = new Set<string>();
 
-      // 🌟 [MRV 정렬] 각 약한 캐릭터가 들어갈 수 있는 안전 방의 개수를 세어서, "가장 갈 곳이 없는(조건이 빡센) 캐릭터"부터 먼저 배치합니다!
       const getValidRunCount = (ch: Character) => {
         let count = 0;
         for(const idx of safeSupRuns) {
@@ -980,23 +982,25 @@ function distributeCharactersIntoRuns(
         return count;
       };
 
-      weakestDps.sort((a, b) => getValidRunCount(a) - getValidRunCount(b));
+      // 🌟 [Tiebreaker] 들어갈 수 있는 방 개수가 같으면 "가장 약한 애"가 먼저 차지하도록 확실히 정렬
+      weakestDps.sort((a, b) => {
+        const countDiff = getValidRunCount(a) - getValidRunCount(b);
+        if (countDiff !== 0) return countDiff;
+        return a.combatPower - b.combatPower; 
+      });
 
       for (const ch of weakestDps) {
         let placedIdx = -1;
         
-        // 들어갈 수 있는 안전 방 찾기
         let bestValidRuns = safeSupRuns.filter(idx => 
           runsWeakCount[idx] < 1 && 
           canAddToRunGreedy(raidId, runsMembers, idx, runsPlayerCounts[idx], ch, maxPerRun, maxSupportsPerRun, concurrentRuns)
         );
 
         if (bestValidRuns.length > 0) {
-          // 인원수가 가장 적은 방부터 채움
           bestValidRuns.sort((a, b) => runsMembers[a].filter(m=>m.role==='DPS').length - runsMembers[b].filter(m=>m.role==='DPS').length);
           placedIdx = bestValidRuns[0];
         } else {
-          // 안전 방에 못 들어가면 나머지 서포터 방이라도 찌름
           for (const targetIdx of supRunIdxs) {
             if (runsWeakCount[targetIdx] >= 1) continue;
             if (!canAddToRunGreedy(raidId, runsMembers, targetIdx, runsPlayerCounts[targetIdx], ch, maxPerRun, maxSupportsPerRun, concurrentRuns)) continue;
@@ -1007,16 +1011,14 @@ function distributeCharactersIntoRuns(
 
         if (placedIdx !== -1) {
           placeIntoRun(placedIdx, ch);
-          lockIds.add(ch.id); // 🔒 절대 3인 파티로 안 끌려가게 락!
+          lockIds.add(ch.id); // 🔒 잠금 발동
           assignedWeakIds.add(ch.id);
           runsWeakCount[placedIdx]++;
         } else {
-          // 그래도 못 들어가면 일반 딜러풀로 복귀
-          regularDps.push(ch);
+          regularDps.push(ch); // 갈 곳 없으면 방출
         }
       }
 
-      // 일반 딜러들은 다시 "강한 캐릭터 우선"으로 정렬하여 밸런스 패치
       regularDps.sort((a, b) => {
         if (a.isGuest !== b.isGuest) return a.isGuest ? -1 : 1;
         return b.combatPower - a.combatPower || a.id.localeCompare(b.id);
@@ -1112,21 +1114,22 @@ function distributeCharactersIntoRuns(
   });
 
   let stage1 = packSupportsToTwoPerRunIfPossible(raidId, runsMembers, maxPerRun, maxSupportsPerRun, fillTwoSupports, concurrentRuns);
-  stage1 = maximizeRunsFrontloaded(raidId, stage1, maxPerRun, maxSupportsPerRun, fillTwoSupports, concurrentRuns);
+  
+  // ✅ 락이 걸린 캐릭터가 휩쓸려 가지 않도록 lockIds 전달
+  stage1 = maximizeRunsFrontloaded(raidId, stage1, maxPerRun, maxSupportsPerRun, fillTwoSupports, concurrentRuns, lockIds);
 
   let optimized: Character[][];
   if (speed) {
     optimized = optimizeCombatPowerBySwapOnly(raidId, stage1, maxSupportsPerRun, maxPerRun, dim, random, concurrentRuns, lockIds);
-    optimized = compactRunsFrontloadedForSpeed(raidId, optimized, maxPerRun, maxSupportsPerRun, concurrentRuns);
+    optimized = compactRunsFrontloadedForSpeed(raidId, optimized, maxPerRun, maxSupportsPerRun, concurrentRuns, lockIds);
   } else {
     optimized = optimizeRunsByStdDev(raidId, stage1, maxPerRun, maxSupportsPerRun, dim, random, concurrentRuns, lockIds);
   }
 
-  // 🔒 새로 추가한 락(lock) 시스템을 직업 분산 함수와 겹침 스왑 함수에도 넘겨줌
   optimized = minimizeSameJobInRuns(raidId, optimized, maxPerRun, maxSupportsPerRun, concurrentRuns, lockIds);
   optimized = swapSameUserCharactersToFixDuplicates(raidId, optimized, maxPerRun, maxSupportsPerRun, concurrentRuns, lockIds);
   optimized = packSupportsToTwoPerRunIfPossible(raidId, optimized, maxPerRun, maxSupportsPerRun, fillTwoSupports, concurrentRuns);
-  optimized = maximizeRunsFrontloaded(raidId, optimized, maxPerRun, maxSupportsPerRun, fillTwoSupports, concurrentRuns);
+  optimized = maximizeRunsFrontloaded(raidId, optimized, maxPerRun, maxSupportsPerRun, fillTwoSupports, concurrentRuns, lockIds);
 
   const arrangedRuns: Character[][] = [];
   const remainingRuns = [...optimized];
