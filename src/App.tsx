@@ -23,6 +23,7 @@ import { Modal } from './components/Modal';
 import { LadderGame } from './components/LadderGame';
 import { RouletteGame } from './components/RouletteGame';
 import { PinballGame } from './components/PinballGame';
+import { AuctionCalculatorModal } from './components/AuctionCalculatorModal'; // 방금 만든 모달 가져오기
 import {
   Swords,
   Sun,
@@ -40,6 +41,7 @@ import {
   Waypoints,
   CircleDot,
   Orbit,
+  Calculator
 } from 'lucide-react';
 
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
@@ -74,6 +76,7 @@ const App: React.FC = () => {
   const [isLadderModalOpen, setIsLadderModalOpen] = useState(false);
   const [isRouletteModalOpen, setIsRouletteModalOpen] = useState(false);
   const [isPinballModalOpen, setIsPinballModalOpen] = useState(false);
+  const [isCalcOpen, setIsCalcOpen] = useState(false);
 
   const [raidExclusions, setRaidExclusions] = useState<RaidExclusionMap>({});
   const [loadingExclusions, setLoadingExclusions] = useState(false);
@@ -642,6 +645,21 @@ const App: React.FC = () => {
               <Orbit size={18} />
               마블 레이스
             </button>
+            
+            <div className="my-4 h-px bg-zinc-100 dark:bg-zinc-800" />
+
+            <div className="mb-2 px-2 text-xs font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+              Utilities
+            </div>
+
+            <button
+              onClick={() => setIsCalcOpen(true)}
+              className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-bold text-zinc-600 transition-colors hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+            >
+              <Calculator size={18} />
+              경매 입찰 계산기
+            </button>
+
           </nav>
         </div>
 
@@ -861,6 +879,12 @@ const App: React.FC = () => {
           onClose={() => setGuestModalData({ isOpen: false, raidId: null })}
           onAdd={handleAddGuestAndClose}
           raidLabel={guestModalData.raidId ? RAID_META[guestModalData.raidId].label : ''}
+        />
+
+        {/* ✅ 방금 만든 모달 렌더링 (isOpen 상태에 따라 켜지고 꺼짐) */}
+        <AuctionCalculatorModal 
+          isOpen={isCalcOpen} 
+          onClose={() => setIsCalcOpen(false)} 
         />
 
       </main>
