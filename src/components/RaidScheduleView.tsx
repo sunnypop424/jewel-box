@@ -55,7 +55,6 @@ interface Props {
 
   // ✅ 실제 사용(스왑 진행 중 잠금)
   isSwapping?: boolean;
-  // ✅ [추가] Props 정의
   allUserNames?: string[];
   inactiveUsers?: Set<string>;
   onToggleUser?: (name: string) => void;
@@ -103,7 +102,6 @@ export const RaidScheduleView: React.FC<Props> = ({
   allCharacters = [],
   onExcludeRun,
   isSwapping = false,
-  // ✅ [추가] 디폴트 값 바인딩
   allUserNames = [],
   inactiveUsers = new Set(),
   onToggleUser,
@@ -122,7 +120,6 @@ export const RaidScheduleView: React.FC<Props> = ({
     char: Character;
   } | null>(null);
 
-  // ✅ 공격대 일괄 완료 연타 방지
   const [completingKey, setCompletingKey] = useState<string | null>(null);
 
   const candidatesFallback = useMemo(() => {
@@ -136,17 +133,14 @@ export const RaidScheduleView: React.FC<Props> = ({
     return map;
   }, [schedule]);
 
-  
   if (!schedule) return null;
 
-    // ✅ 전역 유저 컬러맵: 레이드가 달라도 같은 유저는 같은 색
   const nameCollator = useMemo(
     () => new Intl.Collator('ko', { sensitivity: 'base', numeric: true }),
     [],
   );
 
   const userColorMap = useMemo(() => {
-    // schedule에 실제로 등장하는 유저들을 기준으로(또는 allCharacters 기준으로도 가능)
     const names: string[] = [];
 
     (Object.keys(schedule) as RaidId[]).forEach((raidId) => {
@@ -160,7 +154,6 @@ export const RaidScheduleView: React.FC<Props> = ({
       );
     });
 
-    // exclusions/미배치까지 포함해서 색을 고정하고 싶으면 candidates도 포함
     (Object.keys(candidatesFallback) as RaidId[]).forEach((raidId) => {
       (candidatesFallback[raidId] ?? []).forEach((m) => {
         if (m?.discordName) names.push(m.discordName);
@@ -195,9 +188,8 @@ export const RaidScheduleView: React.FC<Props> = ({
     return palette[idx % palette.length];
   };
 
-
   const toggleRaid = (raidId: string) => {
-    setRaidOpenState((prev) => ({ ...prev, [raidId]: !(prev[raidId] ?? true) }));
+    setRaidOpenState((prev) => ({ ...prev, [raidId]: !(prev[raidId] ?? false) }));
   };
 
   const toggleRun = (raidId: string, runIndex: number) => {
@@ -257,12 +249,16 @@ export const RaidScheduleView: React.FC<Props> = ({
       behavior: 'smooth',
       block: 'start',
     });
+    
+    setRaidOpenState((prev) => {
+      if (prev[raidId]) return prev;
+      return { ...prev, [raidId]: true };
+    });
   };
 
   return (
     <div className="grid gap-6">
-      <div className="sticky top-0 z-30 flex flex-col gap-3 rounded-2xl border border-zinc-200 bg-white/90 px-4 py-3 shadow-sm backdrop-blur-md dark:border-zinc-800 dark:bg-zinc-900/90">
-        {/* ✅ 유저 필터 UI */}
+      <div className="relative z-30 md:sticky md:top-0 flex flex-col gap-3 rounded-2xl border border-zinc-200 bg-white/90 px-4 py-3 shadow-sm backdrop-blur-md dark:border-zinc-800 dark:bg-zinc-900/90">
         {allUserNames.length > 0 && onToggleUser && (
           <div className="flex flex-col gap-2">
             <div className="flex items-center gap-2 text-sm font-semibold text-zinc-600 dark:text-zinc-400">
@@ -296,7 +292,6 @@ export const RaidScheduleView: React.FC<Props> = ({
           <div className="h-px w-full bg-zinc-100 dark:bg-zinc-800" />
         )}
 
-        {/* ✅ 레이드 바로가기 */}
         <div className="flex flex-col gap-2">
           <div className="flex items-center gap-2 text-sm font-semibold text-zinc-600 dark:text-zinc-400">
             <Filter className="h-4 w-4" />
@@ -323,13 +318,24 @@ export const RaidScheduleView: React.FC<Props> = ({
           </div>
         </div>
       </div>
+
       {raidIds.map((raidId) => {
         const runs = schedule[raidId];
         if (!runs || runs.length === 0) return null;
 
         const meta = RAID_META[raidId];
-        const isRaidOpen = raidOpenState[raidId] ?? true;
+        const isRaidOpen = raidOpenState[raidId] ?? false; 
         const excludedIdsForRaid = exclusions?.[raidId] ?? [];
+
+        const candidatesForThisRaid = raidCandidates?.[raidId] ?? candidatesFallback[raidId] ?? [];
+        
+        // 🌟 유저별 남은 캐릭터 수 계산
+        const userRemainingCountsForThisRaid = new Map<string, number>();
+        candidatesForThisRaid.forEach((c) => {
+          if (!excludedIdsForRaid.includes(c.id) && !c.isGuest) {
+            userRemainingCountsForThisRaid.set(c.discordName, (userRemainingCountsForThisRaid.get(c.discordName) || 0) + 1);
+          }
+        });
 
         const diff = meta.difficulty;
 
@@ -351,14 +357,12 @@ export const RaidScheduleView: React.FC<Props> = ({
           titleColor = 'text-rose-900 dark:text-rose-100';
           dotColor = 'text-rose-500';
         } else if (diff === 'STEP1' || diff === 'STEP2' || diff === 'STEP3') {
-          // 🌟 지평의 성당용 주황색(orange) 분기 추가
           containerBorder = 'border-orange-200 dark:border-orange-800';
           headerClass =
             'text-orange-900 border-orange-200 bg-orange-50/50 hover:bg-orange-100 dark:text-orange-100 dark:border-orange-800 dark:bg-orange-900/20 dark:hover:bg-orange-900/40';
           titleColor = 'text-orange-900 dark:text-orange-100';
           dotColor = 'text-orange-500';
         } else {
-          // NIGHTMARE 등급 (보라색 유지)
           containerBorder = 'border-violet-200 dark:border-violet-800';
           headerClass =
             'text-violet-900 border-violet-200 bg-violet-50/50 hover:bg-violet-100 dark:text-violet-100 dark:border-violet-800 dark:bg-violet-900/20 dark:hover:bg-violet-900/40';
@@ -372,48 +376,68 @@ export const RaidScheduleView: React.FC<Props> = ({
             key={raidId}
             className={`scroll-mt-36 overflow-hidden rounded-2xl border shadow-sm dark:bg-zinc-900 ${containerBorder}`}
           >
-            <button
-              type="button"
+            <div
               onClick={() => toggleRaid(raidId as string)}
-              className={`flex w-full items-center justify-between border-b px-5 py-4 text-left transition-colors ${headerClass} ${
+              className={`flex w-full items-center justify-between border-b px-5 py-4 text-left transition-colors cursor-pointer select-none ${headerClass} ${
                 isRaidOpen
                   ? 'border-b-zinc-100 dark:border-b-zinc-800'
                   : 'border-transparent'
               }`}
             >
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-2 flex-1 mr-4">
                 <div
-                  className={`h-3 w-3 rounded-full shadow-sm ring-2 ring-white/50 bg-current ${dotColor}`}
+                  className={`h-3 w-3 rounded-full shadow-sm ring-2 ring-white/50 bg-current shrink-0 ${dotColor}`}
                 />
-                <h4 className={`text-base font-bold ${titleColor}`}>
+                <h4 className={`text-base font-bold whitespace-nowrap shrink-0 ${titleColor}`}>
                   {meta.label}
                 </h4>
+
+                {/* ✅ 닉네임 옆에 남은 캐릭터 수 표시 */}
+                {allUserNames.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-1.5 ml-2 border-l pl-3 border-current/20">
+                    {allUserNames.map((name) => {
+                      const remainingCount = userRemainingCountsForThisRaid.get(name) || 0;
+                      const isActive = remainingCount > 0;
+                      return (
+                        <span
+                          key={name}
+                          className={`text-xs px-2 py-1 rounded transition-all ${
+                            isActive
+                              ? 'font-medium bg-white/60 text-zinc-800 shadow-sm ring-1 ring-black/5 dark:bg-black/30 dark:text-zinc-100 dark:ring-white/10'
+                              : 'font-medium text-current opacity-40 line-through decoration-current/40'
+                          }`}
+                        >
+                          {name}{isActive ? ` ${remainingCount}` : ''}
+                        </span>
+                      );
+                    })}
+                  </div>
+                )}
+
                 {onOpenGuestAdd && (
                   <button
                     onClick={(e) => {
-                      e.stopPropagation(); // 아코디언 닫힘 방지
-                      
-                      // 반드시 'onOpenGuestAdd'를 호출해서 App.tsx에 있는 모달 열기 로직을 실행해야 합니다.
-                      onOpenGuestAdd(raidId as RaidId); 
+                      e.stopPropagation();
+                      onOpenGuestAdd(raidId as RaidId);
                     }}
-                    className="ml-2 rounded-md bg-indigo-50 px-2 py-1 text-[10px] font-bold text-indigo-600 hover:bg-indigo-100 dark:bg-indigo-900/40 dark:text-indigo-300 transition-colors"
+                    className="ml-2 rounded-md bg-indigo-50 px-2 py-1 text-xs font-semibold text-indigo-600 hover:bg-indigo-100 dark:bg-indigo-900/40 dark:text-indigo-300 transition-colors whitespace-nowrap"
                   >
                     + 게스트 추가
                   </button>
                 )}
               </div>
 
-              <div className="flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400">
+              <div className="flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400 shrink-0">
                 {onToggleSupportShortage && (
                   <div
                     onClick={(e) => e.stopPropagation()}
                     className="mr-2 flex items-center"
                   >
                     <label
-                      className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-xs font-semibold ${
+                      className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-xs font-semibold cursor-pointer transition-colors ${
                         raidSettings?.[raidId]
                           ? 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300'
-                          : 'border-zinc-200 bg-white dark:bg-zinc-900 dark:border-zinc-700'
+                          : 'border-zinc-200 bg-white/50 hover:bg-white dark:bg-zinc-900/50 dark:border-zinc-700 dark:hover:bg-zinc-900'
                       }`}
                     >
                       <input
@@ -426,7 +450,7 @@ export const RaidScheduleView: React.FC<Props> = ({
                           )
                         }
                         disabled={isRaidSettingsLoading || isSwapping}
-                        className="h-3 w-3 text-indigo-600 rounded border-zinc-300"
+                        className="h-3 w-3 text-amber-600 rounded border-zinc-300 focus:ring-amber-500"
                       />
                       <span className="dark:text-zinc-300">랏폿</span>
                     </label>
@@ -437,7 +461,7 @@ export const RaidScheduleView: React.FC<Props> = ({
                   className={`transition-transform ${isRaidOpen ? '' : '-rotate-90'}`}
                 />
               </div>
-            </button>
+            </div>
 
             {isRaidOpen && (
               <div className="divide-y divide-zinc-100 dark:divide-zinc-800 bg-white dark:bg-zinc-900">
@@ -521,7 +545,6 @@ export const RaidScheduleView: React.FC<Props> = ({
                             </span>
                           )}
 
-                          {/* ✅ 공격대 일괄 완료 (Promise/await + 연타방지 + isSwapping 잠금) */}
                           {onExcludeRun && visibleMembers.length > 0 && (
                             <button
                               disabled={isSwapping || isCompleting}
@@ -623,7 +646,6 @@ export const RaidScheduleView: React.FC<Props> = ({
                                           <div className="flex items-center gap-1.5">
                                             <span className="text-sm font-bold dark:text-zinc-100">{m.jobCode}</span>
                                           </div>
-                                          {/* 게스트는 lostArkName 대신 "임시 게스트" 표시 */}
                                           <div className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400 max-w-[80px] overflow-hidden text-ellipsis whitespace-nowrap">
                                             {m.isGuest ? "임시 게스트" : m.lostArkName}
                                           </div>
@@ -636,13 +658,12 @@ export const RaidScheduleView: React.FC<Props> = ({
                                               <div className="text-xs font-bold dark:text-zinc-300">
                                                 Lv.{m.itemLevel}
                                               </div>
-                                                <div className="text-[10px] text-zinc-400">
-                                                  CP {m.combatPower.toLocaleString()}
-                                                </div>
+                                              <div className="text-[10px] text-zinc-400">
+                                                CP {m.combatPower.toLocaleString()}
+                                              </div>
                                             </div>
                                           )}
 
-                                        {/* ✅ 게스트일 경우 '변경' 대신 '삭제' 버튼 노출 */}
                                         {m.isGuest ? (
                                           <button
                                             onClick={() => onRemoveGuest?.(raidId as RaidId, m.id)}
@@ -674,7 +695,6 @@ export const RaidScheduleView: React.FC<Props> = ({
                                           )
                                         )}
 
-                                        {/* ✅ 개별 완료 버튼 (isSwapping 잠금 + await) */}
                                         {onExcludeCharacter && (
                                           <button
                                             disabled={isSwapping}
@@ -770,8 +790,6 @@ function RaidStatusBoard(props: {
     runs.flatMap((r) => r.parties.flatMap((p) => p.members.map((m) => m.id))),
   );
 
-  // ✅ 유저별 그룹 정렬 + 유저 내부 전투력 정렬
-  // ✅ 유저별 그룹 정렬(전역 인덱스) + 유저 내부 전투력 정렬
   const sortByUserThenPower = (a: Character, b: Character) => {
     const ia = userColorMap.get(a.discordName || '') ?? 999999;
     const ib = userColorMap.get(b.discordName || '') ?? 999999;
@@ -841,7 +859,7 @@ function RaidStatusBoard(props: {
                 member={m}
                 {...props}
                 isCompleted={true}
-                canExclude={props.canExclude} // ✅ 수정
+                canExclude={props.canExclude}
                 userCardClass={getUserCardClass(m.discordName)}
               />
             </div>
@@ -892,7 +910,7 @@ function RaidMemberCard({
   member,
   canExclude,
   onExclude,
-  isCompleted, // isReadOnly 대신 isCompleted 사용
+  isCompleted, 
   userCardClass = '',
 }: any) {
   return (
@@ -904,7 +922,7 @@ function RaidMemberCard({
       <div className="flex items-center gap-3">
         <div
           className={`flex h-8 w-8 items-center justify-center rounded-lg ${
-            member.isGuest // ✅ 여기에도 게스트 조건 추가
+            member.isGuest
               ? 'bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400'
               : member.role === 'SUPPORT'
                 ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400'

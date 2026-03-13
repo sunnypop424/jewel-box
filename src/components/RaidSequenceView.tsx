@@ -1165,7 +1165,7 @@ export const RaidSequenceView: React.FC<Props> = ({
   return (
     <div className="relative mx-auto w-full space-y-4">
       {/* ✅ User Filter Controls */}
-      <div className="sticky top-0 z-30 flex flex-col gap-3 rounded-2xl border border-zinc-200 bg-white/90 px-4 py-3 shadow-sm backdrop-blur-md dark:border-zinc-800 dark:bg-zinc-900/90">
+      <div className="relative z-30 md:sticky md:top-0 flex flex-col gap-3 rounded-2xl border border-zinc-200 bg-white/90 px-4 py-3 shadow-sm backdrop-blur-md dark:border-zinc-800 dark:bg-zinc-900/90">
         {/* 유저 필터 */}
         {/* ✅ [수정] 글로벌 유저 필터 컨트롤 */}
         {allUserNames.length > 0 && onToggleUser && (
