@@ -428,7 +428,7 @@ const App: React.FC = () => {
   };
 
   const handleResetExclusions = async () => {
-    const ok = window.confirm('모든 제외 내역과 캐릭터 변경(Swap) 내역을 초기화하시겠습니까?');
+    const ok = window.confirm('모든 레이드 완료 내역을 초기화하시겠습니까?');
     if (!ok) return;
 
     try {
@@ -610,7 +610,7 @@ const App: React.FC = () => {
               className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-bold text-zinc-600 transition-colors hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50 dark:text-zinc-400 dark:hover:bg-rose-900/20 dark:hover:text-rose-400"
             >
               <Eraser size={18} />
-              제외/변경 초기화
+              레이드 완료 내역 초기화
             </button>
 
             <div className="my-4 h-px bg-zinc-100 dark:bg-zinc-800" />
