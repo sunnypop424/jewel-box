@@ -188,7 +188,14 @@ export function UserRaidProgressPanel({
                                                 </button>
                                             )}
                                             </div>
-                                            <div className="flex items-center gap-3 text-xs font-semibold">
+                                            {/* ✅ 총 골드량을 일반/귀속 골드 앞에 추가 */}
+                                            <div className="flex flex-wrap items-center gap-3 text-xs font-semibold">
+                                                <span className="text-zinc-500 dark:text-zinc-400">
+                                                    총 <span className="text-zinc-800 dark:text-zinc-200">{totalCollectedGold.toLocaleString()}G</span> / {totalPossibleGold.toLocaleString()}G
+                                                </span>
+                                                
+                                                <div className="h-3 w-px bg-zinc-300 dark:bg-zinc-700"></div>
+                                                
                                                 <span className="text-zinc-500 dark:text-zinc-400">
                                                     일반 <span className="text-amber-600 dark:text-amber-400">{userCollectedGeneral.toLocaleString()}G</span> / {userTotalGeneral.toLocaleString()}G
                                                 </span>
