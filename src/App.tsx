@@ -23,7 +23,8 @@ import { Modal } from './components/Modal';
 import { LadderGame } from './components/LadderGame';
 import { RouletteGame } from './components/RouletteGame';
 import { PinballGame } from './components/PinballGame';
-import { AuctionCalculatorModal } from './components/AuctionCalculatorModal'; // 방금 만든 모달 가져오기
+import { AuctionCalculatorModal } from './components/AuctionCalculatorModal';
+import { GatheringModal } from './components/GatheringModal'; // ✅ 추가된 모달
 import {
   Swords,
   Sun,
@@ -41,7 +42,8 @@ import {
   Waypoints,
   CircleDot,
   Orbit,
-  Calculator
+  Calculator,
+  Megaphone // ✅ 아이콘 추가
 } from 'lucide-react';
 
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
@@ -77,6 +79,7 @@ const App: React.FC = () => {
   const [isRouletteModalOpen, setIsRouletteModalOpen] = useState(false);
   const [isPinballModalOpen, setIsPinballModalOpen] = useState(false);
   const [isCalcOpen, setIsCalcOpen] = useState(false);
+  const [isGatheringModalOpen, setIsGatheringModalOpen] = useState(false); // ✅ 파티 모집 모달 상태
 
   const [raidExclusions, setRaidExclusions] = useState<RaidExclusionMap>({});
   const [loadingExclusions, setLoadingExclusions] = useState(false);
@@ -164,31 +167,25 @@ const App: React.FC = () => {
     refreshSwaps().catch(console.error);
   }, []);
 
-  // 1. 상태 추가 (기존 useState들이 모인 곳)
   const [raidGuests, setRaidGuests] = useState<Partial<Record<RaidId, Character[]>>>({});
 
-  // 2. 게스트 추가 핸들러
   const handleAddGuest = (raidId: RaidId, role: 'DPS' | 'SUPPORT', jobCode: string) => {
-
     const shortHash = Math.random().toString(36).substring(2, 6);
-
     const newGuest: Character = {
       id: `guest_${Date.now()}`,
-      discordName: `게스트_${shortHash}`, // 중복 방지용 고유 이름
+      discordName: `게스트_${shortHash}`,
       jobCode: jobCode,
       role: role,
-      itemLevel: 1800, // 레이드 참여 가능 레벨로 고정
-      combatPower: role === 'SUPPORT' ? 4000000 : 5000000, // 밸런스 평균값 임시 부여
+      itemLevel: 1800,
+      combatPower: role === 'SUPPORT' ? 4000000 : 5000000,
       isGuest: true,
     };
-
     setRaidGuests(prev => ({
       ...prev,
       [raidId]: [...(prev[raidId] || []), newGuest]
     }));
   };
 
-  // 3. 게스트 삭제 핸들러
   const handleRemoveGuest = (raidId: RaidId, guestId: string) => {
     setRaidGuests(prev => ({
       ...prev,
@@ -201,12 +198,10 @@ const App: React.FC = () => {
     raidId: null,
   });
 
-  // 모달 열기 함수
   const handleOpenGuestModal = (raidId: RaidId) => {
     setGuestModalData({ isOpen: true, raidId });
   };
 
-  // 모달에서 '추가' 클릭 시 실행
   const handleAddGuestAndClose = (role: 'DPS' | 'SUPPORT', jobCode: string) => {
     if (guestModalData.raidId) {
       handleAddGuest(guestModalData.raidId, role, jobCode);
@@ -228,7 +223,7 @@ const App: React.FC = () => {
 
   const schedule = useMemo(
     () => buildRaidSchedule(schedulingCharacters, raidExclusions, balanceMode, raidSettings, raidSwaps, raidGuests),
-    [schedulingCharacters, raidExclusions, balanceMode, raidSettings, raidSwaps, raidGuests], // raidGuests 추가
+    [schedulingCharacters, raidExclusions, balanceMode, raidSettings, raidSwaps, raidGuests],
   );
 
   const raidCandidates = useMemo(
@@ -286,12 +281,9 @@ const App: React.FC = () => {
     try {
       setSaving(true);
       await saveCharacters(discordName, characters);
-
       const newSquad: Squad = { discordName, characters };
       setLocalSquad(newSquad);
-
       await Promise.all([refreshAllCharacters(), refreshSwaps()]);
-
       setIsModalOpen(false);
       setStatus(`${discordName}님의 정보가 저장되었습니다.`);
     } catch (e: any) {
@@ -352,7 +344,6 @@ const App: React.FC = () => {
     }
   };
 
-  // ✅ 유저 단위 스펙 갱신 핸들러
   const handleRefreshUserCharacters = async (discordName: string, userChars: Character[]) => {
     const ok = window.confirm(
       `${discordName}님의 원정대 정보를 업데이트 하시겠습니까?\n(약간의 시간이 소요될 수 있습니다)`
@@ -361,23 +352,16 @@ const App: React.FC = () => {
 
     try {
       setStatus(`${discordName}님의 원정대 정보 업데이트 중...`);
-
       const skippedMessages: string[] = [];
-
-      // 이미 작성해둔 전체 갱신 API 함수를 해당 유저의 캐릭터 배열에만 적용
       const updatedUserChars = await syncCharactersWithLostArkAPI(userChars, saveCharacters, (msg) => {
         skippedMessages.push(msg);
       });
-
-      // 전체 캐릭터 목록 중 해당 유저의 캐릭터만 업데이트된 정보로 교체
       setAllCharacters(prev => {
         const others = prev.filter(c => c.discordName !== discordName);
         return [...others, ...updatedUserChars];
       });
-
       setStatus(`${discordName}님의 원정대 정보다 업데이트 되었습니다.`);
 
-      // 스킵된 캐릭터가 있다면 팝업으로 알림
       if (skippedMessages.length > 0) {
         alert(
           `[전투력 미갱신 알림]\n\n` +
@@ -393,7 +377,6 @@ const App: React.FC = () => {
     }
   };
 
-  // ✅ 단일 캐릭터 스펙 갱신 핸들러
   const handleRefreshSingleCharacter = async (char: Character) => {
     if (!char.lostArkName) {
       alert('로스트아크 캐릭터 이름이 설정되지 않았습니다. (원정대 관리에서 설정해주세요)');
@@ -401,20 +384,17 @@ const App: React.FC = () => {
     }
     try {
       setStatus(`${char.discordName}님의 ${char.lostArkName} 갱신 중...`);
-      
       const profile = await fetchProfile(char.lostArkName);
       
       if (profile && profile.ItemAvgLevel && profile.CombatPower) {
         const lv = parseFloat(profile.ItemAvgLevel.replace(/,/g, ''));
         const cp = parseFloat(profile.CombatPower.replace(/,/g, ''));
 
-        // 1. 상태 업데이트
         const nextAllChars = allCharacters.map(c => 
           c.id === char.id ? { ...c, itemLevel: Math.floor(lv), combatPower: Math.floor(cp) } : c
         );
         setAllCharacters(nextAllChars);
 
-        // 2. DB 저장 (해당 유저의 캐릭터 배열만 추출해서 저장)
         const userCharsToSave = nextAllChars.filter(c => c.discordName === char.discordName);
         await saveCharacters(char.discordName, userCharsToSave);
         
@@ -436,10 +416,8 @@ const App: React.FC = () => {
 
     try {
       setStatus('내역 초기화 중...');
-      
       await resetRaidExclusions();
       await resetSwaps();
-      
       await Promise.all([refreshExclusions(), refreshSwaps()]);
       setStatus('모든 내역이 초기화되었습니다.');
     } catch (e) {
@@ -459,24 +437,17 @@ const App: React.FC = () => {
       setLoading(true);
       setStatus('전체 유저 정보 업데이트 중... (페이지를 닫지 마세요)');
       
-      // DB에서 최신 캐릭터 목록을 먼저 가져옴
       let list = await fetchCharacters();
-      
-      // 스킵 메시지 수집용 배열
       const skippedMessages: string[] = [];
       
-      // 로아 API 연동 (스킵 발생 시 콜백으로 메시지 수집)
       list = await syncCharactersWithLostArkAPI(list, saveCharacters, (msg) => {
         skippedMessages.push(msg);
       });
       
       setAllCharacters(list);
-      
-      // 기타 설정들도 최신화
       await Promise.all([refreshExclusions(), refreshRaidSettings(), refreshSwaps()]);
       setStatus('모든 캐릭터의 정보가 갱신되었습니다.');
 
-      // 스킵된 캐릭터가 있다면 모아서 알림
       if (skippedMessages.length > 0) {
         alert(
           `[전투력 미갱신 알림]\n\n` +
@@ -507,7 +478,7 @@ const App: React.FC = () => {
   const isActive = (path: string) => location.pathname === path;
 
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-zinc-50 font-['Paperozi'] text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
+    <div className="flex h-screen w-full overflow-hidden bg-zinc-50 font-sans text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
       {isSidebarOpen && (
         <div
           className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm md:hidden"
@@ -582,6 +553,21 @@ const App: React.FC = () => {
             >
               <ChartGantt size={18} />
               레이드 진행 순서
+            </button>
+
+            <div className="my-4 h-px bg-zinc-100 dark:bg-zinc-800" />
+
+            <div className="mb-2 px-2 text-xs font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+              Party
+            </div>
+
+            {/* ✅ 추가된 파티 모집 버튼 */}
+            <button
+              onClick={() => setIsGatheringModalOpen(true)}
+              className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-bold text-zinc-600 transition-colors hover:bg-indigo-50 hover:text-indigo-600 dark:text-zinc-400 dark:hover:bg-indigo-900/20 dark:hover:text-indigo-400"
+            >
+              <Megaphone size={18} />
+              레이드 파티 모집
             </button>
 
             <div className="my-4 h-px bg-zinc-100 dark:bg-zinc-800" />
@@ -881,10 +867,15 @@ const App: React.FC = () => {
           raidLabel={guestModalData.raidId ? RAID_META[guestModalData.raidId].label : ''}
         />
 
-        {/* ✅ 방금 만든 모달 렌더링 (isOpen 상태에 따라 켜지고 꺼짐) */}
         <AuctionCalculatorModal 
           isOpen={isCalcOpen} 
           onClose={() => setIsCalcOpen(false)} 
+        />
+
+        {/* ✅ 새로 추가된 디스코드 파티 모집 모달 */}
+        <GatheringModal
+          isOpen={isGatheringModalOpen}
+          onClose={() => setIsGatheringModalOpen(false)}
         />
 
       </main>
