@@ -94,24 +94,32 @@ export function UserRaidProgressPanel({
                         const isSup = c.role === 'SUPPORT';
                         const isMain = c.id === mainChar.id;
 
-                        const option = c.goldOption || 'ALL_MAX';
                         let ignoreBoundGold = false;
-                        if (option === 'GENERAL_MAX') ignoreBoundGold = true;
-                        else if (option === 'MAIN_ALL_ALT_GENERAL' && !isMain) ignoreBoundGold = true;
-                        
+                        if (c.receiveBoundGold !== undefined) {
+                            ignoreBoundGold = !c.receiveBoundGold;
+                        } else {
+                            const option = c.goldOption || 'ALL_MAX';
+                            if (option === 'GENERAL_MAX') ignoreBoundGold = true;
+                            else if (option === 'MAIN_ALL_ALT_GENERAL' && !isMain) ignoreBoundGold = true;
+                        }
+
                         const raidYields = raidsForChar.map(id => {
                             const meta = RAID_META[id];
-                            // 🌟 싱글 여부 확인
-                            const isSingle = c.singleRaids?.includes(id);
+                            
+                            // ✅ 하드로 배정받아도 노말 싱글을 체크했다면 싱글로 처리되도록 범용 검사
+                            const isAct2Single = id.startsWith('ACT2_') && c.singleRaids?.includes('ACT2_NORMAL');
+                            const isAct3Single = id.startsWith('ACT3_') && c.singleRaids?.includes('ACT3_NORMAL');
+                            const isSingle = isAct2Single || isAct3Single;
 
                             let effectiveGold = meta.gold;
-                            if (isSingle && (id === 'ACT2_NORMAL' || id === 'ACT3_NORMAL')) {
-                                // 싱글 모드일 경우 귀속 제외 옵션이라도 일반 골드(50%)는 무조건 획득하므로 계산식 변경
-                                effectiveGold = (meta.gold / 2) + (ignoreBoundGold ? 0 : meta.gold / 2);
+                            if (isSingle) {
+                                // 싱글의 골드는 난이도 상관없이 항상 노말 기준의 절반
+                                const normalMeta = id.startsWith('ACT2_') ? RAID_META['ACT2_NORMAL'] : RAID_META['ACT3_NORMAL'];
+                                effectiveGold = (normalMeta.gold / 2) + (ignoreBoundGold ? 0 : normalMeta.gold / 2);
                             } else if (ignoreBoundGold && meta.goldType === 'BOUND') {
                                 effectiveGold = -1;
                             }
-                            return { id, ...meta, effectiveGold, isSingle }; // 🌟 isSingle 추가
+                            return { id, ...meta, effectiveGold, isSingle };
                         }).sort((a, b) => b.effectiveGold - a.effectiveGold);
                         
                         const top3Yields = raidYields.filter(y => y.effectiveGold > 0).slice(0, 3);
@@ -124,10 +132,10 @@ export function UserRaidProgressPanel({
                             const isDone = getState(y.id, c.id) === 'DONE';
                             let g = 0; let b = 0;
 
-                            // 🌟 싱글 모드 5:5 골드 분할 로직 추가
-                            if (y.isSingle && (y.id === 'ACT2_NORMAL' || y.id === 'ACT3_NORMAL')) {
-                                g = y.gold / 2;
-                                b = y.gold / 2;
+                            if (y.isSingle) {
+                                const normalMeta = y.id.startsWith('ACT2_') ? RAID_META['ACT2_NORMAL'] : RAID_META['ACT3_NORMAL'];
+                                g = normalMeta.gold / 2;
+                                b = normalMeta.gold / 2;
                             } else {
                                 if (y.goldType === 'GENERAL') g = y.gold;
                                 else b = y.gold;
@@ -152,7 +160,6 @@ export function UserRaidProgressPanel({
                         };
                     });
 
-                    // ✅ 통합 진행도 계산 로직
                     const totalPossibleGold = userTotalGeneral + userTotalBound;
                     const totalCollectedGold = userCollectedGeneral + userCollectedBound;
                     const generalPercent = totalPossibleGold > 0 ? (userCollectedGeneral / totalPossibleGold) * 100 : 0;
@@ -162,7 +169,6 @@ export function UserRaidProgressPanel({
                     return (
                         <div key={discordName} className="flex flex-col gap-4 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm transition-all hover:shadow-md dark:border-zinc-800 dark:bg-zinc-900/80">
                             
-                            {/* 헤더 및 진행률 바 영역 */}
                             <div className="flex flex-col gap-3">
                                 <div className="flex items-start justify-between">
                                     <div className="flex items-center gap-3">
@@ -188,7 +194,6 @@ export function UserRaidProgressPanel({
                                                 </button>
                                             )}
                                             </div>
-                                            {/* ✅ 총 골드량을 일반/귀속 골드 앞에 추가 */}
                                             <div className="flex flex-wrap items-center gap-3 text-xs font-semibold">
                                                 <span className="text-zinc-500 dark:text-zinc-400">
                                                     총 <span className="text-zinc-800 dark:text-zinc-200">{totalCollectedGold.toLocaleString()}G</span> / {totalPossibleGold.toLocaleString()}G
@@ -210,16 +215,13 @@ export function UserRaidProgressPanel({
                                     </span>
                                 </div>
 
-                                {/* ✅ 골드 획득량 통합 진행도 그래프 (우측 퍼센트 추가) */}
                                 <div className="flex items-center gap-3 mt-1">
                                     <div className="flex flex-1 h-1.5 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-700">
-                                        {/* 일반 골드 게이지 */}
                                         <div 
                                             className="bg-amber-400 dark:bg-amber-500 transition-all duration-500 ease-out" 
                                             style={{ width: `${generalPercent}%` }} 
                                             title={`일반 골드: ${userCollectedGeneral.toLocaleString()}G / ${userTotalGeneral.toLocaleString()}G`}
                                         />
-                                        {/* 귀속 골드 게이지 */}
                                         <div 
                                             className="bg-orange-400 dark:bg-orange-500 transition-all duration-500 ease-out" 
                                             style={{ width: `${boundPercent}%` }} 
@@ -232,7 +234,6 @@ export function UserRaidProgressPanel({
                                 </div>
                             </div>
 
-                            {/* 그리드 영역 */}
                             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
                                 {charDataList.map(({ c, isSup, isMain, raidsForChar, top3Ids, charTotalGeneral, charTotalBound, charCollectedGeneral, charCollectedBound }) => (
                                     <div key={c.id} className="group flex h-full flex-col gap-3 rounded-xl bg-zinc-50/50 p-4 shadow-sm ring-1 ring-zinc-900/5 transition-all hover:shadow-md dark:bg-zinc-950/50 dark:ring-zinc-800">
@@ -322,7 +323,11 @@ export function UserRaidProgressPanel({
                                                     const meta = RAID_META[raidId];
                                                     const isTop3 = top3Ids.has(raidId);
                                                     const isDone = state === 'DONE';
-                                                    const isSingle = c.singleRaids?.includes(raidId); // 🌟 싱글 확인
+                                                    
+                                                    // 난이도 무관하게 싱글로 플레이하는지 여부
+                                                    const isAct2Single = raidId.startsWith('ACT2_') && c.singleRaids?.includes('ACT2_NORMAL');
+                                                    const isAct3Single = raidId.startsWith('ACT3_') && c.singleRaids?.includes('ACT3_NORMAL');
+                                                    const isSingle = isAct2Single || isAct3Single;
 
                                                     return (
                                                         <label 
@@ -347,23 +352,24 @@ export function UserRaidProgressPanel({
                                                                     className="h-3.5 w-3.5 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer dark:border-zinc-600 dark:bg-zinc-800"
                                                                 />
                                                                 <span className={`text-xs font-bold transition-colors ${isDone ? 'text-zinc-400 line-through dark:text-zinc-600' : 'text-zinc-700 dark:text-zinc-200'}`}>
-                                                                    {meta.label}
+                                                                    {isSingle ? (raidId.startsWith('ACT2_') ? '2막 노말' : '3막 노말') : meta.label}
                                                                     {isSingle && <span className="ml-1 text-blue-400">(싱글)</span>}
                                                                 </span>
                                                             </div>
                                                             
-                                                            {isTop3 ? (
-                                                                <span className={`text-[11px] font-bold ${isDone ? 'text-zinc-400 dark:text-zinc-500' : 'text-amber-600 dark:text-amber-400'}`}>
-                                                                    {isSingle && (raidId === 'ACT2_NORMAL' || raidId === 'ACT3_NORMAL')
-                                                                        ? `${(meta.gold/2).toLocaleString()}G + 귀속 ${(meta.gold/2).toLocaleString()}G`
+                                                            <div className="flex items-center gap-1">
+                                                                <span className={`text-[11px] font-bold ${isTop3 ? (isDone ? 'text-zinc-400 dark:text-zinc-500' : 'text-amber-600 dark:text-amber-400') : 'text-zinc-500 dark:text-zinc-500 opacity-50 line-through'}`}>
+                                                                    {isSingle
+                                                                        ? `${( (raidId.startsWith('ACT2_') ? RAID_META['ACT2_NORMAL'].gold : RAID_META['ACT3_NORMAL'].gold) / 2 ).toLocaleString()}G + 귀속 ${( (raidId.startsWith('ACT2_') ? RAID_META['ACT2_NORMAL'].gold : RAID_META['ACT3_NORMAL'].gold) / 2 ).toLocaleString()}G`
                                                                         : `${meta.goldType === 'GENERAL' ? '' : '귀속 '}${meta.gold.toLocaleString()}G`
                                                                     }
                                                                 </span>
-                                                            ) : (
-                                                                <span className="text-xs font-medium text-zinc-400 dark:text-zinc-600">
-                                                                    골드 제외
-                                                                </span>
-                                                            )}
+                                                                {!isTop3 && (
+                                                                    <span className="text-[10px] text-rose-400 dark:text-rose-500 font-bold leading-none">
+                                                                        (제외)
+                                                                    </span>
+                                                                )}
+                                                            </div>
                                                         </label>
                                                     );
                                                 })

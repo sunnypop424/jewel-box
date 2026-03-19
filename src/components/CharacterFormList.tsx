@@ -17,6 +17,7 @@ interface CharacterFormRow {
     combatPower: number | '';
     serkaNightmare: boolean;
     valkyCanSupport: boolean;
+    receiveBoundGold: boolean;
     lostArkName?: string;
     singleRaids: RaidId[]; 
 }
@@ -36,12 +37,14 @@ function SortableCharacterRow({
     handleChangeRow,
     handleRemoveRow,
     isSaving,
+    goldOption
 }: {
     row: CharacterFormRow;
     index: number;
     handleChangeRow: (index: number, field: keyof CharacterFormRow, value: any) => void;
     handleRemoveRow: (index: number) => void;
     isSaving: boolean;
+    goldOption: GoldOption;
 }) {
     const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: row.uid });
 
@@ -52,7 +55,6 @@ function SortableCharacterRow({
         zIndex: isDragging ? 50 : 1,
     };
 
-    // 싱글 토글 함수
     const toggleSingle = (raidId: RaidId) => {
         const next = row.singleRaids.includes(raidId)
             ? row.singleRaids.filter(id => id !== raidId)
@@ -60,17 +62,16 @@ function SortableCharacterRow({
         handleChangeRow(index, 'singleRaids', next);
     };
 
-    // 🌟 레벨 조건별 싱글 노출 여부 (하한선 및 상한선 정확히 적용)
-    // 2막 노말: 1680 ~ 1689 (1690부터는 2막 하드)
-    const canDoAct2Normal = typeof row.itemLevel === 'number' && row.itemLevel >= 1680 && row.itemLevel < 1690;
-    // 3막 노말: 1680 ~ 1699 (1700부터는 3막 하드)
-    const canDoAct3Normal = typeof row.itemLevel === 'number' && row.itemLevel >= 1680 && row.itemLevel < 1700;
+    // 🌟 2막과 3막을 실제 수행하는 구간(1680 ~ 1709)에서만 노말/하드 무관하게 노출
+    const isAct2Act3Participant = typeof row.itemLevel === 'number' && row.itemLevel >= 1680 && row.itemLevel < 1710;
+    const canDoAct2Single = isAct2Act3Participant;
+    const canDoAct3Single = isAct2Act3Participant;
 
     return (
         <div
             ref={setNodeRef}
             style={style}
-            className={`group relative flex flex-col gap-3 p-4 pt-10 sm:grid sm:grid-cols-12 sm:items-center sm:gap-4 sm:py-3 sm:pr-3 sm:pl-6 bg-white dark:bg-transparent ${
+            className={`group relative flex flex-col gap-3 p-4 pt-10 sm:grid sm:grid-cols-12 sm:items-center sm:gap-3 sm:py-3 sm:pr-3 sm:pl-6 bg-white dark:bg-transparent ${
                 isDragging ? 'shadow-xl ring-2 ring-indigo-500 rounded-xl' : ''
             }`}
         >
@@ -82,14 +83,15 @@ function SortableCharacterRow({
                 <GripVertical size={18} />
             </div>
 
-            <div className="sm:col-span-3 relative">
+            {/* 직업: 기존 3칸 -> 2칸으로 축소 */}
+            <div className="sm:col-span-2 relative">
                 {row.lostArkName && (
                     <div className="absolute right-0.5 top-0.5 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
                         연동: {row.lostArkName}
                     </div>
                 )}
                 <select
-                    className="w-full appearance-none rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm font-medium dark:border-zinc-700 dark:bg-zinc-800"
+                    className="w-full appearance-none rounded-lg border border-zinc-200 bg-zinc-50 px-2 py-2 text-sm font-medium dark:border-zinc-700 dark:bg-zinc-800"
                     value={row.jobCode}
                     onChange={(e) => handleChangeRow(index, 'jobCode', e.target.value)}
                     disabled={isSaving}
@@ -99,14 +101,15 @@ function SortableCharacterRow({
                 </select>
             </div>
 
-            <div className="sm:col-span-3">
+            {/* 역할: 2칸 유지 */}
+            <div className="sm:col-span-2">
                 <div className="flex items-center gap-2">
                     <div className="relative flex-1">
-                        <div className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400">
+                        <div className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-400">
                             {row.role === 'SUPPORT' ? <Shield size={14} /> : <Swords size={14} />}
                         </div>
                         <select
-                            className={`w-full appearance-none rounded-lg border px-3 py-2 pl-9 text-sm font-medium ${row.role === 'SUPPORT' ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/30' : 'border-zinc-200 bg-zinc-50 text-zinc-700 dark:border-zinc-700 dark:bg-zinc-800'}`}
+                            className={`w-full appearance-none rounded-lg border px-2 py-2 pl-8 text-sm font-medium ${row.role === 'SUPPORT' ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/30' : 'border-zinc-200 bg-zinc-50 text-zinc-700 dark:border-zinc-700 dark:bg-zinc-800'}`}
                             value={row.role}
                             onChange={(e) => handleChangeRow(index, 'role', e.target.value as Role)}
                             disabled={isSaving}
@@ -114,29 +117,54 @@ function SortableCharacterRow({
                             {ROLE_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
                         </select>
                     </div>
+                </div>
+            </div>
+
+            <div className="flex gap-2 sm:contents">
+                {/* 레벨: 2칸 유지 */}
+                <div className="flex-1 sm:col-span-2">
+                    <input type="number" className="w-full rounded-lg border border-zinc-200 bg-white px-2 py-2 text-sm font-medium dark:border-zinc-700 dark:bg-zinc-900" value={row.itemLevel} onChange={(e) => handleChangeRow(index, 'itemLevel', e.target.value)} placeholder="Lv" disabled={isSaving} />
+                </div>
+                {/* 전투력: 2칸 유지 */}
+                <div className="flex-1 sm:col-span-2">
+                    <input type="number" className="w-full rounded-lg border border-zinc-200 bg-white px-2 py-2 text-sm font-medium dark:border-zinc-700 dark:bg-zinc-900" value={row.combatPower} onChange={(e) => handleChangeRow(index, 'combatPower', e.target.value)} placeholder="CP" disabled={isSaving} />
+                </div>
+                
+                {/* 🌟 추가 설정: 기존 2칸 -> 3칸으로 확장하여 싱글까지 한 줄에 배치 */}
+                <div className="flex flex-wrap items-center justify-start sm:justify-center gap-1.5 sm:col-span-3">
+                    <label className={`inline-flex select-none items-center gap-1 rounded-md border px-1.5 py-1 text-[11px] font-semibold shadow-sm transition-opacity ${goldOption === 'CUSTOM' ? 'border-zinc-200 bg-white text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300' : 'border-zinc-100 bg-zinc-50 text-zinc-400 opacity-60 dark:border-zinc-800 dark:bg-zinc-950/50'}`}>
+                        <input type="checkbox" checked={row.receiveBoundGold} onChange={(e) => handleChangeRow(index, 'receiveBoundGold', e.target.checked)} disabled={isSaving || goldOption !== 'CUSTOM'} className="h-3 w-3 shrink-0 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500 disabled:opacity-50" />
+                        <span className="whitespace-nowrap">귀속</span>
+                    </label>
+
+                    {typeof row.itemLevel === 'number' && row.itemLevel >= 1740 && (
+                        <label className="inline-flex select-none items-center gap-1 rounded-md border border-zinc-200 bg-white px-1.5 py-1 text-[11px] font-semibold text-zinc-600 shadow-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
+                            <input type="checkbox" checked={row.serkaNightmare} onChange={(e) => handleChangeRow(index, 'serkaNightmare', e.target.checked)} disabled={isSaving} className="h-3 w-3 shrink-0 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500" />
+                            <span className="whitespace-nowrap">나메</span>
+                        </label>
+                    )}
+                    
                     {row.jobCode === '발키리' && (
-                        <label className="inline-flex select-none items-center gap-1 rounded-lg border border-zinc-200 bg-white px-2 py-2 text-xs font-semibold text-zinc-600 shadow-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
+                        <label className="inline-flex select-none items-center gap-1 rounded-md border border-zinc-200 bg-white px-1.5 py-1 text-[11px] font-semibold text-zinc-600 shadow-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
                             <input type="checkbox" checked={row.valkyCanSupport} onChange={(e) => handleChangeRow(index, 'valkyCanSupport', e.target.checked)} disabled={isSaving} className="h-3 w-3 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500" />
                             <span className="whitespace-nowrap">서폿</span>
                         </label>
                     )}
-                </div>
-            </div>
 
-            <div className="flex gap-3 sm:contents">
-                <div className="flex-1 sm:col-span-3">
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-2">
-                        <input type="number" className="w-full flex-1 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm font-medium dark:border-zinc-700 dark:bg-zinc-900" value={row.itemLevel} onChange={(e) => handleChangeRow(index, 'itemLevel', e.target.value)} placeholder="Lv" disabled={isSaving} />
-                        {typeof row.itemLevel === 'number' && row.itemLevel >= 1740 && (
-                            <label className="inline-flex select-none items-center gap-1 rounded-lg border border-zinc-200 bg-white px-2 py-2 text-xs font-semibold text-zinc-600 shadow-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
-                                <input type="checkbox" checked={row.serkaNightmare} onChange={(e) => handleChangeRow(index, 'serkaNightmare', e.target.checked)} disabled={isSaving} className="h-3 w-3 shrink-0 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500" />
-                                <span className="whitespace-nowrap">나메</span>
-                            </label>
-                        )}
-                    </div>
-                </div>
-                <div className="flex-1 sm:col-span-2">
-                    <input type="number" className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm font-medium dark:border-zinc-700 dark:bg-zinc-900" value={row.combatPower} onChange={(e) => handleChangeRow(index, 'combatPower', e.target.value)} placeholder="CP" disabled={isSaving} />
+                    {/* 싱글 체크박스를 동일 영역에 통합 배치 */}
+                    {canDoAct2Single && (
+                        <label className="inline-flex select-none items-center gap-1 rounded-md border border-indigo-200 bg-indigo-50 px-1.5 py-1 text-[11px] font-semibold text-indigo-700 shadow-sm dark:border-indigo-900/50 dark:bg-indigo-900/20 dark:text-indigo-300">
+                            <input type="checkbox" checked={row.singleRaids.includes('ACT2_NORMAL')} onChange={() => toggleSingle('ACT2_NORMAL')} disabled={isSaving} className="h-3 w-3 rounded border-indigo-300 text-indigo-600 focus:ring-indigo-500 dark:border-indigo-600" />
+                            <span className="whitespace-nowrap">싱글2막</span>
+                        </label>
+                    )}
+                    
+                    {canDoAct3Single && (
+                        <label className="inline-flex select-none items-center gap-1 rounded-md border border-indigo-200 bg-indigo-50 px-1.5 py-1 text-[11px] font-semibold text-indigo-700 shadow-sm dark:border-indigo-900/50 dark:bg-indigo-900/20 dark:text-indigo-300">
+                            <input type="checkbox" checked={row.singleRaids.includes('ACT3_NORMAL')} onChange={() => toggleSingle('ACT3_NORMAL')} disabled={isSaving} className="h-3 w-3 rounded border-indigo-300 text-indigo-600 focus:ring-indigo-500 dark:border-indigo-600" />
+                            <span className="whitespace-nowrap">싱글3막</span>
+                        </label>
+                    )}
                 </div>
             </div>
 
@@ -145,39 +173,6 @@ function SortableCharacterRow({
                     <Trash2 size={16} />
                 </button>
             </div>
-
-            {/* 🌟 싱글 모드 설정 (레벨 구간에 맞게 정확히 노출) */}
-            {(canDoAct2Normal || canDoAct3Normal) && (
-                <div className="sm:col-start-7 sm:col-span-5 flex flex-wrap items-center gap-2 mt-[-4px] pb-1 sm:mt-0 sm:pb-0 px-1 sm:px-0">
-                    <span className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500">싱글 모드</span>
-                    
-                    {canDoAct2Normal && (
-                        <label className="inline-flex cursor-pointer select-none items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-2 py-1 text-[11px] font-bold text-zinc-600 shadow-sm transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800">
-                            <input 
-                                type="checkbox" 
-                                checked={row.singleRaids.includes('ACT2_NORMAL')} 
-                                onChange={() => toggleSingle('ACT2_NORMAL')} 
-                                disabled={isSaving} 
-                                className="h-3.5 w-3.5 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500 dark:border-zinc-600 dark:bg-zinc-800" 
-                            />
-                            <span className="whitespace-nowrap">2막</span>
-                        </label>
-                    )}
-                    
-                    {canDoAct3Normal && (
-                        <label className="inline-flex cursor-pointer select-none items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-2 py-1 text-[11px] font-bold text-zinc-600 shadow-sm transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800">
-                            <input 
-                                type="checkbox" 
-                                checked={row.singleRaids.includes('ACT3_NORMAL')} 
-                                onChange={() => toggleSingle('ACT3_NORMAL')} 
-                                disabled={isSaving} 
-                                className="h-3.5 w-3.5 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500 dark:border-zinc-600 dark:bg-zinc-800" 
-                            />
-                            <span className="whitespace-nowrap">3막</span>
-                        </label>
-                    )}
-                </div>
-            )}
         </div>
     );
 }
@@ -216,16 +211,35 @@ export const CharacterFormList: React.FC<Props> = ({
                 uid: c.id || `char-${i}-${Date.now()}`,
                 serkaNightmare: c.serkaNightmare ?? (c.itemLevel >= 1740),
                 valkyCanSupport: c.valkyCanSupport ?? false,
+                receiveBoundGold: c.receiveBoundGold ?? false,
                 singleRaids: c.singleRaids || [],
             })));
         } else {
             setGoldOption('ALL_MAX'); 
-            setRows([{ uid: `new-0-${Date.now()}`, discordName, jobCode: '', role: 'DPS', itemLevel: 1700, combatPower: '', serkaNightmare: false, valkyCanSupport: false, singleRaids: [] }]);
+            setRows([{ uid: `new-0-${Date.now()}`, discordName, jobCode: '', role: 'DPS', itemLevel: 1700, combatPower: '', serkaNightmare: false, valkyCanSupport: false, receiveBoundGold: false, singleRaids: [] }]);
         }
     }, [discordName, characters]);
 
     const handlePressEnter = (e: React.KeyboardEvent, callback: () => void) => {
         if (e.key === 'Enter') { e.preventDefault(); callback(); }
+    };
+
+    const handleGoldOptionChange = (newOption: GoldOption) => {
+        setGoldOption(newOption);
+        if (newOption === 'CUSTOM') return;
+
+        setRows(prev => {
+            const maxIlvl = Math.max(...prev.map(r => Number(r.itemLevel) || 0));
+            return prev.map(row => {
+                let receiveBound = false;
+                if (newOption === 'ALL_MAX') receiveBound = true;
+                else if (newOption === 'GENERAL_MAX') receiveBound = false;
+                else if (newOption === 'MAIN_ALL_ALT_GENERAL') {
+                    receiveBound = (Number(row.itemLevel) || 0) === maxIlvl;
+                }
+                return { ...row, receiveBoundGold: receiveBound };
+            });
+        });
     };
 
     const handleSearchRoster = async () => {
@@ -266,6 +280,7 @@ export const CharacterFormList: React.FC<Props> = ({
                         combatPower: Math.floor(cp),
                         serkaNightmare: lv >= 1740,
                         valkyCanSupport: false,
+                        receiveBoundGold: false,
                         singleRaids: []
                     } as any);
                 }
@@ -295,6 +310,7 @@ export const CharacterFormList: React.FC<Props> = ({
                     combatPower: Math.floor(cp),
                     serkaNightmare: lv >= 1740,
                     valkyCanSupport: false,
+                    receiveBoundGold: false,
                     singleRaids: []
                 }]);
                 setSearchSingleName('');
@@ -316,6 +332,7 @@ export const CharacterFormList: React.FC<Props> = ({
                     uid: c.id || `char-${i}-${Date.now()}`,
                     serkaNightmare: c.serkaNightmare ?? (c.itemLevel >= 1740),
                     valkyCanSupport: c.valkyCanSupport ?? false,
+                    receiveBoundGold: c.receiveBoundGold ?? false,
                     singleRaids: c.singleRaids || []
                 })));
                 alert(`${trimmedName}님의 캐릭터 데이터를 불러왔습니다.`);
@@ -341,13 +358,10 @@ export const CharacterFormList: React.FC<Props> = ({
                     if (prevIl < 1740 && nextIl >= 1740) nextSerkaNightmare = true;
                     if (prevIl >= 1740 && nextIl < 1740) nextSerkaNightmare = false;
 
-                    // 🌟 레벨 변경 시 조건을 벗어나면 싱글 모드 자동 해제
+                    // 🌟 레벨 변경 시 2막/3막 참여 가능 구간(1680~1709)을 완전히 벗어나면 싱글 모드 체크 자동 해제
                     let nextSingleRaids = [...row.singleRaids];
-                    if ((nextIl < 1680 || nextIl >= 1690) && nextSingleRaids.includes('ACT2_NORMAL')) {
-                        nextSingleRaids = nextSingleRaids.filter(id => id !== 'ACT2_NORMAL');
-                    }
-                    if ((nextIl < 1680 || nextIl >= 1700) && nextSingleRaids.includes('ACT3_NORMAL')) {
-                        nextSingleRaids = nextSingleRaids.filter(id => id !== 'ACT3_NORMAL');
+                    if (nextIl < 1680 || nextIl >= 1710) {
+                        nextSingleRaids = nextSingleRaids.filter(id => id !== 'ACT2_NORMAL' && id !== 'ACT3_NORMAL');
                     }
 
                     return { ...row, [field]: numValue, serkaNightmare: nextSerkaNightmare, singleRaids: nextSingleRaids } as CharacterFormRow;
@@ -359,7 +373,7 @@ export const CharacterFormList: React.FC<Props> = ({
     };
 
     const handleAddRow = () => {
-        setRows(prev => [...prev, { uid: `new-${Date.now()}`, discordName: localDiscord, jobCode: '', role: 'DPS', itemLevel: 1700, combatPower: '', serkaNightmare: false, valkyCanSupport: false, singleRaids: [] }]);
+        setRows(prev => [...prev, { uid: `new-${Date.now()}`, discordName: localDiscord, jobCode: '', role: 'DPS', itemLevel: 1700, combatPower: '', serkaNightmare: false, valkyCanSupport: false, receiveBoundGold: false, singleRaids: [] }]);
     };
 
     const handleRemoveRow = (index: number) => {
@@ -384,7 +398,6 @@ export const CharacterFormList: React.FC<Props> = ({
         const cleaned: Character[] = rows
             .filter(r => r.jobCode && r.itemLevel && r.combatPower !== '')
             .map((r, idx) => {
-                // 1. 기본 데이터 구성 (undefined가 들어갈 수 없는 명확한 값들)
                 const charData: Character = {
                     id: r.id ?? `${trimmedName}-${idx}-${Date.now()}`,
                     discordName: trimmedName, 
@@ -394,11 +407,11 @@ export const CharacterFormList: React.FC<Props> = ({
                     combatPower: Number(r.combatPower),
                     serkaNightmare: Boolean(r.serkaNightmare),
                     valkyCanSupport: r.jobCode === '발키리' ? Boolean(r.valkyCanSupport) : false,
+                    receiveBoundGold: Boolean(r.receiveBoundGold),
                     goldOption,
-                    singleRaids: r.singleRaids || [], // 🌟 데이터 취합
+                    singleRaids: r.singleRaids || [],
                 };
 
-                // 2. 파이어베이스 에러 방지: lostArkName이 실제로 존재할 때만 객체에 추가
                 if (r.lostArkName) {
                     charData.lostArkName = r.lostArkName;
                 }
@@ -434,10 +447,11 @@ export const CharacterFormList: React.FC<Props> = ({
                 <div className="space-y-2">
                     <label className="text-sm font-bold text-zinc-900 dark:text-zinc-100">원정대 골드 수급 옵션</label>
                     <div className="relative">
-                        <select className="w-full appearance-none rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-3 pr-10 text-sm font-medium text-zinc-700 focus:border-indigo-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200" value={goldOption} onChange={(e) => setGoldOption(e.target.value as GoldOption)} disabled={isSaving}>
+                        <select className="w-full appearance-none rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-3 pr-10 text-sm font-medium text-zinc-700 focus:border-indigo-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200" value={goldOption} onChange={(e) => handleGoldOptionChange(e.target.value as GoldOption)} disabled={isSaving}>
                             <option value="ALL_MAX">귀속 골드 포함 최대 골드</option>
                             <option value="GENERAL_MAX">귀속 골드 제외 최대 골드</option>
                             <option value="MAIN_ALL_ALT_GENERAL">본캐만 귀속 포함 (부캐 제외)</option>
+                            <option value="CUSTOM">자유 (캐릭터별 개별 설정)</option>
                         </select>
                         <ChevronDown size={16} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400" />
                     </div>
@@ -487,7 +501,6 @@ export const CharacterFormList: React.FC<Props> = ({
                                             <span className="truncate font-bold dark:text-zinc-200">
                                                 {char.CharacterName}
                                             </span>
-                                            {/* 직업명과 레벨을 나란히 표시 */}
                                             <div className="flex items-center gap-1 text-[10px] text-zinc-500">
                                                 <span>{char.CharacterClassName}</span>
                                                 <span className="text-zinc-300 dark:text-zinc-600">|</span>
@@ -523,11 +536,13 @@ export const CharacterFormList: React.FC<Props> = ({
                 </div>
 
                 <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900/50">
-                    <div className="hidden grid-cols-12 gap-4 border-b border-zinc-100 bg-zinc-50/50 px-3 py-2 sm:pl-10 text-xs font-bold text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 sm:grid">
-                        <div className="col-span-3">직업</div>
-                        <div className="col-span-3">역할</div>
-                        <div className="col-span-3">아이템 레벨</div>
+                    <div className="hidden grid-cols-12 gap-3 sm:gap-4 border-b border-zinc-100 bg-zinc-50/50 px-3 py-2 sm:pl-10 text-xs font-bold text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 sm:grid">
+                        {/* 헤더 그리드 비율도 동일하게 맞춰줍니다 */}
+                        <div className="col-span-2">직업</div>
+                        <div className="col-span-2">역할</div>
+                        <div className="col-span-2">아이템 레벨</div>
                         <div className="col-span-2">전투력</div>
+                        <div className="col-span-3 text-center">추가 설정</div>
                         <div className="col-span-1 text-center">삭제</div>
                     </div>
 
@@ -535,7 +550,7 @@ export const CharacterFormList: React.FC<Props> = ({
                         <SortableContext items={rows.map(r => r.uid)} strategy={verticalListSortingStrategy}>
                             <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
                                 {rows.map((row, index) => (
-                                    <SortableCharacterRow key={row.uid} row={row} index={index} handleChangeRow={handleChangeRow} handleRemoveRow={handleRemoveRow} isSaving={isSaving} />
+                                    <SortableCharacterRow key={row.uid} row={row} index={index} handleChangeRow={handleChangeRow} handleRemoveRow={handleRemoveRow} isSaving={isSaving} goldOption={goldOption} />
                                 ))}
                             </div>
                         </SortableContext>

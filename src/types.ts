@@ -1,6 +1,6 @@
 export type Role = 'DPS' | 'SUPPORT';
 
-export type GoldOption = 'ALL_MAX' | 'GENERAL_MAX' | 'MAIN_ALL_ALT_GENERAL';
+export type GoldOption = 'ALL_MAX' | 'GENERAL_MAX' | 'MAIN_ALL_ALT_GENERAL' | 'CUSTOM';
 
 export type RaidId = 
   | 'ACT1_HARD' 
@@ -27,6 +27,9 @@ export type Character = {
 
   /** 발키 “서폿 가능(플렉스)” 체크 (기본 false) */
   valkyCanSupport?: boolean;
+
+  /** 귀속 골드 여부 **/
+  receiveBoundGold?: boolean;
 
   goldOption?: GoldOption;
   lostArkName?: string;
