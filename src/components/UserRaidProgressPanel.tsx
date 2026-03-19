@@ -27,6 +27,37 @@ function buildAssignedIndex(schedule: RaidSchedule | null) {
     return assignedByRaid;
 }
 
+function getExpectedRaids(ch: Character): RaidId[] {
+    const il = ch.itemLevel;
+    const raids: RaidId[] = [];
+
+    if (il >= 1750) raids.push('HORIZON_STEP3');
+    else if (il >= 1720) raids.push('HORIZON_STEP2');
+    else if (il >= 1700) raids.push('HORIZON_STEP1');
+
+    if (il >= 1740 && ch.serkaNightmare) raids.push('SERKA_NIGHTMARE');
+    else if (il >= 1730) raids.push('SERKA_HARD');
+    else if (il >= 1710) raids.push('SERKA_NORMAL');
+
+    if (il >= 1730) raids.push('FINAL_HARD');
+    else if (il >= 1710) raids.push('FINAL_NORMAL');
+
+    if (il >= 1720) raids.push('ACT4_HARD');
+    else if (il >= 1700) raids.push('ACT4_NORMAL');
+
+    if (il < 1710) {
+        if (il >= 1700) raids.push('ACT3_HARD');
+        else if (il >= 1680) raids.push('ACT3_NORMAL');
+        if (il >= 1690) raids.push('ACT2_HARD');
+        else if (il >= 1670) raids.push('ACT2_NORMAL');
+        if (il >= 1680) raids.push('ACT1_HARD');
+    }
+    
+    const horizon = raids.filter(r => r.startsWith('HORIZON_'));
+    const normal = raids.filter(r => !r.startsWith('HORIZON_'));
+    return [...horizon, ...normal.slice(0, 3)];
+}
+
 interface UserRaidProgressPanelProps {
     characters: Character[];
     raidCandidates?: Partial<Record<RaidId, Character[]>>;
@@ -39,7 +70,6 @@ interface UserRaidProgressPanelProps {
 
 export function UserRaidProgressPanel({
     characters,
-    raidCandidates,
     exclusions,
     schedule,
     onMarkRaidComplete,
@@ -75,8 +105,6 @@ export function UserRaidProgressPanel({
         return 'UNASSIGNED';
     };
 
-    const candidatesByRaid = raidCandidates ?? {};
-
     return (
         <div className="space-y-6">
             <div className="flex flex-col gap-6">
@@ -87,9 +115,8 @@ export function UserRaidProgressPanel({
                     let userCollectedGeneral = 0; let userCollectedBound = 0;
 
                     const charDataList = chars.map((c) => {
-                        const raidsForChar = RAID_ORDER_FOR_PROGRESS.filter((raidId) =>
-                            (candidatesByRaid[raidId] ?? []).some((m) => m.id === c.id),
-                        );
+                        const expectedIds = getExpectedRaids(c);
+                        const raidsForChar = RAID_ORDER_FOR_PROGRESS.filter(id => expectedIds.includes(id));
                         
                         const isSup = c.role === 'SUPPORT';
                         const isMain = c.id === mainChar.id;
@@ -106,14 +133,12 @@ export function UserRaidProgressPanel({
                         const raidYields = raidsForChar.map(id => {
                             const meta = RAID_META[id];
                             
-                            // ✅ 하드로 배정받아도 노말 싱글을 체크했다면 싱글로 처리되도록 범용 검사
                             const isAct2Single = id.startsWith('ACT2_') && c.singleRaids?.includes('ACT2_NORMAL');
                             const isAct3Single = id.startsWith('ACT3_') && c.singleRaids?.includes('ACT3_NORMAL');
                             const isSingle = isAct2Single || isAct3Single;
 
                             let effectiveGold = meta.gold;
                             if (isSingle) {
-                                // 싱글의 골드는 난이도 상관없이 항상 노말 기준의 절반
                                 const normalMeta = id.startsWith('ACT2_') ? RAID_META['ACT2_NORMAL'] : RAID_META['ACT3_NORMAL'];
                                 effectiveGold = (normalMeta.gold / 2) + (ignoreBoundGold ? 0 : normalMeta.gold / 2);
                             } else if (ignoreBoundGold && meta.goldType === 'BOUND') {
@@ -235,8 +260,15 @@ export function UserRaidProgressPanel({
                             </div>
 
                             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
-                                {charDataList.map(({ c, isSup, isMain, raidsForChar, top3Ids, charTotalGeneral, charTotalBound, charCollectedGeneral, charCollectedBound }) => (
-                                    <div key={c.id} className="group flex h-full flex-col gap-3 rounded-xl bg-zinc-50/50 p-4 shadow-sm ring-1 ring-zinc-900/5 transition-all hover:shadow-md dark:bg-zinc-950/50 dark:ring-zinc-800">
+                                {charDataList.map(({ c, isSup, isMain, raidsForChar, top3Ids, charTotalGeneral, charTotalBound, charCollectedGeneral, charCollectedBound }) => {
+                                    // ✅ 배정 제외 여부에 따른 스타일 분기 없음 (뱃지만 표시되도록)
+                                    const isExcluded = c.isParticipating === false;
+                                    
+                                    return (
+                                    <div 
+                                        key={c.id} 
+                                        className="group flex h-full flex-col gap-3 rounded-xl bg-zinc-50/50 p-4 shadow-sm ring-1 ring-zinc-900/5 transition-all hover:shadow-md dark:bg-zinc-950/50 dark:ring-zinc-800"
+                                    >
                                         
                                         <div className="flex flex-col gap-3">
                                             <div className="flex items-center justify-between">
@@ -248,6 +280,7 @@ export function UserRaidProgressPanel({
                                                         <div className="flex items-center gap-1.5">
                                                             <span className="text-[15px] font-bold text-zinc-800 dark:text-zinc-100">{c.jobCode}</span>
                                                             {isMain && <span className="rounded bg-indigo-100 px-1.5 py-0.5 text-[9px] font-bold text-indigo-600 dark:bg-indigo-900/50 dark:text-indigo-400">본캐</span>}
+                                                            {isExcluded && <span className="rounded bg-zinc-200 px-1.5 py-0.5 text-[9px] font-bold text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">배정 제외</span>}
                                                         </div>
                                                         {c.lostArkName && (
                                                             <span className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400 truncate">
@@ -324,7 +357,6 @@ export function UserRaidProgressPanel({
                                                     const isTop3 = top3Ids.has(raidId);
                                                     const isDone = state === 'DONE';
                                                     
-                                                    // 난이도 무관하게 싱글로 플레이하는지 여부
                                                     const isAct2Single = raidId.startsWith('ACT2_') && c.singleRaids?.includes('ACT2_NORMAL');
                                                     const isAct3Single = raidId.startsWith('ACT3_') && c.singleRaids?.includes('ACT3_NORMAL');
                                                     const isSingle = isAct2Single || isAct3Single;
@@ -377,7 +409,8 @@ export function UserRaidProgressPanel({
                                         </div>
 
                                     </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                         </div>
                     );

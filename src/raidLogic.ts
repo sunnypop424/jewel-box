@@ -1503,7 +1503,8 @@ export function buildRaidSchedule(
   swaps: RaidSwap[] = [],
   guests: Partial<Record<RaidId, Character[]>> = {},
 ): RaidSchedule {
-  const filtered = characters.filter((c) => c.itemLevel >= 1700);
+  const activeCharacters = characters.filter((c) => c.isParticipating !== false);
+  const filtered = activeCharacters.filter((c) => c.itemLevel >= 1700);
   const buckets = groupCharactersByRaid(filtered, exclusions);
   const SEED = 123456789;
   const seededRng = createSeededRandom(SEED);
@@ -1534,7 +1535,8 @@ export function buildRaidSchedule(
 }
 
 export function buildRaidCandidatesMap(characters: Character[], exclusions: RaidExclusionMap = {}, raidSettings: RaidSettingsMap = {}): Record<RaidId, Character[]> {
-  const filtered = characters.filter((c) => c.itemLevel >= 1680);
+  const activeCharacters = characters.filter((c) => c.isParticipating !== false);
+  const filtered = activeCharacters.filter((c) => c.itemLevel >= 1680);
   const map: Record<RaidId, Character[]> = {
     ACT1_HARD: [], ACT2_NORMAL: [], ACT3_NORMAL: [], ACT2_HARD: [], ACT3_HARD: [],
     ACT4_NORMAL: [], ACT4_HARD: [], SERKA_NORMAL: [], SERKA_HARD: [], SERKA_NIGHTMARE: [],

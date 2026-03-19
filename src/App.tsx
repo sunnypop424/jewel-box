@@ -24,7 +24,7 @@ import { LadderGame } from './components/LadderGame';
 import { RouletteGame } from './components/RouletteGame';
 import { PinballGame } from './components/PinballGame';
 import { AuctionCalculatorModal } from './components/AuctionCalculatorModal';
-import { GatheringModal } from './components/GatheringModal'; // ✅ 추가된 모달
+import { GatheringModal } from './components/GatheringModal'; 
 import {
   Swords,
   Sun,
@@ -43,7 +43,7 @@ import {
   CircleDot,
   Orbit,
   Calculator,
-  Megaphone // ✅ 아이콘 추가
+  Megaphone 
 } from 'lucide-react';
 
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
@@ -63,8 +63,10 @@ const App: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
+  // ----------------------------------------------------------------------
+  // 1. 기본 상태 (State) 선언부
+  // ----------------------------------------------------------------------
   const [allCharacters, setAllCharacters] = useState<Character[]>([]);
-
   const [localSquad, setLocalSquad] = useState<Squad>({
     discordName: '',
     characters: [],
@@ -79,7 +81,7 @@ const App: React.FC = () => {
   const [isRouletteModalOpen, setIsRouletteModalOpen] = useState(false);
   const [isPinballModalOpen, setIsPinballModalOpen] = useState(false);
   const [isCalcOpen, setIsCalcOpen] = useState(false);
-  const [isGatheringModalOpen, setIsGatheringModalOpen] = useState(false); // ✅ 파티 모집 모달 상태
+  const [isGatheringModalOpen, setIsGatheringModalOpen] = useState(false); 
 
   const [raidExclusions, setRaidExclusions] = useState<RaidExclusionMap>({});
   const [loadingExclusions, setLoadingExclusions] = useState(false);
@@ -91,6 +93,12 @@ const App: React.FC = () => {
   const [isSwapping, setIsSwapping] = useState(false);
 
   const [balanceMode, _setBalanceMode] = useState<BalanceMode>('speed');
+
+  const [raidGuests, setRaidGuests] = useState<Partial<Record<RaidId, Character[]>>>({});
+  const [guestModalData, setGuestModalData] = useState<{ isOpen: boolean; raidId: RaidId | null }>({
+    isOpen: false,
+    raidId: null,
+  });
 
   const [theme, setTheme] = useState<Theme>(() => {
     if (typeof window === 'undefined') return 'light';
@@ -107,17 +115,17 @@ const App: React.FC = () => {
     window.localStorage.setItem(THEME_KEY, theme);
   }, [theme]);
 
+  // ----------------------------------------------------------------------
+  // 2. 데이터 패칭 함수 모음
+  // ----------------------------------------------------------------------
   const refreshAllCharacters = async () => {
     try {
       setLoading(true);
       setStatus('데이터 동기화 중...');
-
       const list = await fetchCharacters();
       setAllCharacters(list);
-
       const uniqueUsers = new Set(list.map((c) => c.discordName)).size;
       const totalChars = list.length;
-
       setStatus(`유저 ${uniqueUsers}명 / 캐릭터 ${totalChars}개 로드 완료`);
     } catch (e: any) {
       console.error(e);
@@ -167,7 +175,101 @@ const App: React.FC = () => {
     refreshSwaps().catch(console.error);
   }, []);
 
-  const [raidGuests, setRaidGuests] = useState<Partial<Record<RaidId, Character[]>>>({});
+  // ----------------------------------------------------------------------
+  // 3. 파생 데이터 계산 (선언 순서가 매우 중요함!)
+  // ----------------------------------------------------------------------
+  
+  // (1) 현재 유효한 캐릭터 전체 (로컬 수정분 반영)
+  const effectiveCharacters = useMemo(() => {
+    if (!localSquad.discordName) return allCharacters;
+    const others = allCharacters.filter((c) => c.discordName !== localSquad.discordName);
+    return [...others, ...localSquad.characters];
+  }, [allCharacters, localSquad]);
+
+  // (2) 전체 유저 이름 목록
+  const allUserNames = useMemo(() => {
+    return Array.from(new Set(effectiveCharacters.map((c) => c.discordName))).sort();
+  }, [effectiveCharacters]);
+
+  // (3) 비활성화(제외)된 유저 목록 계산 (Firebase isParticipating 연동)
+  const inactiveUsers = useMemo(() => {
+    const inactive = new Set<string>();
+    allUserNames.forEach(name => {
+      const userChars = effectiveCharacters.filter(c => c.discordName === name);
+      // 캐릭터가 있으면서 모든 캐릭터의 isParticipating이 false인 경우만 제외
+      if (userChars.length > 0 && userChars.every(c => c.isParticipating === false)) {
+        inactive.add(name);
+      }
+    });
+    return inactive;
+  }, [effectiveCharacters, allUserNames]);
+
+  // (4) 배정에 사용될 실제 참여 캐릭터들 (비활성화 유저 제외)
+  const schedulingCharacters = useMemo(() => {
+    return effectiveCharacters.filter((c) => !inactiveUsers.has(c.discordName));
+  }, [effectiveCharacters, inactiveUsers]);
+
+  // (5) 최종 스케줄 및 후보군 생성
+  const schedule = useMemo(
+    () => buildRaidSchedule(schedulingCharacters, raidExclusions, balanceMode, raidSettings, raidSwaps, raidGuests),
+    [schedulingCharacters, raidExclusions, balanceMode, raidSettings, raidSwaps, raidGuests],
+  );
+
+  const raidCandidates = useMemo(
+    () => buildRaidCandidatesMap(schedulingCharacters, raidExclusions, raidSettings),
+    [schedulingCharacters, raidExclusions, raidSettings],
+  );
+
+  // ----------------------------------------------------------------------
+  // 4. UI 및 필터 상태 관리
+  // ----------------------------------------------------------------------
+  const [selectedUserFilter, setSelectedUserFilter] = useState<string>(() => {
+    if (typeof window === 'undefined') return 'ALL';
+    return window.localStorage.getItem(USER_FILTER_KEY) || 'ALL';
+  });
+
+  useEffect(() => {
+    window.localStorage.setItem(USER_FILTER_KEY, selectedUserFilter);
+  }, [selectedUserFilter]);
+
+  useEffect(() => {
+    if (selectedUserFilter !== 'ALL' && allUserNames.length > 0 && !allUserNames.includes(selectedUserFilter)) {
+      setSelectedUserFilter('ALL');
+    }
+  }, [allUserNames, selectedUserFilter]);
+
+  const filteredCharactersForProgress = useMemo(() => {
+    if (selectedUserFilter === 'ALL') return effectiveCharacters;
+    return effectiveCharacters.filter((c) => c.discordName === selectedUserFilter);
+  }, [effectiveCharacters, selectedUserFilter]);
+
+  // ----------------------------------------------------------------------
+  // 5. 핸들러 함수들
+  // ----------------------------------------------------------------------
+
+  // ✅ 참여 인원 토글 핸들러 (Firebase 데이터 직접 업데이트)
+  const handleToggleUserActive = async (name: string) => {
+    const isCurrentlyInactive = inactiveUsers.has(name);
+    const isNowParticipating = isCurrentlyInactive; // 비활성이었으면 참여로
+
+    const userChars = allCharacters.filter(c => c.discordName === name);
+    const updatedUserChars = userChars.map(c => ({
+      ...c,
+      isParticipating: isNowParticipating
+    }));
+
+    // 로컬 상태 즉시 반영 (화면 리렌더링 및 자동 배정 재계산 트리거)
+    setAllCharacters((prev) => prev.map(c => 
+      c.discordName === name ? { ...c, isParticipating: isNowParticipating } : c
+    ));
+
+    try {
+      await saveCharacters(name, updatedUserChars);
+    } catch (error) {
+      console.error("참여 상태 업데이트 실패:", error);
+      alert("상태를 서버에 저장하는데 실패했습니다.");
+    }
+  };
 
   const handleAddGuest = (raidId: RaidId, role: 'DPS' | 'SUPPORT', jobCode: string) => {
     const shortHash = Math.random().toString(36).substring(2, 6);
@@ -193,11 +295,6 @@ const App: React.FC = () => {
     }));
   };
 
-  const [guestModalData, setGuestModalData] = useState<{ isOpen: boolean; raidId: RaidId | null }>({
-    isOpen: false,
-    raidId: null,
-  });
-
   const handleOpenGuestModal = (raidId: RaidId) => {
     setGuestModalData({ isOpen: true, raidId });
   };
@@ -207,61 +304,6 @@ const App: React.FC = () => {
       handleAddGuest(guestModalData.raidId, role, jobCode);
     }
     setGuestModalData({ isOpen: false, raidId: null });
-  };
-
-  const effectiveCharacters = useMemo(() => {
-    if (!localSquad.discordName) return allCharacters;
-    const others = allCharacters.filter((c) => c.discordName !== localSquad.discordName);
-    return [...others, ...localSquad.characters];
-  }, [allCharacters, localSquad]);
-
-  const [inactiveUsers, setInactiveUsers] = useState<Set<string>>(new Set());
-
-  const schedulingCharacters = useMemo(() => {
-    return effectiveCharacters.filter((c) => !inactiveUsers.has(c.discordName));
-  }, [effectiveCharacters, inactiveUsers]);
-
-  const schedule = useMemo(
-    () => buildRaidSchedule(schedulingCharacters, raidExclusions, balanceMode, raidSettings, raidSwaps, raidGuests),
-    [schedulingCharacters, raidExclusions, balanceMode, raidSettings, raidSwaps, raidGuests],
-  );
-
-  const raidCandidates = useMemo(
-    () => buildRaidCandidatesMap(schedulingCharacters, raidExclusions, raidSettings),
-    [schedulingCharacters, raidExclusions, raidSettings],
-  );
-
-  const allUserNames = useMemo(() => {
-    return Array.from(new Set(effectiveCharacters.map((c) => c.discordName))).sort();
-  }, [effectiveCharacters]);
-
-  const [selectedUserFilter, setSelectedUserFilter] = useState<string>(() => {
-    if (typeof window === 'undefined') return 'ALL';
-    return window.localStorage.getItem(USER_FILTER_KEY) || 'ALL';
-  });
-
-  useEffect(() => {
-    window.localStorage.setItem(USER_FILTER_KEY, selectedUserFilter);
-  }, [selectedUserFilter]);
-
-  useEffect(() => {
-    if (selectedUserFilter !== 'ALL' && allUserNames.length > 0 && !allUserNames.includes(selectedUserFilter)) {
-      setSelectedUserFilter('ALL');
-    }
-  }, [allUserNames, selectedUserFilter]);
-
-  const filteredCharactersForProgress = useMemo(() => {
-    if (selectedUserFilter === 'ALL') return effectiveCharacters;
-    return effectiveCharacters.filter((c) => c.discordName === selectedUserFilter);
-  }, [effectiveCharacters, selectedUserFilter]);
-
-  const handleToggleUserActive = (name: string) => {
-    setInactiveUsers((prev) => {
-      const next = new Set<string>(prev);
-      if (next.has(name)) next.delete(name);
-      else next.add(name);
-      return next;
-    });
   };
 
   const handleToggleSupportShortage = async (raidId: RaidId, next: boolean) => {
@@ -477,6 +519,9 @@ const App: React.FC = () => {
 
   const isActive = (path: string) => location.pathname === path;
 
+  // ----------------------------------------------------------------------
+  // 6. UI 랜더링 
+  // ----------------------------------------------------------------------
   return (
     <div className="flex h-screen w-full overflow-hidden bg-zinc-50 font-sans text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
       {isSidebarOpen && (
@@ -561,7 +606,6 @@ const App: React.FC = () => {
               Party
             </div>
 
-            {/* ✅ 추가된 파티 모집 버튼 */}
             <button
               onClick={() => setIsGatheringModalOpen(true)}
               className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-bold text-zinc-600 transition-colors hover:bg-indigo-50 hover:text-indigo-600 dark:text-zinc-400 dark:hover:bg-indigo-900/20 dark:hover:text-indigo-400"

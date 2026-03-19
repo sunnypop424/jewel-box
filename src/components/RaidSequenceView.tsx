@@ -427,26 +427,42 @@ function StartRoster({
                     key={m.id}
                     className="flex items-center justify-between rounded-xl bg-white px-3 py-2 shadow-sm ring-1 ring-zinc-900/5 dark:bg-zinc-900 dark:ring-zinc-800 h-12"
                   >
-                    <div className="flex flex-col">
-                      <div className="flex flex-col items-center gap-1.5">
-                        <span className="text-xs font-bold dark:text-zinc-100">{m.jobCode}</span>
-                      </div>
-                      <span className="text-[10px] text-zinc-500 dark:text-zinc-400 truncate max-w-[70px]">
-                        {/* ✅ 게스트면 "임시 게스트"라고 보여주기 */}
-                        {m.isGuest ? "임시 게스트" : m.lostArkName}
-                      </span>
-                    </div>
+
 
                     <div className="flex items-center gap-3">
-                      
-                        {!m.isGuest && ( // ✅ 게스트가 아닐 때만 노출
-                      <div className="text-right">
-                        <div className="text-xs font-bold text-zinc-700 dark:text-zinc-300">
-                          Lv.{m.itemLevel}
-                        </div>
-                          <div className="text-[10px] text-zinc-400">CP {m.combatPower.toLocaleString()}</div>
-                      </div>
+                      <div
+                        className={`flex h-8 w-8 items-center justify-center rounded-lg ${m.isGuest
+                            ? 'bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400'
+                            : m.role === 'SUPPORT'
+                              ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400'
+                              : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400'
+                          }`}
+                      >
+                        {m.role === 'SUPPORT' ? (
+                          <Shield size={16} />
+                        ) : (
+                          <Swords size={16} />
                         )}
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-sm font-bold dark:text-zinc-100">{m.jobCode}</span>
+                        </div>
+                        <div className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400 max-w-[80px] overflow-hidden text-ellipsis whitespace-nowrap">
+                          {m.isGuest ? "임시 게스트" : m.lostArkName}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+
+                      {!m.isGuest && ( // ✅ 게스트가 아닐 때만 노출
+                        <div className="text-right">
+                          <div className="text-xs font-bold text-zinc-700 dark:text-zinc-300">
+                            Lv.{m.itemLevel}
+                          </div>
+                          <div className="text-[10px] text-zinc-400">CP {m.combatPower.toLocaleString()}</div>
+                        </div>
+                      )}
 
                       {!m.isGuest && canSwap && onSwapClick && (
                         <button
@@ -1184,8 +1200,8 @@ export const RaidSequenceView: React.FC<Props> = ({
                     key={name}
                     onClick={() => onToggleUser(name)}
                     className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-bold transition-all border ${isSelected
-                        ? 'bg-indigo-50 border-indigo-200 text-indigo-700 dark:bg-indigo-950/30 dark:border-indigo-900 dark:text-indigo-200'
-                        : 'bg-transparent border-zinc-200 text-zinc-400 decoration-zinc-400 line-through dark:border-zinc-800 dark:text-zinc-600'
+                      ? 'bg-indigo-50 border-indigo-200 text-indigo-700 dark:bg-indigo-950/30 dark:border-indigo-900 dark:text-indigo-200'
+                      : 'bg-transparent border-zinc-200 text-zinc-400 decoration-zinc-400 line-through dark:border-zinc-800 dark:text-zinc-600'
                       }`}
                   >
                     {isSelected ? <UserCheck className="h-3 w-3" /> : <UserX className="h-3 w-3" />}

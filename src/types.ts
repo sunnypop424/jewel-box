@@ -34,6 +34,7 @@ export type Character = {
   goldOption?: GoldOption;
   lostArkName?: string;
   singleRaids?: RaidId[];
+  isParticipating?: boolean;
 
   // 게스트 필드 추가
   isGuest?: boolean;
