@@ -36,15 +36,13 @@ function SortableCharacterRow({
     index,
     handleChangeRow,
     handleRemoveRow,
-    isSaving,
-    goldOption
+    isSaving
 }: {
     row: CharacterFormRow;
     index: number;
     handleChangeRow: (index: number, field: keyof CharacterFormRow, value: any) => void;
     handleRemoveRow: (index: number) => void;
     isSaving: boolean;
-    goldOption: GoldOption;
 }) {
     const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: row.uid });
 
@@ -62,7 +60,6 @@ function SortableCharacterRow({
         handleChangeRow(index, 'singleRaids', next);
     };
 
-    // 🌟 2막과 3막을 실제 수행하는 구간(1680 ~ 1709)에서만 노말/하드 무관하게 노출
     const isAct2Act3Participant = typeof row.itemLevel === 'number' && row.itemLevel >= 1680 && row.itemLevel < 1710;
     const canDoAct2Single = isAct2Act3Participant;
     const canDoAct3Single = isAct2Act3Participant;
@@ -83,7 +80,6 @@ function SortableCharacterRow({
                 <GripVertical size={18} />
             </div>
 
-            {/* 직업: 기존 3칸 -> 2칸으로 축소 */}
             <div className="sm:col-span-2 relative">
                 {row.lostArkName && (
                     <div className="absolute right-0.5 top-0.5 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
@@ -101,7 +97,6 @@ function SortableCharacterRow({
                 </select>
             </div>
 
-            {/* 역할: 2칸 유지 */}
             <div className="sm:col-span-2">
                 <div className="flex items-center gap-2">
                     <div className="relative flex-1">
@@ -121,47 +116,43 @@ function SortableCharacterRow({
             </div>
 
             <div className="flex gap-2 sm:contents">
-                {/* 레벨: 2칸 유지 */}
                 <div className="flex-1 sm:col-span-2">
                     <input type="number" className="w-full rounded-lg border border-zinc-200 bg-white px-2 py-2 text-sm font-medium dark:border-zinc-700 dark:bg-zinc-900" value={row.itemLevel} onChange={(e) => handleChangeRow(index, 'itemLevel', e.target.value)} placeholder="Lv" disabled={isSaving} />
                 </div>
-                {/* 전투력: 2칸 유지 */}
                 <div className="flex-1 sm:col-span-2">
                     <input type="number" className="w-full rounded-lg border border-zinc-200 bg-white px-2 py-2 text-sm font-medium dark:border-zinc-700 dark:bg-zinc-900" value={row.combatPower} onChange={(e) => handleChangeRow(index, 'combatPower', e.target.value)} placeholder="CP" disabled={isSaving} />
                 </div>
                 
-                {/* 🌟 추가 설정: 기존 2칸 -> 3칸으로 확장하여 싱글까지 한 줄에 배치 */}
                 <div className="flex flex-wrap items-center justify-start sm:justify-center gap-1.5 sm:col-span-3">
-                    <label className={`inline-flex select-none items-center gap-1 rounded-md border px-1.5 py-1 text-[11px] font-semibold shadow-sm transition-opacity ${goldOption === 'CUSTOM' ? 'border-zinc-200 bg-white text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300' : 'border-zinc-100 bg-zinc-50 text-zinc-400 opacity-60 dark:border-zinc-800 dark:bg-zinc-950/50'}`}>
-                        <input type="checkbox" checked={row.receiveBoundGold} onChange={(e) => handleChangeRow(index, 'receiveBoundGold', e.target.checked)} disabled={isSaving || goldOption !== 'CUSTOM'} className="h-3 w-3 shrink-0 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500 disabled:opacity-50" />
+                    <label className="inline-flex select-none items-center gap-1 rounded-md border border-zinc-200 bg-white px-1.5 py-1 text-[11px] font-semibold text-zinc-600 shadow-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 hover:border-indigo-300 dark:hover:border-indigo-500 transition-colors cursor-pointer">
+                        <input type="checkbox" checked={row.receiveBoundGold} onChange={(e) => handleChangeRow(index, 'receiveBoundGold', e.target.checked)} disabled={isSaving} className="h-3 w-3 shrink-0 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500 disabled:opacity-50 cursor-pointer" />
                         <span className="whitespace-nowrap">귀속</span>
                     </label>
 
                     {typeof row.itemLevel === 'number' && row.itemLevel >= 1740 && (
-                        <label className="inline-flex select-none items-center gap-1 rounded-md border border-zinc-200 bg-white px-1.5 py-1 text-[11px] font-semibold text-zinc-600 shadow-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
-                            <input type="checkbox" checked={row.serkaNightmare} onChange={(e) => handleChangeRow(index, 'serkaNightmare', e.target.checked)} disabled={isSaving} className="h-3 w-3 shrink-0 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500" />
+                        <label className="inline-flex select-none items-center gap-1 rounded-md border border-zinc-200 bg-white px-1.5 py-1 text-[11px] font-semibold text-zinc-600 shadow-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 hover:border-indigo-300 dark:hover:border-indigo-500 transition-colors cursor-pointer">
+                            <input type="checkbox" checked={row.serkaNightmare} onChange={(e) => handleChangeRow(index, 'serkaNightmare', e.target.checked)} disabled={isSaving} className="h-3 w-3 shrink-0 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer" />
                             <span className="whitespace-nowrap">나메</span>
                         </label>
                     )}
                     
                     {row.jobCode === '발키리' && (
-                        <label className="inline-flex select-none items-center gap-1 rounded-md border border-zinc-200 bg-white px-1.5 py-1 text-[11px] font-semibold text-zinc-600 shadow-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
-                            <input type="checkbox" checked={row.valkyCanSupport} onChange={(e) => handleChangeRow(index, 'valkyCanSupport', e.target.checked)} disabled={isSaving} className="h-3 w-3 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500" />
+                        <label className="inline-flex select-none items-center gap-1 rounded-md border border-zinc-200 bg-white px-1.5 py-1 text-[11px] font-semibold text-zinc-600 shadow-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 hover:border-indigo-300 dark:hover:border-indigo-500 transition-colors cursor-pointer">
+                            <input type="checkbox" checked={row.valkyCanSupport} onChange={(e) => handleChangeRow(index, 'valkyCanSupport', e.target.checked)} disabled={isSaving} className="h-3 w-3 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer" />
                             <span className="whitespace-nowrap">서폿</span>
                         </label>
                     )}
 
-                    {/* 싱글 체크박스를 동일 영역에 통합 배치 */}
                     {canDoAct2Single && (
-                        <label className="inline-flex select-none items-center gap-1 rounded-md border border-indigo-200 bg-indigo-50 px-1.5 py-1 text-[11px] font-semibold text-indigo-700 shadow-sm dark:border-indigo-900/50 dark:bg-indigo-900/20 dark:text-indigo-300">
-                            <input type="checkbox" checked={row.singleRaids.includes('ACT2_NORMAL')} onChange={() => toggleSingle('ACT2_NORMAL')} disabled={isSaving} className="h-3 w-3 rounded border-indigo-300 text-indigo-600 focus:ring-indigo-500 dark:border-indigo-600" />
+                        <label className="inline-flex select-none items-center gap-1 rounded-md border border-indigo-200 bg-indigo-50 px-1.5 py-1 text-[11px] font-semibold text-indigo-700 shadow-sm dark:border-indigo-900/50 dark:bg-indigo-900/20 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-colors cursor-pointer">
+                            <input type="checkbox" checked={row.singleRaids.includes('ACT2_NORMAL')} onChange={() => toggleSingle('ACT2_NORMAL')} disabled={isSaving} className="h-3 w-3 rounded border-indigo-300 text-indigo-600 focus:ring-indigo-500 dark:border-indigo-600 cursor-pointer" />
                             <span className="whitespace-nowrap">싱글2막</span>
                         </label>
                     )}
                     
                     {canDoAct3Single && (
-                        <label className="inline-flex select-none items-center gap-1 rounded-md border border-indigo-200 bg-indigo-50 px-1.5 py-1 text-[11px] font-semibold text-indigo-700 shadow-sm dark:border-indigo-900/50 dark:bg-indigo-900/20 dark:text-indigo-300">
-                            <input type="checkbox" checked={row.singleRaids.includes('ACT3_NORMAL')} onChange={() => toggleSingle('ACT3_NORMAL')} disabled={isSaving} className="h-3 w-3 rounded border-indigo-300 text-indigo-600 focus:ring-indigo-500 dark:border-indigo-600" />
+                        <label className="inline-flex select-none items-center gap-1 rounded-md border border-indigo-200 bg-indigo-50 px-1.5 py-1 text-[11px] font-semibold text-indigo-700 shadow-sm dark:border-indigo-900/50 dark:bg-indigo-900/20 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-colors cursor-pointer">
+                            <input type="checkbox" checked={row.singleRaids.includes('ACT3_NORMAL')} onChange={() => toggleSingle('ACT3_NORMAL')} disabled={isSaving} className="h-3 w-3 rounded border-indigo-300 text-indigo-600 focus:ring-indigo-500 dark:border-indigo-600 cursor-pointer" />
                             <span className="whitespace-nowrap">싱글3막</span>
                         </label>
                     )}
@@ -219,6 +210,36 @@ export const CharacterFormList: React.FC<Props> = ({
             setRows([{ uid: `new-0-${Date.now()}`, discordName, jobCode: '', role: 'DPS', itemLevel: 1700, combatPower: '', serkaNightmare: false, valkyCanSupport: false, receiveBoundGold: false, singleRaids: [] }]);
         }
     }, [discordName, characters]);
+
+    // 🌟 귀속 체크박스 조합에 따라 원정대 옵션을 알아서 변경해주는 마법의 로직
+    useEffect(() => {
+        if (rows.length === 0) return;
+
+        // 원정대 내 가장 높은 레벨(본캐) 파악
+        const maxIlvl = Math.max(...rows.map(r => Number(r.itemLevel) || 0));
+        
+        // 체크박스 상태 분석
+        const allChecked = rows.every(r => r.receiveBoundGold);
+        const noneChecked = rows.every(r => !r.receiveBoundGold);
+        
+        // 본캐(최고레벨)들은 모두 체크되어 있고, 부캐들은 모두 해제되어 있는지 확인
+        const mainsChecked = rows.filter(r => (Number(r.itemLevel) || 0) === maxIlvl).every(r => r.receiveBoundGold);
+        const altsUnchecked = rows.filter(r => (Number(r.itemLevel) || 0) !== maxIlvl).every(r => !r.receiveBoundGold);
+        const hasAlts = rows.some(r => (Number(r.itemLevel) || 0) !== maxIlvl);
+
+        // 조합에 맞춰 드롭다운 옵션 자동 결정
+        let autoOption: GoldOption = 'CUSTOM';
+        if (allChecked) {
+            autoOption = 'ALL_MAX';
+        } else if (noneChecked) {
+            autoOption = 'GENERAL_MAX';
+        } else if (mainsChecked && altsUnchecked && hasAlts) {
+            autoOption = 'MAIN_ALL_ALT_GENERAL';
+        }
+
+        // 현재 선택된 옵션과 다르면 자동 변경
+        setGoldOption(prev => prev !== autoOption ? autoOption : prev);
+    }, [rows]);
 
     const handlePressEnter = (e: React.KeyboardEvent, callback: () => void) => {
         if (e.key === 'Enter') { e.preventDefault(); callback(); }
@@ -358,7 +379,6 @@ export const CharacterFormList: React.FC<Props> = ({
                     if (prevIl < 1740 && nextIl >= 1740) nextSerkaNightmare = true;
                     if (prevIl >= 1740 && nextIl < 1740) nextSerkaNightmare = false;
 
-                    // 🌟 레벨 변경 시 2막/3막 참여 가능 구간(1680~1709)을 완전히 벗어나면 싱글 모드 체크 자동 해제
                     let nextSingleRaids = [...row.singleRaids];
                     if (nextIl < 1680 || nextIl >= 1710) {
                         nextSingleRaids = nextSingleRaids.filter(id => id !== 'ACT2_NORMAL' && id !== 'ACT3_NORMAL');
@@ -537,7 +557,6 @@ export const CharacterFormList: React.FC<Props> = ({
 
                 <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900/50">
                     <div className="hidden grid-cols-12 gap-3 sm:gap-4 border-b border-zinc-100 bg-zinc-50/50 px-3 py-2 sm:pl-10 text-xs font-bold text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 sm:grid">
-                        {/* 헤더 그리드 비율도 동일하게 맞춰줍니다 */}
                         <div className="col-span-2">직업</div>
                         <div className="col-span-2">역할</div>
                         <div className="col-span-2">아이템 레벨</div>
@@ -550,7 +569,7 @@ export const CharacterFormList: React.FC<Props> = ({
                         <SortableContext items={rows.map(r => r.uid)} strategy={verticalListSortingStrategy}>
                             <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
                                 {rows.map((row, index) => (
-                                    <SortableCharacterRow key={row.uid} row={row} index={index} handleChangeRow={handleChangeRow} handleRemoveRow={handleRemoveRow} isSaving={isSaving} goldOption={goldOption} />
+                                    <SortableCharacterRow key={row.uid} row={row} index={index} handleChangeRow={handleChangeRow} handleRemoveRow={handleRemoveRow} isSaving={isSaving} />
                                 ))}
                             </div>
                         </SortableContext>
