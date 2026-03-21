@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Users, Shuffle, Play, RefreshCw, Trophy, Frown, ArrowDown, ListChecks, Search, UserCircle } from 'lucide-react';
+import { sendDiscordNotification } from '../utils/discord';
 
 interface Props {
   onClose?: () => void;
@@ -27,6 +28,7 @@ export const LadderGame: React.FC<Props> = ({ allUserNames = [] }) => {
   
   const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
   const suggestionRef = useRef<HTMLDivElement>(null);
+
 
   useEffect(() => {
     shuffleResults(playerCount);
@@ -96,6 +98,7 @@ export const LadderGame: React.FC<Props> = ({ allUserNames = [] }) => {
     setRevealed(Array(playerCount).fill(false));
     setFinishedPaths(Array(playerCount).fill(false));
     setShowAll(false);
+    setDiscordNotified(false); // 게임 시작 시 알림 상태 초기화
     setStep('game');
   };
 
@@ -154,6 +157,38 @@ export const LadderGame: React.FC<Props> = ({ allUserNames = [] }) => {
       return { pathString, length: len, endCol: currCol };
     });
   }, [playerCount, lines, step]);
+
+  
+
+  const [discordNotified, setDiscordNotified] = useState(false);
+
+  useEffect(() => {
+    if (step !== 'game') return;
+
+    // a. 당첨 결과 인덱스 찾기 (results 배열에서 true인 위치)
+    const winnerEndCol = results.findIndex(r => r === true);
+    if (winnerEndCol === -1) return;
+
+    // b. 당첨 위치에 도달하는 참가자의 시작 인덱스 찾기
+    const winnerParticipantIndex = pathsData.findIndex(d => d.endCol === winnerEndCol);
+    if (winnerParticipantIndex === -1) return;
+
+    // c. 해당 참가자의 애니메이션이 끝났는지 확인 (showAll 이면 즉시 true 처리됨)
+    const isWinnerFinished = finishedPaths[winnerParticipantIndex] || showAll;
+
+    // d. 애니메이션이 끝났고 아직 알림을 안 보냈다면 전송
+    if (isWinnerFinished && !discordNotified) {
+      setDiscordNotified(true); // 중복 전송 방지
+
+      const actualNames = names.slice(0, playerCount).map((n, i) => n || `참여자 ${i + 1}`);
+      const participants = actualNames.join(', ');
+      const winnerName = actualNames[winnerParticipantIndex];
+      
+      sendDiscordNotification(
+        `**사다리 타기 결과**\n참여자: ${participants}\n🎉 **${winnerName}** 님이 당첨되셨습니다! 축하드립니다!`
+      );
+    }
+  }, [step, finishedPaths, showAll, discordNotified, results, pathsData, names, playerCount]);
 
   if (step === 'setup') {
     return (

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Play, Trophy, Users, UserCircle, Search } from 'lucide-react';
+import { sendDiscordNotification } from '../utils/discord';
 
 interface Props {
   allUserNames?: string[];
@@ -28,6 +29,8 @@ export const RouletteGame: React.FC<Props> = ({ allUserNames = [] }) => {
   const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
+  
+
   useEffect(() => {
     setNames((prev) => {
       const next = [...prev];
@@ -46,6 +49,16 @@ export const RouletteGame: React.FC<Props> = ({ allUserNames = [] }) => {
     () => names.slice(0, playerCount).filter((n) => n.trim() !== ''),
     [names, playerCount],
   );
+
+  // 👇 이곳에 추가합니다.
+  useEffect(() => {
+    if (winner) {
+      const participants = activeNames.join(', ');
+      sendDiscordNotification(
+        `**룰렛 게임 결과**\n참여자: ${participants}\n🎉 **${winner}** 님이 당첨되셨습니다! 축하드립니다!`
+      );
+    }
+  }, [winner, activeNames]);
 
   useEffect(() => {
     drawRoulette();

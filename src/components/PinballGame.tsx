@@ -13,6 +13,7 @@ import {
   Medal,
   ChevronDown,
 } from 'lucide-react';
+import { sendDiscordNotification } from '../utils/discord';
 
 interface Props {
   onClose?: () => void;
@@ -44,6 +45,20 @@ export const PinballGame: React.FC<Props> = ({ allUserNames = [] }) => {
     () => names.slice(0, playerCount).map((name, i) => name.trim() || `참여자 ${i + 1}`),
     [names, playerCount],
   );
+
+  useEffect(() => {
+    if (winner) {
+      const participants = setupNames.join(', ');
+      const conditionText = 
+        winningRank === 0 ? '가장 먼저' : 
+        winningRank === playerCount - 1 ? '가장 늦게' : 
+        `${winningRank + 1}번째로`;
+
+      sendDiscordNotification(
+        `**마블 레이스 결과**\n참여자: ${participants}\n🎉 **${winner}** 님이 ${conditionText} 도착하여 당첨되셨습니다! 축하드립니다!`
+      );
+    }
+  }, [winner, setupNames, winningRank, playerCount]);
 
   useEffect(() => {
     setWinningRank((prev) => Math.min(prev, playerCount - 1));
@@ -132,11 +147,6 @@ export const PinballGame: React.FC<Props> = ({ allUserNames = [] }) => {
     
     const cameraViewSize = 600; 
     const canvasDisplaySize = 600;
-
-    // 출구 위치: 240 ~ 360 (너비 120)
-    const exitLeft = 240;
-    const exitRight = 360;
-    const finishZoneTop = 1745; 
 
     const engine = Matter.Engine.create({
       gravity: { x: 0, y: 0.65 },
