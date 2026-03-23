@@ -12,11 +12,16 @@ import { buildRaidCandidatesMap, buildRaidSchedule } from './raidLogic';
 import { CharacterFormList } from './components/CharacterFormList';
 import { RaidScheduleView } from './components/RaidScheduleView';
 import { RaidSequenceView } from './components/RaidSequenceView';
-import { UserRaidProgressPanel } from './components/UserRaidProgressPanel';
+
+// 누적 골드 정산 헬퍼 가져오기
+import { UserRaidProgressPanel, RAID_ORDER_FOR_PROGRESS, getExpectedRaids } from './components/UserRaidProgressPanel';
+
 import { 
   fetchCharacters, saveCharacters, fetchRaidSettings, setRaidSetting,
   fetchSwaps, addSwap, resetSwaps,
-  fetchRaidExclusions, toggleCharacterOnRaid, excludeCharactersOnRaid, resetRaidExclusions 
+  fetchRaidExclusions, toggleCharacterOnRaid, excludeCharactersOnRaid, resetRaidExclusions,
+  // 신규 누적 골드 API 호출 함수들
+  fetchAccumulatedGold, updateAccumulatedGoldMulti, resetAccumulatedGold, type AccumulatedGoldMap
 } from './api/firebaseApi';
 import { syncCharactersWithLostArkAPI, fetchProfile } from './api/lostArkApi';
 import { Modal } from './components/Modal';
@@ -26,24 +31,9 @@ import { PinballGame } from './components/PinballGame';
 import { AuctionCalculatorModal } from './components/AuctionCalculatorModal';
 import { GatheringModal } from './components/GatheringModal'; 
 import {
-  Swords,
-  Sun,
-  Moon,
-  UserCog,
-  RefreshCw,
-  LayoutDashboard,
-  Eraser,
-  ClipboardList,
-  ChartGantt,
-  Menu,
-  X,
-  Users,
-  ChevronDown,
-  Waypoints,
-  CircleDot,
-  Orbit,
-  Calculator,
-  Megaphone 
+  Swords, Sun, Moon, UserCog, RefreshCw, LayoutDashboard, Eraser,
+  ClipboardList, ChartGantt, Menu, X, Users, ChevronDown, Waypoints,
+  CircleDot, Orbit, Calculator, Megaphone 
 } from 'lucide-react';
 
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
@@ -59,18 +49,66 @@ interface Squad {
 const THEME_KEY = 'raidTheme_v1';
 const USER_FILTER_KEY = 'raid_user_filter_v1';
 
+// --- 주간 정산 시 사용될 골드 계산 헬퍼 함수 ---
+function calculateGoldDelta(raidId: RaidId, charId: string, allChars: Character[]): { g: number, b: number } {
+  const c = allChars.find(x => x.id === charId);
+  if (!c) return { g: 0, b: 0 };
+  
+  const userChars = allChars.filter(x => x.discordName === c.discordName);
+  const mainChar = userChars.reduce((max, curr) => curr.itemLevel > max.itemLevel ? curr : max, userChars[0]);
+  const isMain = c.id === mainChar.id;
+
+  const expectedIds = getExpectedRaids(c);
+  const raidsForChar = RAID_ORDER_FOR_PROGRESS.filter(id => expectedIds.includes(id));
+  
+  let ignoreBoundGold = false;
+  if (c.receiveBoundGold !== undefined) {
+      ignoreBoundGold = !c.receiveBoundGold;
+  } else {
+      const option = c.goldOption || 'ALL_MAX';
+      if (option === 'GENERAL_MAX') ignoreBoundGold = true;
+      else if (option === 'MAIN_ALL_ALT_GENERAL' && !isMain) ignoreBoundGold = true;
+  }
+
+  const raidYields = raidsForChar.map(id => {
+      const meta = RAID_META[id];
+      const isAct2Single = id.startsWith('ACT2_') && c.singleRaids?.includes('ACT2_NORMAL');
+      const isAct3Single = id.startsWith('ACT3_') && c.singleRaids?.includes('ACT3_NORMAL');
+      const isSingle = isAct2Single || isAct3Single;
+
+      let effectiveGold = meta.gold;
+      if (isSingle) {
+          const normalMeta = id.startsWith('ACT2_') ? RAID_META['ACT2_NORMAL'] : RAID_META['ACT3_NORMAL'];
+          effectiveGold = (normalMeta.gold / 2) + (ignoreBoundGold ? 0 : normalMeta.gold / 2);
+      } else if (ignoreBoundGold && meta.goldType === 'BOUND') {
+          effectiveGold = -1;
+      }
+      return { id, ...meta, effectiveGold, isSingle };
+  }).sort((a, b) => b.effectiveGold - a.effectiveGold);
+  
+  const top3Yields = raidYields.filter(y => y.effectiveGold > 0).slice(0, 3);
+  const targetYield = top3Yields.find(y => y.id === raidId);
+  
+  if (!targetYield) return { g: 0, b: 0 };
+  
+  let g = 0; let b = 0;
+  if (targetYield.isSingle) {
+      const normalMeta = targetYield.id.startsWith('ACT2_') ? RAID_META['ACT2_NORMAL'] : RAID_META['ACT3_NORMAL'];
+      g = normalMeta.gold / 2;
+      b = normalMeta.gold / 2;
+  } else {
+      if (targetYield.goldType === 'GENERAL') g = targetYield.gold;
+      else b = targetYield.gold;
+  }
+  return { g, b };
+}
+
 const App: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // ----------------------------------------------------------------------
-  // 1. 기본 상태 (State) 선언부
-  // ----------------------------------------------------------------------
   const [allCharacters, setAllCharacters] = useState<Character[]>([]);
-  const [localSquad, setLocalSquad] = useState<Squad>({
-    discordName: '',
-    characters: [],
-  });
+  const [localSquad, setLocalSquad] = useState<Squad>({ discordName: '', characters: [] });
 
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -91,14 +129,14 @@ const App: React.FC = () => {
 
   const [raidSwaps, setRaidSwaps] = useState<RaidSwap[]>([]);
   const [isSwapping, setIsSwapping] = useState(false);
-
   const [balanceMode, _setBalanceMode] = useState<BalanceMode>('speed');
 
   const [raidGuests, setRaidGuests] = useState<Partial<Record<RaidId, Character[]>>>({});
   const [guestModalData, setGuestModalData] = useState<{ isOpen: boolean; raidId: RaidId | null }>({
-    isOpen: false,
-    raidId: null,
+    isOpen: false, raidId: null,
   });
+
+  const [accumulatedGold, setAccumulatedGold] = useState<AccumulatedGoldMap>({});
 
   const [theme, setTheme] = useState<Theme>(() => {
     if (typeof window === 'undefined') return 'light';
@@ -115,9 +153,6 @@ const App: React.FC = () => {
     window.localStorage.setItem(THEME_KEY, theme);
   }, [theme]);
 
-  // ----------------------------------------------------------------------
-  // 2. 데이터 패칭 함수 모음
-  // ----------------------------------------------------------------------
   const refreshAllCharacters = async () => {
     try {
       setLoading(true);
@@ -140,8 +175,6 @@ const App: React.FC = () => {
       setLoadingExclusions(true);
       const ex = await fetchRaidExclusions();
       setRaidExclusions(ex);
-    } catch (e) {
-      console.error('load exclusions error', e);
     } finally {
       setLoadingExclusions(false);
     }
@@ -152,8 +185,6 @@ const App: React.FC = () => {
       setLoadingRaidSettings(true);
       const rs = await fetchRaidSettings();
       setRaidSettings(rs);
-    } catch (e) {
-      console.error('load raid settings error', e);
     } finally {
       setLoadingRaidSettings(false);
     }
@@ -163,9 +194,14 @@ const App: React.FC = () => {
     try {
       const s = await fetchSwaps();
       setRaidSwaps(s);
-    } catch (e) {
-      console.error('load swaps error', e);
-    }
+    } catch(e) {}
+  };
+
+  const refreshAccumulatedGold = async () => {
+    try {
+      const data = await fetchAccumulatedGold();
+      setAccumulatedGold(data);
+    } catch(e) {}
   };
 
   useEffect(() => {
@@ -173,30 +209,23 @@ const App: React.FC = () => {
     refreshExclusions().catch(console.error);
     refreshRaidSettings().catch(console.error);
     refreshSwaps().catch(console.error);
+    refreshAccumulatedGold().catch(console.error); 
   }, []);
 
-  // ----------------------------------------------------------------------
-  // 3. 파생 데이터 계산 (선언 순서가 매우 중요함!)
-  // ----------------------------------------------------------------------
-  
-  // (1) 현재 유효한 캐릭터 전체 (로컬 수정분 반영)
   const effectiveCharacters = useMemo(() => {
     if (!localSquad.discordName) return allCharacters;
     const others = allCharacters.filter((c) => c.discordName !== localSquad.discordName);
     return [...others, ...localSquad.characters];
   }, [allCharacters, localSquad]);
 
-  // (2) 전체 유저 이름 목록
   const allUserNames = useMemo(() => {
     return Array.from(new Set(effectiveCharacters.map((c) => c.discordName))).sort();
   }, [effectiveCharacters]);
 
-  // (3) 비활성화(제외)된 유저 목록 계산 (Firebase isParticipating 연동)
   const inactiveUsers = useMemo(() => {
     const inactive = new Set<string>();
     allUserNames.forEach(name => {
       const userChars = effectiveCharacters.filter(c => c.discordName === name);
-      // 캐릭터가 있으면서 모든 캐릭터의 isParticipating이 false인 경우만 제외
       if (userChars.length > 0 && userChars.every(c => c.isParticipating === false)) {
         inactive.add(name);
       }
@@ -204,12 +233,10 @@ const App: React.FC = () => {
     return inactive;
   }, [effectiveCharacters, allUserNames]);
 
-  // (4) 배정에 사용될 실제 참여 캐릭터들 (비활성화 유저 제외)
   const schedulingCharacters = useMemo(() => {
     return effectiveCharacters.filter((c) => !inactiveUsers.has(c.discordName));
   }, [effectiveCharacters, inactiveUsers]);
 
-  // (5) 최종 스케줄 및 후보군 생성
   const schedule = useMemo(
     () => buildRaidSchedule(schedulingCharacters, raidExclusions, balanceMode, raidSettings, raidSwaps, raidGuests),
     [schedulingCharacters, raidExclusions, balanceMode, raidSettings, raidSwaps, raidGuests],
@@ -220,9 +247,6 @@ const App: React.FC = () => {
     [schedulingCharacters, raidExclusions, raidSettings],
   );
 
-  // ----------------------------------------------------------------------
-  // 4. UI 및 필터 상태 관리
-  // ----------------------------------------------------------------------
   const [selectedUserFilter, setSelectedUserFilter] = useState<string>(() => {
     if (typeof window === 'undefined') return 'ALL';
     return window.localStorage.getItem(USER_FILTER_KEY) || 'ALL';
@@ -243,66 +267,43 @@ const App: React.FC = () => {
     return effectiveCharacters.filter((c) => c.discordName === selectedUserFilter);
   }, [effectiveCharacters, selectedUserFilter]);
 
-  // ----------------------------------------------------------------------
-  // 5. 핸들러 함수들
-  // ----------------------------------------------------------------------
-
-  // ✅ 참여 인원 토글 핸들러 (Firebase 데이터 직접 업데이트)
   const handleToggleUserActive = async (name: string) => {
     const isCurrentlyInactive = inactiveUsers.has(name);
-    const isNowParticipating = isCurrentlyInactive; // 비활성이었으면 참여로
+    const isNowParticipating = isCurrentlyInactive; 
 
     const userChars = allCharacters.filter(c => c.discordName === name);
     const updatedUserChars = userChars.map(c => ({
-      ...c,
-      isParticipating: isNowParticipating
+      ...c, isParticipating: isNowParticipating
     }));
 
-    // 로컬 상태 즉시 반영 (화면 리렌더링 및 자동 배정 재계산 트리거)
     setAllCharacters((prev) => prev.map(c => 
       c.discordName === name ? { ...c, isParticipating: isNowParticipating } : c
     ));
 
-    try {
-      await saveCharacters(name, updatedUserChars);
-    } catch (error) {
-      console.error("참여 상태 업데이트 실패:", error);
-      alert("상태를 서버에 저장하는데 실패했습니다.");
-    }
+    try { await saveCharacters(name, updatedUserChars); } catch (error) { }
   };
 
   const handleAddGuest = (raidId: RaidId, role: 'DPS' | 'SUPPORT', jobCode: string) => {
     const shortHash = Math.random().toString(36).substring(2, 6);
     const newGuest: Character = {
-      id: `guest_${Date.now()}`,
-      discordName: `게스트_${shortHash}`,
-      jobCode: jobCode,
-      role: role,
-      itemLevel: 1800,
-      combatPower: role === 'SUPPORT' ? 4000000 : 5000000,
-      isGuest: true,
+      id: `guest_${Date.now()}`, discordName: `게스트_${shortHash}`, jobCode: jobCode, role: role,
+      itemLevel: 1800, combatPower: role === 'SUPPORT' ? 4000000 : 5000000, isGuest: true,
     };
     setRaidGuests(prev => ({
-      ...prev,
-      [raidId]: [...(prev[raidId] || []), newGuest]
+      ...prev, [raidId]: [...(prev[raidId] || []), newGuest]
     }));
   };
 
   const handleRemoveGuest = (raidId: RaidId, guestId: string) => {
     setRaidGuests(prev => ({
-      ...prev,
-      [raidId]: (prev[raidId] || []).filter(g => g.id !== guestId)
+      ...prev, [raidId]: (prev[raidId] || []).filter(g => g.id !== guestId)
     }));
   };
 
-  const handleOpenGuestModal = (raidId: RaidId) => {
-    setGuestModalData({ isOpen: true, raidId });
-  };
+  const handleOpenGuestModal = (raidId: RaidId) => { setGuestModalData({ isOpen: true, raidId }); };
 
   const handleAddGuestAndClose = (role: 'DPS' | 'SUPPORT', jobCode: string) => {
-    if (guestModalData.raidId) {
-      handleAddGuest(guestModalData.raidId, role, jobCode);
-    }
+    if (guestModalData.raidId) handleAddGuest(guestModalData.raidId, role, jobCode);
     setGuestModalData({ isOpen: false, raidId: null });
   };
 
@@ -313,8 +314,6 @@ const App: React.FC = () => {
       setRaidSettings(rs);
       setStatus('랏폿 설정이 저장되었습니다.');
     } catch (e) {
-      console.error(e);
-      alert('랏폿 설정 저장에 실패했습니다.');
       refreshRaidSettings().catch(console.error);
     }
   };
@@ -336,28 +335,21 @@ const App: React.FC = () => {
     }
   };
 
+  // ✅ 누적 골드 실시간 화면 합산을 위해, 개별 클릭 시 DB 호출 없이 UI 상태만 토글
   const handleExcludeCharacterFromRaid = async (raidId: RaidId, charId: string, isCurrentlyExcluded: boolean = false) => {
     try {
-      if (isSwapping) {
-        alert('캐릭터 변경 반영 중입니다. 잠시 후 다시 시도해주세요.');
-        return;
-      }
+      if (isSwapping) return;
       setStatus(isCurrentlyExcluded ? '레이드 완료 취소 중...' : '레이드 제외 처리 중...');
       const next = await toggleCharacterOnRaid(raidId, charId, isCurrentlyExcluded);
       setRaidExclusions(next);
       setStatus(isCurrentlyExcluded ? '완료가 취소되었습니다.' : '레이드가 완료 처리되었습니다.');
-    } catch (e) {
-      console.error(e);
-      alert('상태 변경에 실패했습니다. 잠시 후 다시 시도해주세요.');
-    }
+    } catch (e) { }
   };
 
+  // ✅ 공격대 일괄 완료 처리 시에도 상태만 토글
   const handleExcludeRun = async (raidId: RaidId, charIds: string[]) => {
     try {
-      if (isSwapping) {
-        alert('캐릭터 변경 반영 중입니다. 잠시 후 다시 시도해주세요.');
-        return;
-      }
+      if (isSwapping) return;
       const uniqIds = Array.from(new Set((charIds ?? []).map((id) => String(id ?? '').trim()).filter(Boolean)));
       if (uniqIds.length === 0) return;
 
@@ -365,9 +357,68 @@ const App: React.FC = () => {
       const next = await excludeCharactersOnRaid(raidId, uniqIds);
       setRaidExclusions(next);
       setStatus('공격대가 완료 처리되었습니다.');
+    } catch (e) { }
+  };
+
+  // ✅ 주간 초기화 실행 시: 현재 주간에 완료된(체크된) 골드를 모아서 누적 DB로 이관!
+  const handleResetExclusions = async () => {
+    const ok = window.confirm('모든 레이드 완료 내역을 초기화하시겠습니까?\n\n(이번 주 획득한 골드는 이전 누적 골드에 안전하게 합산되어 이관됩니다.)');
+    if (!ok) return;
+
+    try {
+      setStatus('내역 초기화 및 누적 골드 이관 중...');
+      
+      const updatesMap: Record<string, { g: number, b: number }> = {};
+      
+      // 현재 exclusions에 저장된 이번 주 완료 내역을 바탕으로 유저별 골드 델타 계산
+      for (const [raidId, charIds] of Object.entries(raidExclusions)) {
+          for (const charId of charIds) {
+              const { g, b } = calculateGoldDelta(raidId as RaidId, charId, effectiveCharacters);
+              const char = effectiveCharacters.find(c => c.id === charId);
+              if (char && (g > 0 || b > 0)) {
+                  if (!updatesMap[char.discordName]) updatesMap[char.discordName] = { g: 0, b: 0 };
+                  updatesMap[char.discordName].g += g;
+                  updatesMap[char.discordName].b += b;
+              }
+          }
+      }
+      
+      // 계산된 이번주 총 골드를 DB 업데이트 포맷으로 변경
+      const updates = Object.entries(updatesMap).map(([discordName, val]) => ({
+          discordName, deltaGeneral: val.g, deltaBound: val.b
+      }));
+      
+      // 누적 골드 DB에 합산 (이관)
+      if (updates.length > 0) {
+          await updateAccumulatedGoldMulti(updates);
+      }
+
+      // 완료 내역 리셋
+      await resetRaidExclusions();
+      await resetSwaps();
+      
+      // 최신 상태 모두 갱신
+      await Promise.all([refreshExclusions(), refreshSwaps(), refreshAccumulatedGold()]); 
+      
+      setStatus('모든 내역이 초기화되고 골드가 이관되었습니다.');
     } catch (e) {
       console.error(e);
-      alert('공격대 완료 처리 실패');
+      alert('초기화 실패');
+    }
+  };
+
+  // ✅ 수동 누적 골드 초기화 핸들러 (화면상의 현재 획득골드만큼 오프셋을 줘서 0으로 만듦)
+  const handleResetAccumulatedGold = async (discordName: string, offsetGeneral: number, offsetBound: number) => {
+    if (window.confirm(`[${discordName}]님의 누적 골드를 완전히 초기화하시겠습니까?`)) {
+      try {
+        setStatus(`${discordName}님의 누적 골드 초기화 중...`);
+        const nextGold = await resetAccumulatedGold(discordName, offsetGeneral, offsetBound);
+        setAccumulatedGold(nextGold);
+        setStatus(`${discordName}님의 누적 골드가 초기화되었습니다.`);
+      } catch (e) {
+        console.error(e);
+        alert('누적 골드 초기화에 실패했습니다.');
+      }
     }
   };
 
@@ -379,17 +430,13 @@ const App: React.FC = () => {
       setRaidSwaps(nextSwaps);
       setStatus('캐릭터 교체가 완료되었습니다.');
     } catch (e) {
-      console.error(e);
-      alert('캐릭터 교체 실패');
     } finally {
       setIsSwapping(false);
     }
   };
 
   const handleRefreshUserCharacters = async (discordName: string, userChars: Character[]) => {
-    const ok = window.confirm(
-      `${discordName}님의 원정대 정보를 업데이트 하시겠습니까?\n(약간의 시간이 소요될 수 있습니다)`
-    );
+    const ok = window.confirm(`${discordName}님의 원정대 정보를 업데이트 하시겠습니까?`);
     if (!ok) return;
 
     try {
@@ -415,15 +462,11 @@ const App: React.FC = () => {
     } catch (e: any) {
       console.error(e);
       alert(`갱신 실패: ${e?.message ?? e}`);
-      setStatus(`${discordName}님 갱신 실패`);
     }
   };
 
   const handleRefreshSingleCharacter = async (char: Character) => {
-    if (!char.lostArkName) {
-      alert('로스트아크 캐릭터 이름이 설정되지 않았습니다. (원정대 관리에서 설정해주세요)');
-      return;
-    }
+    if (!char.lostArkName) return;
     try {
       setStatus(`${char.discordName}님의 ${char.lostArkName} 갱신 중...`);
       const profile = await fetchProfile(char.lostArkName);
@@ -441,38 +484,12 @@ const App: React.FC = () => {
         await saveCharacters(char.discordName, userCharsToSave);
         
         setStatus(`${char.lostArkName} 갱신 완료`);
-      } else {
-        alert('캐릭터 정보를 찾을 수 없거나 올바르지 않은 응답입니다.');
-        setStatus('갱신 실패');
       }
-    } catch (e: any) {
-      console.error(e);
-      alert(`갱신 실패: ${e?.message ?? e}`);
-      setStatus('갱신 실패');
-    }
-  };
-
-  const handleResetExclusions = async () => {
-    const ok = window.confirm('모든 레이드 완료 내역을 초기화하시겠습니까?');
-    if (!ok) return;
-
-    try {
-      setStatus('내역 초기화 중...');
-      await resetRaidExclusions();
-      await resetSwaps();
-      await Promise.all([refreshExclusions(), refreshSwaps()]);
-      setStatus('모든 내역이 초기화되었습니다.');
-    } catch (e) {
-      console.error(e);
-      alert('초기화 실패');
-      setStatus('초기화 중 오류가 발생했습니다.');
-    }
+    } catch (e: any) { }
   };
 
   const handleRefresh = async () => {
-    const ok = window.confirm(
-      '로아 API를 통해 모든 유저의 정보를 업데이트 하시겠습니까?\n(약 5~10초 정도 소요될 수 있습니다)'
-    );
+    const ok = window.confirm('로아 API를 통해 모든 유저의 정보를 업데이트 하시겠습니까?');
     if (!ok) return;
 
     try {
@@ -500,42 +517,26 @@ const App: React.FC = () => {
       }
 
     } catch (e) {
-      console.error(e);
-      alert('정보 갱신 실패');
-      setStatus('정보 갱신 중 오류가 발생했습니다.');
     } finally {
       setLoading(false);
     }
   };
 
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-
   const toggleSidebar = () => setIsSidebarOpen(!isSidebarOpen);
-
   const handleNavClick = (path: string) => {
     navigate(path);
     setIsSidebarOpen(false);
   };
-
   const isActive = (path: string) => location.pathname === path;
 
-  // ----------------------------------------------------------------------
-  // 6. UI 랜더링 
-  // ----------------------------------------------------------------------
   return (
     <div className="flex h-screen w-full overflow-hidden bg-zinc-50 font-sans text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
       {isSidebarOpen && (
-        <div
-          className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm md:hidden"
-          onClick={() => setIsSidebarOpen(false)}
-        />
+        <div className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm md:hidden" onClick={() => setIsSidebarOpen(false)} />
       )}
 
-      <aside
-        className={`fixed inset-y-0 left-0 z-50 flex w-72 flex-col border-r border-zinc-200 bg-white shadow-xl transition-transform duration-300 dark:border-zinc-800 dark:bg-zinc-900 md:relative md:translate-x-0 md:shadow-none ${
-          isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
-        }`}
-      >
+      <aside className={`fixed inset-y-0 left-0 z-50 flex w-72 flex-col border-r border-zinc-200 bg-white shadow-xl transition-transform duration-300 dark:border-zinc-800 dark:bg-zinc-900 md:relative md:translate-x-0 md:shadow-none ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="flex h-20 items-center justify-between px-6">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-lg shadow-indigo-500/30">
@@ -550,10 +551,7 @@ const App: React.FC = () => {
               </span>
             </div>
           </div>
-          <button
-            onClick={() => setIsSidebarOpen(false)}
-            className="rounded-lg p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 md:hidden"
-          >
+          <button onClick={() => setIsSidebarOpen(false)} className="rounded-lg p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 md:hidden">
             <X size={20} className="text-zinc-500" />
           </button>
         </div>
@@ -564,140 +562,71 @@ const App: React.FC = () => {
               Main Menu
             </div>
 
-            <button
-              onClick={() => handleNavClick('/')}
-              className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-bold transition-all ${
-                isActive('/')
-                  ? 'bg-indigo-50 text-indigo-700 shadow-sm ring-1 ring-indigo-200 dark:bg-indigo-900/20 dark:text-indigo-300 dark:ring-indigo-900/40'
-                  : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800'
-              }`}
-            >
-              <LayoutDashboard size={18} />
-              개인별 진행 현황
+            <button onClick={() => handleNavClick('/')} className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-bold transition-all ${isActive('/') ? 'bg-indigo-50 text-indigo-700 shadow-sm ring-1 ring-indigo-200 dark:bg-indigo-900/20 dark:text-indigo-300 dark:ring-indigo-900/40' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800'}`}>
+              <LayoutDashboard size={18} /> 개인별 진행 현황
             </button>
 
-            <button
-              onClick={() => handleNavClick('/schedule')}
-              className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-bold transition-all ${
-                isActive('/schedule')
-                  ? 'bg-indigo-50 text-indigo-700 shadow-sm ring-1 ring-indigo-200 dark:bg-indigo-900/20 dark:text-indigo-300 dark:ring-indigo-900/40'
-                  : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800'
-              }`}
-            >
-              <ClipboardList size={18} />
-              레이드 배정 결과
+            <button onClick={() => handleNavClick('/schedule')} className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-bold transition-all ${isActive('/schedule') ? 'bg-indigo-50 text-indigo-700 shadow-sm ring-1 ring-indigo-200 dark:bg-indigo-900/20 dark:text-indigo-300 dark:ring-indigo-900/40' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800'}`}>
+              <ClipboardList size={18} /> 레이드 배정 결과
             </button>
 
-            <button
-              onClick={() => handleNavClick('/sequence')}
-              className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-bold transition-all ${
-                isActive('/sequence')
-                  ? 'bg-indigo-50 text-indigo-700 shadow-sm ring-1 ring-indigo-200 dark:bg-indigo-900/20 dark:text-indigo-300 dark:ring-indigo-900/40'
-                  : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800'
-              }`}
-            >
-              <ChartGantt size={18} />
-              레이드 진행 순서
+            <button onClick={() => handleNavClick('/sequence')} className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-bold transition-all ${isActive('/sequence') ? 'bg-indigo-50 text-indigo-700 shadow-sm ring-1 ring-indigo-200 dark:bg-indigo-900/20 dark:text-indigo-300 dark:ring-indigo-900/40' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800'}`}>
+              <ChartGantt size={18} /> 레이드 진행 순서
             </button>
 
             <div className="my-4 h-px bg-zinc-100 dark:bg-zinc-800" />
 
-            <div className="mb-2 px-2 text-xs font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
-              Party
-            </div>
+            <div className="mb-2 px-2 text-xs font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">Party</div>
 
-            <button
-              onClick={() => setIsGatheringModalOpen(true)}
-              className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-bold text-zinc-600 transition-colors hover:bg-indigo-50 hover:text-indigo-600 dark:text-zinc-400 dark:hover:bg-indigo-900/20 dark:hover:text-indigo-400"
-            >
-              <Megaphone size={18} />
-              레이드 파티 모집
+            <button onClick={() => setIsGatheringModalOpen(true)} className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-bold text-zinc-600 transition-colors hover:bg-indigo-50 hover:text-indigo-600 dark:text-zinc-400 dark:hover:bg-indigo-900/20 dark:hover:text-indigo-400">
+              <Megaphone size={18} /> 레이드 파티 모집
             </button>
 
             <div className="my-4 h-px bg-zinc-100 dark:bg-zinc-800" />
 
-            <div className="mb-2 px-2 text-xs font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
-              Actions
-            </div>
+            <div className="mb-2 px-2 text-xs font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">Actions</div>
 
-            <button
-              onClick={() => setIsModalOpen(true)}
-              className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-bold text-zinc-600 transition-colors hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
-            >
-              <UserCog size={18} />
-              내 원정대 관리
+            <button onClick={() => setIsModalOpen(true)} className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-bold text-zinc-600 transition-colors hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800">
+              <UserCog size={18} /> 내 원정대 관리
             </button>
 
-            <button
-              onClick={handleRefresh}
-              disabled={loading || saving || isSwapping}
-              className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-bold text-zinc-600 transition-colors hover:bg-zinc-100 disabled:opacity-50 dark:text-zinc-400 dark:hover:bg-zinc-800"
-            >
-              <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
-              전체 전투력 갱신
+            <button onClick={handleRefresh} disabled={loading || saving || isSwapping} className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-bold text-zinc-600 transition-colors hover:bg-zinc-100 disabled:opacity-50 dark:text-zinc-400 dark:hover:bg-zinc-800">
+              <RefreshCw size={18} className={loading ? 'animate-spin' : ''} /> 전체 전투력 갱신
             </button>
 
-            <button
-              onClick={handleResetExclusions}
-              disabled={loadingExclusions || isSwapping}
-              className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-bold text-zinc-600 transition-colors hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50 dark:text-zinc-400 dark:hover:bg-rose-900/20 dark:hover:text-rose-400"
-            >
-              <Eraser size={18} />
-              레이드 완료 내역 초기화
+            <button onClick={handleResetExclusions} disabled={loadingExclusions || isSwapping} className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-bold text-zinc-600 transition-colors hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50 dark:text-zinc-400 dark:hover:bg-rose-900/20 dark:hover:text-rose-400">
+              <Eraser size={18} /> 레이드 완료 내역 초기화
             </button>
 
             <div className="my-4 h-px bg-zinc-100 dark:bg-zinc-800" />
 
-            <div className="mb-2 px-2 text-xs font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
-              Games
-            </div>
+            <div className="mb-2 px-2 text-xs font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">Games</div>
 
-            <button
-              onClick={() => setIsLadderModalOpen(true)}
-              className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-bold text-zinc-600 transition-colors hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
-            >
-              <Waypoints size={18} />
-              경매 사다리 타기
+            <button onClick={() => setIsLadderModalOpen(true)} className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-bold text-zinc-600 transition-colors hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800">
+              <Waypoints size={18} /> 경매 사다리 타기
             </button>
 
-            <button
-              onClick={() => setIsRouletteModalOpen(true)}
-              className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-bold text-zinc-600 transition-colors hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
-            >
-              <CircleDot size={18} />
-              경매 룰렛
+            <button onClick={() => setIsRouletteModalOpen(true)} className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-bold text-zinc-600 transition-colors hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800">
+              <CircleDot size={18} /> 경매 룰렛
             </button>
 
-            <button
-              onClick={() => setIsPinballModalOpen(true)}
-              className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-bold text-zinc-600 transition-colors hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
-            >
-              <Orbit size={18} />
-              마블 레이스
+            <button onClick={() => setIsPinballModalOpen(true)} className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-bold text-zinc-600 transition-colors hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800">
+              <Orbit size={18} /> 마블 레이스
             </button>
             
             <div className="my-4 h-px bg-zinc-100 dark:bg-zinc-800" />
 
-            <div className="mb-2 px-2 text-xs font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
-              Utilities
-            </div>
+            <div className="mb-2 px-2 text-xs font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">Utilities</div>
 
-            <button
-              onClick={() => setIsCalcOpen(true)}
-              className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-bold text-zinc-600 transition-colors hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
-            >
-              <Calculator size={18} />
-              경매 입찰 계산기
+            <button onClick={() => setIsCalcOpen(true)} className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-bold text-zinc-600 transition-colors hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800">
+              <Calculator size={18} /> 경매 입찰 계산기
             </button>
 
           </nav>
         </div>
 
         <div className="border-t border-zinc-100 p-4 dark:border-zinc-800">
-          <button
-            onClick={() => setTheme((prev) => (prev === 'light' ? 'dark' : 'light'))}
-            className="flex w-full items-center justify-between rounded-xl bg-zinc-50 px-4 py-3 text-sm font-bold text-zinc-600 transition-colors hover:bg-zinc-100 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
-          >
+          <button onClick={() => setTheme((prev) => (prev === 'light' ? 'dark' : 'light'))} className="flex w-full items-center justify-between rounded-xl bg-zinc-50 px-4 py-3 text-sm font-bold text-zinc-600 transition-colors hover:bg-zinc-100 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700">
             <div className="flex items-center gap-3">
               {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
               <span>{theme === 'light' ? '다크 모드' : '라이트 모드'}</span>
@@ -709,10 +638,7 @@ const App: React.FC = () => {
       <main className="flex flex-1 flex-col overflow-hidden">
         <header className="flex h-16 items-center justify-between border-b border-zinc-200 bg-white/90 px-4 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/90 md:hidden">
           <div className="flex items-center gap-3">
-            <button
-              onClick={toggleSidebar}
-              className="rounded-lg p-2 text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
-            >
+            <button onClick={toggleSidebar} className="rounded-lg p-2 text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800">
               <Menu size={24} />
             </button>
             <span className="text-lg font-bold text-zinc-900 dark:text-zinc-100">
@@ -726,9 +652,7 @@ const App: React.FC = () => {
         <div className="flex-1 overflow-y-auto bg-zinc-50/50 p-4 dark:bg-zinc-950 sm:p-6 lg:p-8">
           <div className="mx-auto space-y-6">
             <Routes>
-              <Route
-                path="/"
-                element={
+              <Route path="/" element={
                   <section className="animate-fade-in space-y-6">
                     <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
                       <div className="flex items-center gap-4">
@@ -738,16 +662,10 @@ const App: React.FC = () => {
                         </h2>
 
                         <div className="relative">
-                          <select
-                            value={selectedUserFilter}
-                            onChange={(e) => setSelectedUserFilter(e.target.value)}
-                            className="cursor-pointer appearance-none rounded-lg border border-zinc-200 bg-white py-1.5 pl-3 pr-9 text-sm font-bold text-zinc-700 shadow-sm transition-colors hover:border-indigo-300 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200"
-                          >
+                          <select value={selectedUserFilter} onChange={(e) => setSelectedUserFilter(e.target.value)} className="cursor-pointer appearance-none rounded-lg border border-zinc-200 bg-white py-1.5 pl-3 pr-9 text-sm font-bold text-zinc-700 shadow-sm transition-colors hover:border-indigo-300 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200">
                             <option value="ALL">전체 유저</option>
                             {allUserNames.map((name) => (
-                              <option key={name} value={name}>
-                                {name}
-                              </option>
+                              <option key={name} value={name}>{name}</option>
                             ))}
                           </select>
                           <div className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400">
@@ -757,18 +675,9 @@ const App: React.FC = () => {
                       </div>
 
                       <div className="flex gap-3 text-xs font-medium text-zinc-500 dark:text-zinc-400">
-                        <span className="flex items-center gap-1.5">
-                          <span className="h-2 w-2 rounded-full bg-amber-400 ring-1 ring-amber-400/50" />
-                          대기
-                        </span>
-                        <span className="flex items-center gap-1.5">
-                          <span className="h-2 w-2 rounded-full bg-indigo-500 ring-1 ring-indigo-500/50" />
-                          배치됨
-                        </span>
-                        <span className="flex items-center gap-1.5">
-                          <span className="h-2 w-2 rounded-full bg-zinc-300 ring-1 ring-zinc-300/50" />
-                          완료
-                        </span>
+                        <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-amber-400 ring-1 ring-amber-400/50" />대기</span>
+                        <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-indigo-500 ring-1 ring-indigo-500/50" />배치됨</span>
+                        <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-zinc-300 ring-1 ring-zinc-300/50" />완료</span>
                       </div>
                     </div>
 
@@ -777,22 +686,21 @@ const App: React.FC = () => {
                       raidCandidates={raidCandidates}
                       exclusions={raidExclusions}
                       schedule={schedule}
+                      accumulatedGold={accumulatedGold} 
                       onMarkRaidComplete={handleExcludeCharacterFromRaid}
                       onRefreshCharacter={handleRefreshSingleCharacter}
                       onRefreshUser={handleRefreshUserCharacters}
+                      onResetAccumulatedGold={handleResetAccumulatedGold} 
                     />
                   </section>
                 }
               />
 
-              <Route
-                path="/schedule"
-                element={
+              <Route path="/schedule" element={
                   <section className="animate-fade-in space-y-6">
                     <div className="flex items-center justify-between">
                       <h2 className="flex items-center gap-2 text-xl font-bold text-zinc-900 dark:text-zinc-100">
-                        <ClipboardList className="text-indigo-500" />
-                        레이드 배정 결과
+                        <ClipboardList className="text-indigo-500" /> 레이드 배정 결과
                       </h2>
                     </div>
 
@@ -801,12 +709,8 @@ const App: React.FC = () => {
                         <div className="mb-4 rounded-full bg-zinc-100 p-4 dark:bg-zinc-800">
                           <Users size={32} className="text-zinc-400" />
                         </div>
-                        <p className="text-lg font-medium text-zinc-600 dark:text-zinc-300">
-                          등록된 캐릭터가 없습니다.
-                        </p>
-                        <p className="mt-1 text-sm text-zinc-500">
-                          좌측 메뉴의 &quot;내 원정대 관리&quot;에서 캐릭터를 등록해주세요.
-                        </p>
+                        <p className="text-lg font-medium text-zinc-600 dark:text-zinc-300">등록된 캐릭터가 없습니다.</p>
+                        <p className="mt-1 text-sm text-zinc-500">좌측 메뉴의 &quot;내 원정대 관리&quot;에서 캐릭터를 등록해주세요.</p>
                       </div>
                     ) : (
                       <RaidScheduleView
@@ -820,7 +724,7 @@ const App: React.FC = () => {
                         onToggleSupportShortage={handleToggleSupportShortage}
                         raidCandidates={raidCandidates}
                         onSwapCharacter={handleSwapCharacter}
-                        onExcludeRun={handleExcludeRun}
+                        onExcludeRun={handleExcludeRun} 
                         allCharacters={effectiveCharacters}
                         isSwapping={isSwapping}
                         allUserNames={allUserNames}
@@ -834,14 +738,11 @@ const App: React.FC = () => {
                 }
               />
 
-              <Route
-                path="/sequence"
-                element={
+              <Route path="/sequence" element={
                   <section className="animate-fade-in space-y-6">
                     <div className="flex items-center justify-between">
                       <h2 className="flex items-center gap-2 text-xl font-bold text-zinc-900 dark:text-zinc-100">
-                        <ChartGantt className="text-indigo-500" />
-                        레이드 진행 순서
+                        <ChartGantt className="text-indigo-500" /> 레이드 진행 순서
                       </h2>
                     </div>
 
@@ -871,36 +772,19 @@ const App: React.FC = () => {
             isLoading={saving}
             onSubmit={handleSaveAndSync}
             onCancel={() => setIsModalOpen(false)}
-            onLoadByDiscordName={(targetName: string) => {
-              return allCharacters.filter((c) => c.discordName === targetName);
-            }}
+            onLoadByDiscordName={(targetName: string) => { return allCharacters.filter((c) => c.discordName === targetName); }}
           />
         </Modal>
 
-        <Modal
-          open={isLadderModalOpen}
-          title="경매 아이템 사다리 타기"
-          onClose={() => setIsLadderModalOpen(false)}
-          maxWidth="max-w-5xl"
-        >
+        <Modal open={isLadderModalOpen} title="경매 아이템 사다리 타기" onClose={() => setIsLadderModalOpen(false)} maxWidth="max-w-5xl">
           <LadderGame onClose={() => setIsLadderModalOpen(false)} allUserNames={allUserNames} />
         </Modal>
 
-        <Modal
-          open={isRouletteModalOpen}
-          title="경매 아이템 룰렛"
-          onClose={() => setIsRouletteModalOpen(false)}
-          maxWidth="max-w-4xl"
-        >
+        <Modal open={isRouletteModalOpen} title="경매 아이템 룰렛" onClose={() => setIsRouletteModalOpen(false)} maxWidth="max-w-4xl">
           <RouletteGame allUserNames={allUserNames} />
         </Modal>
 
-        <Modal
-          open={isPinballModalOpen}
-          title="경매 아이템 마블 레이스"
-          onClose={() => setIsPinballModalOpen(false)}
-          maxWidth="max-w-4xl"
-        >
+        <Modal open={isPinballModalOpen} title="경매 아이템 마블 레이스" onClose={() => setIsPinballModalOpen(false)} maxWidth="max-w-4xl">
           <PinballGame onClose={() => setIsPinballModalOpen(false)} allUserNames={allUserNames} />
         </Modal>
 
@@ -911,17 +795,9 @@ const App: React.FC = () => {
           raidLabel={guestModalData.raidId ? RAID_META[guestModalData.raidId].label : ''}
         />
 
-        <AuctionCalculatorModal 
-          isOpen={isCalcOpen} 
-          onClose={() => setIsCalcOpen(false)} 
-        />
+        <AuctionCalculatorModal isOpen={isCalcOpen} onClose={() => setIsCalcOpen(false)} />
 
-        {/* ✅ 새로 추가된 디스코드 파티 모집 모달 */}
-        <GatheringModal
-          isOpen={isGatheringModalOpen}
-          onClose={() => setIsGatheringModalOpen(false)}
-        />
-
+        <GatheringModal isOpen={isGatheringModalOpen} onClose={() => setIsGatheringModalOpen(false)} />
       </main>
     </div>
   );

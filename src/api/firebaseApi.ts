@@ -6,8 +6,10 @@ const USERS_COLLECTION = collection(db, 'users');
 const SETTINGS_DOC_REF = doc(db, 'raidData', 'settings');
 const SWAPS_DOC_REF = doc(db, 'raidData', 'swaps');
 const EXCLUSION_DOC_REF = doc(db, 'raidData', 'exclusions');
+const GOLD_DOC_REF = doc(db, 'raidData', 'accumulatedGold');
 
-// --- 1. 캐릭터 API ---
+export type AccumulatedGoldMap = Record<string, { general: number; bound: number }>;
+
 export async function fetchCharacters(discordName?: string): Promise<Character[]> {
   if (discordName) {
     const snap = await getDoc(doc(USERS_COLLECTION, discordName));
@@ -27,7 +29,6 @@ export async function saveCharacters(discordName: string, characters: Character[
   await setDoc(doc(USERS_COLLECTION, discordName), { characters }, { merge: true });
 }
 
-// --- 2. 랏폿 설정 API ---
 export async function fetchRaidSettings(): Promise<RaidSettingsMap> {
   const snap = await getDoc(SETTINGS_DOC_REF);
   return snap.exists() ? (snap.data().supportShortageByRaid || {}) : {};
@@ -43,7 +44,6 @@ export async function resetRaidSettings(): Promise<RaidSettingsMap> {
   return {};
 }
 
-// --- 3. 스왑 API ---
 export async function fetchSwaps(): Promise<RaidSwap[]> {
   const snap = await getDoc(SWAPS_DOC_REF);
   return snap.exists() ? (snap.data().swaps || []) : [];
@@ -63,7 +63,6 @@ export async function resetSwaps(): Promise<RaidSwap[]> {
   return [];
 }
 
-// --- 4. 완료(Exclusion) API ---
 export async function fetchRaidExclusions(): Promise<RaidExclusionMap> {
   const snap = await getDoc(EXCLUSION_DOC_REF);
   return snap.exists() ? snap.data() as RaidExclusionMap : {};
@@ -94,4 +93,35 @@ export async function excludeCharactersOnRaid(raidId: RaidId, characterIds: stri
 export async function resetRaidExclusions(): Promise<RaidExclusionMap> {
   await setDoc(EXCLUSION_DOC_REF, {});
   return {};
+}
+
+// --- 누적 골드 API ---
+export async function fetchAccumulatedGold(): Promise<AccumulatedGoldMap> {
+  const snap = await getDoc(GOLD_DOC_REF);
+  return snap.exists() ? snap.data() as AccumulatedGoldMap : {};
+}
+
+export async function updateAccumulatedGoldMulti(updates: { discordName: string; deltaGeneral: number; deltaBound: number }[]): Promise<AccumulatedGoldMap> {
+  const snap = await getDoc(GOLD_DOC_REF);
+  const current = snap.exists() ? snap.data() as AccumulatedGoldMap : {};
+  
+  const newData = { ...current };
+  for (const u of updates) {
+    const userGold = newData[u.discordName] || { general: 0, bound: 0 };
+    newData[u.discordName] = {
+      general: userGold.general + u.deltaGeneral, 
+      bound: userGold.bound + u.deltaBound
+    };
+  }
+  await setDoc(GOLD_DOC_REF, newData);
+  return newData;
+}
+
+export async function resetAccumulatedGold(discordName: string, offsetGeneral: number = 0, offsetBound: number = 0): Promise<AccumulatedGoldMap> {
+  const snap = await getDoc(GOLD_DOC_REF);
+  const current = snap.exists() ? snap.data() as AccumulatedGoldMap : {};
+  // 초기화 시점의 주간 골드만큼 마이너스 처리해두면 화면상 0이 됨
+  const newData = { ...current, [discordName]: { general: -offsetGeneral, bound: -offsetBound } };
+  await setDoc(GOLD_DOC_REF, newData);
+  return newData;
 }
