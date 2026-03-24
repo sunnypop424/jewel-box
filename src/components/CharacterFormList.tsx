@@ -7,57 +7,34 @@ import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSo
 import { CSS } from '@dnd-kit/utilities';
 import { fetchSiblings, fetchProfile, getRoleFromClass } from '../api/lostArkApi';
 
+// ✨ Hook 추가
+import { toast } from 'sonner';
+import { useConfirm } from '../hooks/useConfirm';
+
 interface CharacterFormRow {
-    uid: string;
-    id?: string;
-    discordName: string;
-    discordId?: string; 
-    jobCode: string;
-    role: Role;
-    itemLevel: number | '';
-    combatPower: number | '';
-    serkaNightmare: boolean;
-    valkyCanSupport: boolean;
-    receiveBoundGold: boolean;
-    lostArkName?: string;
-    singleRaids: RaidId[]; 
+    uid: string; id?: string; discordName: string; discordId?: string; 
+    jobCode: string; role: Role; itemLevel: number | ''; combatPower: number | '';
+    serkaNightmare: boolean; valkyCanSupport: boolean; receiveBoundGold: boolean;
+    lostArkName?: string; singleRaids: RaidId[]; 
 }
 
 interface Props {
-    discordName: string;
-    characters: Character[];
-    isLoading?: boolean;
+    discordName: string; characters: Character[]; isLoading?: boolean;
     onSubmit: (discordName: string, characters: Character[]) => void;
     onCancel?: () => void;
     onLoadByDiscordName: (targetName: string) => Character[];
 }
 
-function SortableCharacterRow({
-    row,
-    index,
-    handleChangeRow,
-    handleRemoveRow,
-    isSaving
-}: {
-    row: CharacterFormRow;
-    index: number;
-    handleChangeRow: (index: number, field: keyof CharacterFormRow, value: any) => void;
-    handleRemoveRow: (index: number) => void;
-    isSaving: boolean;
+function SortableCharacterRow({ row, index, handleChangeRow, handleRemoveRow, isSaving }: {
+    row: CharacterFormRow; index: number; handleChangeRow: (index: number, field: keyof CharacterFormRow, value: any) => void;
+    handleRemoveRow: (index: number) => void; isSaving: boolean;
 }) {
     const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: row.uid });
 
-    const style = {
-        transform: CSS.Transform.toString(transform),
-        transition,
-        opacity: isDragging ? 0.5 : 1,
-        zIndex: isDragging ? 50 : 1,
-    };
+    const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1, zIndex: isDragging ? 50 : 1 };
 
     const toggleSingle = (raidId: RaidId) => {
-        const next = row.singleRaids.includes(raidId)
-            ? row.singleRaids.filter(id => id !== raidId)
-            : [...row.singleRaids, raidId];
+        const next = row.singleRaids.includes(raidId) ? row.singleRaids.filter(id => id !== raidId) : [...row.singleRaids, raidId];
         handleChangeRow(index, 'singleRaids', next);
     };
 
@@ -66,33 +43,19 @@ function SortableCharacterRow({
     const canDoAct3Single = isAct2Act3Participant;
 
     return (
-        <div
-            ref={setNodeRef}
-            style={style}
-            className={`group relative flex flex-col gap-3 p-4 pt-10 sm:grid sm:grid-cols-12 sm:items-center sm:gap-3 sm:py-3 sm:pr-3 sm:pl-6 bg-white dark:bg-transparent ${
-                isDragging ? 'shadow-xl ring-2 ring-indigo-500 rounded-xl' : ''
-            }`}
-        >
+        <div ref={setNodeRef} style={style} className={`group relative flex flex-col gap-3 p-4 pt-10 sm:grid sm:grid-cols-12 sm:items-center sm:gap-3 sm:py-3 sm:pr-3 sm:pl-6 bg-white dark:bg-transparent ${isDragging ? 'shadow-xl ring-2 ring-indigo-500 rounded-xl' : ''}`}>
             <div {...attributes} {...listeners} className="absolute left-1 top-1/2 -translate-y-1/2 cursor-grab text-zinc-300 hover:text-zinc-500 opacity-0 group-hover:opacity-100 transition-opacity touch-none hidden sm:flex items-center justify-center">
                 <GripVertical size={18} />
             </div>
-
             <div {...attributes} {...listeners} className="absolute right-3 top-3 cursor-grab text-zinc-300 hover:text-zinc-500 sm:hidden touch-none">
                 <GripVertical size={18} />
             </div>
 
             <div className="sm:col-span-2 relative">
                 {row.lostArkName && (
-                    <div className="absolute right-0.5 top-0.5 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
-                        연동: {row.lostArkName}
-                    </div>
+                    <div className="absolute right-0.5 top-0.5 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">연동: {row.lostArkName}</div>
                 )}
-                <select
-                    className="w-full appearance-none rounded-lg border border-zinc-200 bg-zinc-50 px-2 py-2 text-sm font-medium dark:border-zinc-700 dark:bg-zinc-800"
-                    value={row.jobCode}
-                    onChange={(e) => handleChangeRow(index, 'jobCode', e.target.value)}
-                    disabled={isSaving}
-                >
+                <select className="w-full appearance-none rounded-lg border border-zinc-200 bg-zinc-50 px-2 py-2 text-sm font-medium dark:border-zinc-700 dark:bg-zinc-800" value={row.jobCode} onChange={(e) => handleChangeRow(index, 'jobCode', e.target.value)} disabled={isSaving}>
                     <option value="">직업 선택</option>
                     {JOB_OPTIONS.map(job => <option key={job} value={job}>{job}</option>)}
                 </select>
@@ -104,12 +67,7 @@ function SortableCharacterRow({
                         <div className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-400">
                             {row.role === 'SUPPORT' ? <Shield size={14} /> : <Swords size={14} />}
                         </div>
-                        <select
-                            className={`w-full appearance-none rounded-lg border px-2 py-2 pl-8 text-sm font-medium ${row.role === 'SUPPORT' ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/30' : 'border-zinc-200 bg-zinc-50 text-zinc-700 dark:border-zinc-700 dark:bg-zinc-800'}`}
-                            value={row.role}
-                            onChange={(e) => handleChangeRow(index, 'role', e.target.value as Role)}
-                            disabled={isSaving}
-                        >
+                        <select className={`w-full appearance-none rounded-lg border px-2 py-2 pl-8 text-sm font-medium ${row.role === 'SUPPORT' ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/30' : 'border-zinc-200 bg-zinc-50 text-zinc-700 dark:border-zinc-700 dark:bg-zinc-800'}`} value={row.role} onChange={(e) => handleChangeRow(index, 'role', e.target.value as Role)} disabled={isSaving}>
                             {ROLE_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
                         </select>
                     </div>
@@ -129,28 +87,24 @@ function SortableCharacterRow({
                         <input type="checkbox" checked={row.receiveBoundGold} onChange={(e) => handleChangeRow(index, 'receiveBoundGold', e.target.checked)} disabled={isSaving} className="h-3 w-3 shrink-0 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500 disabled:opacity-50 cursor-pointer" />
                         <span className="whitespace-nowrap">귀속</span>
                     </label>
-
                     {typeof row.itemLevel === 'number' && row.itemLevel >= 1740 && (
                         <label className="inline-flex select-none items-center gap-1 rounded-md border border-zinc-200 bg-white px-1.5 py-1 text-[11px] font-semibold text-zinc-600 shadow-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 hover:border-indigo-300 dark:hover:border-indigo-500 transition-colors cursor-pointer">
                             <input type="checkbox" checked={row.serkaNightmare} onChange={(e) => handleChangeRow(index, 'serkaNightmare', e.target.checked)} disabled={isSaving} className="h-3 w-3 shrink-0 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer" />
                             <span className="whitespace-nowrap">나메</span>
                         </label>
                     )}
-                    
                     {row.jobCode === '발키리' && (
                         <label className="inline-flex select-none items-center gap-1 rounded-md border border-zinc-200 bg-white px-1.5 py-1 text-[11px] font-semibold text-zinc-600 shadow-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 hover:border-indigo-300 dark:hover:border-indigo-500 transition-colors cursor-pointer">
                             <input type="checkbox" checked={row.valkyCanSupport} onChange={(e) => handleChangeRow(index, 'valkyCanSupport', e.target.checked)} disabled={isSaving} className="h-3 w-3 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer" />
                             <span className="whitespace-nowrap">서폿</span>
                         </label>
                     )}
-
                     {canDoAct2Single && (
                         <label className="inline-flex select-none items-center gap-1 rounded-md border border-indigo-200 bg-indigo-50 px-1.5 py-1 text-[11px] font-semibold text-indigo-700 shadow-sm dark:border-indigo-900/50 dark:bg-indigo-900/20 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-colors cursor-pointer">
                             <input type="checkbox" checked={row.singleRaids.includes('ACT2_NORMAL')} onChange={() => toggleSingle('ACT2_NORMAL')} disabled={isSaving} className="h-3 w-3 rounded border-indigo-300 text-indigo-600 focus:ring-indigo-500 dark:border-indigo-600 cursor-pointer" />
                             <span className="whitespace-nowrap">싱글2막</span>
                         </label>
                     )}
-                    
                     {canDoAct3Single && (
                         <label className="inline-flex select-none items-center gap-1 rounded-md border border-indigo-200 bg-indigo-50 px-1.5 py-1 text-[11px] font-semibold text-indigo-700 shadow-sm dark:border-indigo-900/50 dark:bg-indigo-900/20 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-colors cursor-pointer">
                             <input type="checkbox" checked={row.singleRaids.includes('ACT3_NORMAL')} onChange={() => toggleSingle('ACT3_NORMAL')} disabled={isSaving} className="h-3 w-3 rounded border-indigo-300 text-indigo-600 focus:ring-indigo-500 dark:border-indigo-600 cursor-pointer" />
@@ -170,14 +124,12 @@ function SortableCharacterRow({
 }
 
 export const CharacterFormList: React.FC<Props> = ({
-    discordName,
-    characters,
-    isLoading = false,
-    onSubmit,
-    onCancel,
-    onLoadByDiscordName
+    discordName, characters, isLoading = false, onSubmit, onCancel, onLoadByDiscordName
 }) => {
-    // 🌟 상태 선언 (에러 방지를 위해 최상단에 배치)
+    // ✨ Hook 
+    
+    const { confirm } = useConfirm();
+
     const [localDiscord, setLocalDiscord] = useState(discordName);
     const [localDiscordId, setLocalDiscordId] = useState(''); 
     const [rows, setRows] = useState<CharacterFormRow[]>([]);
@@ -253,7 +205,6 @@ export const CharacterFormList: React.FC<Props> = ({
         });
     };
 
-    // 🌟 로직: 검색된 원정대 캐릭터 추가
     const handleAddSelectedRoster = async () => {
         if (checkedRosterNames.size === 0) return;
         setIsSearchingRoster(true);
@@ -268,7 +219,7 @@ export const CharacterFormList: React.FC<Props> = ({
                     newRows.push({
                         uid: `api-${charName}-${Date.now()}`,
                         discordName: localDiscord,
-                        discordId: localDiscordId, // 상단 State 참조
+                        discordId: localDiscordId,
                         lostArkName: profile.CharacterName,
                         jobCode: profile.CharacterClassName,
                         role: getRoleFromClass(profile.CharacterClassName),
@@ -287,10 +238,12 @@ export const CharacterFormList: React.FC<Props> = ({
         setIsSearchingRoster(false);
     };
 
-    // 🌟 로직: 개별 캐릭터 추가
     const handleAddSingle = async () => {
         if (!searchSingleName.trim()) return;
-        if (rows.some(r => r.lostArkName === searchSingleName)) { alert('이미 추가된 캐릭터입니다.'); return; }
+        if (rows.some(r => r.lostArkName === searchSingleName)) { 
+            toast.error('이미 추가된 캐릭터입니다.'); // ✨
+            return; 
+        }
         try {
             setIsSearchingSingle(true);
             const profile = await fetchProfile(searchSingleName);
@@ -300,7 +253,7 @@ export const CharacterFormList: React.FC<Props> = ({
                 setRows(prev => [...prev, {
                     uid: `api-${profile.CharacterName}-${Date.now()}`,
                     discordName: localDiscord,
-                    discordId: localDiscordId, // 상단 State 참조
+                    discordId: localDiscordId,
                     lostArkName: profile.CharacterName,
                     jobCode: profile.CharacterClassName,
                     role: getRoleFromClass(profile.CharacterClassName),
@@ -313,7 +266,9 @@ export const CharacterFormList: React.FC<Props> = ({
                 }]);
                 setSearchSingleName('');
             }
-        } catch (e: any) { alert(`캐릭터 검색 실패: ${e.message}`); }
+        } catch (e: any) { 
+            toast.error(`캐릭터 검색 실패: ${e.message}`); // ✨
+        }
         finally { setIsSearchingSingle(false); }
     };
 
@@ -330,13 +285,18 @@ export const CharacterFormList: React.FC<Props> = ({
 
             setRosterList(over1680);
             setCheckedRosterNames(new Set<string>(over1680.slice(0, 6).map((s: any) => s.CharacterName)));
-        } catch (e: any) { alert(`원정대 검색 실패: ${e.message}`); }
+        } catch (e: any) { 
+            toast.error(`원정대 검색 실패: ${e.message}`); // ✨
+        }
         finally { setIsSearchingRoster(false); }
     };
 
     const handleFetchFromCloud = async () => {
         const trimmedName = localDiscord.trim();
-        if (!trimmedName) { alert('디스코드 닉네임을 먼저 입력해주세요.'); return; }
+        if (!trimmedName) { 
+            toast.error('디스코드 닉네임을 먼저 입력해주세요.'); // ✨
+            return; 
+        }
         try {
             setIsFetching(true);
             const myCharacters = onLoadByDiscordName(trimmedName);
@@ -351,9 +311,13 @@ export const CharacterFormList: React.FC<Props> = ({
                     receiveBoundGold: c.receiveBoundGold ?? false,
                     singleRaids: c.singleRaids || []
                 })));
-                alert(`${trimmedName}님의 캐릭터 데이터를 불러왔습니다.`);
-            } else { alert('저장된 데이터가 없습니다.'); }
-        } catch (e) { alert('데이터 불러오기 중 오류가 발생했습니다.'); }
+                toast.success(`${trimmedName}님의 캐릭터 데이터를 불러왔습니다.`); // ✨
+            } else { 
+                toast.info('저장된 데이터가 없습니다.'); // ✨
+            }
+        } catch (e) { 
+            toast.error('데이터 불러오기 중 오류가 발생했습니다.'); // ✨
+        }
         finally { setIsFetching(false); }
     };
 
@@ -390,8 +354,9 @@ export const CharacterFormList: React.FC<Props> = ({
         setRows(prev => [...prev, { uid: `new-${Date.now()}`, discordName: localDiscord, discordId: localDiscordId, jobCode: '', role: 'DPS', itemLevel: 1700, combatPower: '', serkaNightmare: false, valkyCanSupport: false, receiveBoundGold: false, singleRaids: [] }]);
     };
 
-    const handleRemoveRow = (index: number) => {
-        if (window.confirm('이 캐릭터를 삭제하시겠습니까?')) {
+    const handleRemoveRow = async (index: number) => {
+        // ✨ 모달 교체
+        if (await confirm('이 캐릭터를 삭제하시겠습니까?')) {
             setRows(prev => prev.filter((_, i) => i !== index));
         }
     };
@@ -433,7 +398,7 @@ export const CharacterFormList: React.FC<Props> = ({
             });
 
         if (cleaned.length === 0) { 
-            alert('최소 1개 이상의 캐릭터 정보를 입력해주세요.'); 
+            toast.error('최소 1개 이상의 캐릭터 정보를 입력해주세요.'); // ✨
             return; 
         }
         onSubmit(trimmedName, cleaned);
@@ -517,7 +482,7 @@ export const CharacterFormList: React.FC<Props> = ({
                                                 const next = new Set<string>(checkedRosterNames);
                                                 if(next.has(char.CharacterName)) next.delete(char.CharacterName);
                                                 else { 
-                                                    if(next.size >= 6) { alert('최대 6개까지 선택 가능합니다.'); return; } 
+                                                    if(next.size >= 6) { toast.error('최대 6개까지 선택 가능합니다.'); return; } // ✨
                                                     next.add(char.CharacterName); 
                                                 }
                                                 setCheckedRosterNames(next);

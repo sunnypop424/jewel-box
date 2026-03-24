@@ -1,4 +1,3 @@
-// src/components/RaidSequenceView.tsx
 import React, { useEffect, useMemo, useState } from 'react';
 import type {
   RaidSchedule,
@@ -24,6 +23,7 @@ import {
   UserCheck,
   UserX,
   ArrowLeftRight,
+  User,
 } from 'lucide-react';
 import { excludeCharactersOnRaid } from '../api/firebaseApi';
 
@@ -47,7 +47,10 @@ import { CSS } from '@dnd-kit/utilities';
 
 import { SwapModal } from './SwapModal';
 
-// 모드 타입
+// ✨ Toast 및 Confirm Hook 추가
+import { toast } from 'sonner';
+import { useConfirm } from '../hooks/useConfirm';
+
 type BalanceMode = 'overall' | 'role' | 'speed';
 
 // ----------------------------------------------------------------------
@@ -427,16 +430,15 @@ function StartRoster({
                     key={m.id}
                     className="flex items-center justify-between rounded-xl bg-white px-3 py-2 shadow-sm ring-1 ring-zinc-900/5 dark:bg-zinc-900 dark:ring-zinc-800 h-12"
                   >
-
-
                     <div className="flex items-center gap-3">
                       <div
-                        className={`flex h-8 w-8 items-center justify-center rounded-lg ${m.isGuest
+                        className={`flex h-8 w-8 items-center justify-center rounded-lg ${
+                          m.isGuest
                             ? 'bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400'
                             : m.role === 'SUPPORT'
                               ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400'
                               : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400'
-                          }`}
+                        }`}
                       >
                         {m.role === 'SUPPORT' ? (
                           <Shield size={16} />
@@ -454,8 +456,7 @@ function StartRoster({
                       </div>
                     </div>
                     <div className="flex items-center gap-3">
-
-                      {!m.isGuest && ( // ✅ 게스트가 아닐 때만 노출
+                      {!m.isGuest && (
                         <div className="text-right">
                           <div className="text-xs font-bold text-zinc-700 dark:text-zinc-300">
                             Lv.{m.itemLevel}
@@ -487,7 +488,7 @@ function StartRoster({
                     key={`empty-${run.runIndex}-${party.partyIndex}-${i}`}
                     className="flex items-center justify-center gap-2 rounded-xl border border-dashed border-zinc-200 py-3 text-xs text-zinc-400 dark:border-zinc-800 dark:text-zinc-600"
                   >
-                    빈 자리 (공팟)
+                    <User size={14} className="opacity-50 min-h-[30.5px]" /> 빈 자리 (공팟)
                   </div>
                 ))}
               </div>
@@ -589,23 +590,20 @@ export const RaidSequenceView: React.FC<Props> = ({
   inactiveUsers = new Set(),
   onToggleUser,
 }) => {
+  
+  const { confirm, ConfirmModal } = useConfirm();
 
   const SHOW_SERKA_FILTER = true;
 
-  // ✅ 1. 레이드 순서 상태
   const [raidOrder, setRaidOrder] = useState<RaidId[]>(INITIAL_RAID_ORDER);
 
-  // ✅ 2. 레이드 필터 상태
   const [selectedRaids, setSelectedRaids] = useState<Set<RaidId>>(
     () => new Set(INITIAL_RAID_ORDER.filter((id) => SHOW_SERKA_FILTER || !id.startsWith('SERKA_'))),
   );
 
-  // ❌ 로컬 상태로 관리하던 selectedUsers, toggleUser 관련 로직은 제거 (글로벌 onToggleUser로 대체)
-
   const [swapTarget, setSwapTarget] = useState<{ raidId: RaidId; char: Character } | null>(null);
   const [isSwappingLocal, setIsSwappingLocal] = useState(false);
 
-  // 부모가 주는 값 + 로컬 값 합치기
   const isSwapping = isSwappingFromParent || isSwappingLocal;
 
   const [localExclusions, setLocalExclusions] = useState<RaidExclusionMap>(exclusions ?? {});
@@ -640,14 +638,12 @@ export const RaidSequenceView: React.FC<Props> = ({
     }
   };
 
-  // ✅ [수정] 스케줄 자체는 이미 App.tsx에서 유저가 제외된 상태로 재생성되어 내려옵니다.
-  // 여기서는 레이드 종류(selectedRaids)만 필터링합니다.
   const filteredSchedule = useMemo(() => {
     if (!schedule) return null;
 
     const fs: RaidSchedule = {
-      ACT2_HARD: [], // 🌟 추가
-      ACT3_HARD: [], // 🌟 추가
+      ACT2_HARD: [],
+      ACT3_HARD: [],
       ACT4_NORMAL: [],
       ACT4_HARD: [],
       SERKA_NORMAL: [],
@@ -673,13 +669,11 @@ export const RaidSequenceView: React.FC<Props> = ({
     return fs;
   }, [schedule, selectedRaids]);
 
-  // ✅ 시퀀스 생성
   const { groups } = useMemo(() => {
     if (!filteredSchedule) return { groups: [] };
     return buildSequence(filteredSchedule, raidOrder);
   }, [filteredSchedule, raidOrder]);
 
-  // ✅ 동시 진행 그룹 번들링
   const bundledGroups = useMemo(() => {
     const bundles: Array<typeof groups> = [];
     let i = 0;
@@ -731,7 +725,6 @@ export const RaidSequenceView: React.FC<Props> = ({
     const difficulty = meta.difficulty;
     const diffStyle = getDifficultyStyle(difficulty);
 
-    // 🌟 여기를 수정합니다 (기존 삼항 연산자 제거 후 조건문으로 변경)
     let titleClass = '';
     let labelClass = '';
 
@@ -745,7 +738,6 @@ export const RaidSequenceView: React.FC<Props> = ({
       titleClass = 'text-orange-600 dark:text-orange-400';
       labelClass = 'text-orange-800/60 dark:text-orange-300/60';
     } else {
-      // NIGHTMARE 및 기타
       titleClass = 'text-violet-600 dark:text-violet-400';
       labelClass = 'text-violet-800/60 dark:text-violet-300/60';
     }
@@ -789,7 +781,7 @@ export const RaidSequenceView: React.FC<Props> = ({
     const completeBtnKey = `${step.raidId}-${step.run.runIndex}`;
     const isCompleting = completingKey === completeBtnKey;
 
-    const realMembers = currentVisibleMembers.filter(m => !m.isGuest); // ✅ 실제 인원만 추출
+    const realMembers = currentVisibleMembers.filter(m => !m.isGuest);
     const dpsMembers = realMembers.filter((m) => resolveRole(m) === 'DPS');
     const supMembers = realMembers.filter((m) => resolveRole(m) === 'SUPPORT');
 
@@ -819,7 +811,7 @@ export const RaidSequenceView: React.FC<Props> = ({
             disabled={swapDisabled}
             onClick={() => {
               if (swapDisabled) {
-                alert(completingKey ? '레이드 완료 처리 중입니다.' : '캐릭터 변경 반영 중입니다.');
+                toast.error(completingKey ? '레이드 완료 처리 중입니다.' : '캐릭터 변경 반영 중입니다.');
                 return;
               }
               setSwapTarget({ raidId, char });
@@ -834,7 +826,6 @@ export const RaidSequenceView: React.FC<Props> = ({
       </div>
     );
 
-    // hideTimeline true면 Dot/Line 제거
     if (hideTimeline) {
       return (
         <div key={`${step.raidId}-${step.run.runIndex}`} className="relative">
@@ -894,12 +885,12 @@ export const RaidSequenceView: React.FC<Props> = ({
                     disabled={completeTargetIds.length === 0 || isCompleting || isSwapping}
                     onClick={async () => {
                       if (isSwapping) {
-                        alert('캐릭터 변경 반영 중입니다. 잠시 후 다시 시도해주세요.');
+                        toast.error('캐릭터 변경 반영 중입니다. 잠시 후 다시 시도해주세요.');
                         return;
                       }
 
-                      const ok = window.confirm(
-                        `${meta.label} #${step.run.runIndex} 공격대를 완료 처리할까요?\n이 공격대의 멤버들이 이 레이드에서 제외됩니다.`,
+                      const ok = await confirm(
+                        `${meta.label} #${step.run.runIndex} 공격대를 완료 처리할까요?\n이 공격대의 멤버들이 이 레이드에서 제외됩니다.`
                       );
                       if (!ok) return;
 
@@ -912,7 +903,7 @@ export const RaidSequenceView: React.FC<Props> = ({
                         onExclusionsUpdated?.(next);
                       } catch (e) {
                         console.error(e);
-                        alert('레이드 완료 처리 실패');
+                        toast.error('레이드 완료 처리 실패');
                       } finally {
                         setCompletingKey(null);
                       }
@@ -1068,12 +1059,12 @@ export const RaidSequenceView: React.FC<Props> = ({
                   disabled={completeTargetIds.length === 0 || isCompleting || isSwapping}
                   onClick={async () => {
                     if (isSwapping) {
-                      alert('캐릭터 변경 반영 중입니다. 잠시 후 다시 시도해주세요.');
+                      toast.error('캐릭터 변경 반영 중입니다. 잠시 후 다시 시도해주세요.');
                       return;
                     }
 
-                    const ok = window.confirm(
-                      `${meta.label} #${step.run.runIndex} 공격대를 완료 처리할까요?\n이 공격대의 멤버들이 이 레이드에서 제외됩니다.`,
+                    const ok = await confirm(
+                      `${meta.label} #${step.run.runIndex} 공격대를 완료 처리할까요?\n이 공격대의 멤버들이 이 레이드에서 제외됩니다.`
                     );
                     if (!ok) return;
 
@@ -1085,7 +1076,7 @@ export const RaidSequenceView: React.FC<Props> = ({
                       onExclusionsUpdated?.(next);
                     } catch (e) {
                       console.error(e);
-                      alert('레이드 완료 처리 실패');
+                      toast.error('레이드 완료 처리 실패');
                     } finally {
                       setCompletingKey(null);
                     }
@@ -1183,7 +1174,6 @@ export const RaidSequenceView: React.FC<Props> = ({
       {/* ✅ User Filter Controls */}
       <div className="relative z-30 md:sticky md:top-0 flex flex-col gap-3 rounded-2xl border border-zinc-200 bg-white/90 px-4 py-3 shadow-sm backdrop-blur-md dark:border-zinc-800 dark:bg-zinc-900/90">
         {/* 유저 필터 */}
-        {/* ✅ [수정] 글로벌 유저 필터 컨트롤 */}
         {allUserNames.length > 0 && onToggleUser && (
           <div className="flex flex-col gap-2">
             <div className="flex items-center gap-2 text-sm font-semibold text-zinc-600 dark:text-zinc-400">
@@ -1340,7 +1330,7 @@ export const RaidSequenceView: React.FC<Props> = ({
             if (!onSwapCharacter) return;
 
             if (completingKey !== null) {
-              alert('레이드 완료 처리 중입니다. 잠시 후 다시 시도해주세요.');
+              toast.error('레이드 완료 처리 중입니다. 잠시 후 다시 시도해주세요.');
               return;
             }
 
@@ -1350,13 +1340,16 @@ export const RaidSequenceView: React.FC<Props> = ({
               setSwapTarget(null);
             } catch (e) {
               console.error(e);
-              alert('캐릭터 교체 실패');
+              toast.error('캐릭터 교체 실패');
             } finally {
               setIsSwappingLocal(false);
             }
           }}
         />
       )}
+
+      {/* ✨ ConfirmModal 마운트 */}
+      <ConfirmModal />
     </div>
   );
 };

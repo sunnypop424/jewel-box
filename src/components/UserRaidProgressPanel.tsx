@@ -3,6 +3,9 @@ import { User, Shield, Swords, Coins, RefreshCw } from 'lucide-react';
 import { RAID_META } from '../constants';
 import type { Character, RaidId, RaidExclusionMap, RaidSchedule } from '../types';
 
+// ✨ Hook 추가
+import { useConfirm } from '../hooks/useConfirm';
+
 type RaidProgressState = 'DONE' | 'ASSIGNED' | 'UNASSIGNED';
 
 export const RAID_ORDER_FOR_PROGRESS: RaidId[] = [
@@ -80,6 +83,8 @@ export function UserRaidProgressPanel({
     onRefreshUser,
     onResetAccumulatedGold,
 }: UserRaidProgressPanelProps) {
+    const { confirm, ConfirmModal } = useConfirm(); // ✨ Confirm Hook
+    
     const [refreshingId, setRefreshingId] = useState<string | null>(null);
     const [refreshingUser, setRefreshingUser] = useState<string | null>(null);
     const assignedByRaid = useMemo(() => buildAssignedIndex(schedule), [schedule]);
@@ -336,9 +341,11 @@ export function UserRaidProgressPanel({
                                                             <button
                                                                 onClick={async () => {
                                                                     if (onRefreshCharacter && !refreshingId) {
-                                                                        const isConfirmed = window.confirm(
+                                                                        // ✨ 커스텀 confirm 으로 교체
+                                                                        const isConfirmed = await confirm(
                                                                             `${c.lostArkName}의 정보를 업데이트 하시겠습니까?\n\n` +
-                                                                            `※ 안내: 전체 갱신과 달리, 캐릭터 정보 업데이트는 현재 전투력이 이전보다 낮아진 경우(의도적인 스펙 하락)에도 그대로 반영됩니다.`
+                                                                            `※ 안내: 전체 갱신과 달리, 캐릭터 정보 업데이트는 현재 전투력이 이전보다 낮아진 경우(의도적인 스펙 하락)에도 그대로 반영됩니다.`,
+                                                                            '캐릭터 정보 갱신'
                                                                         );
                                                                         if (!isConfirmed) return;
 
@@ -401,20 +408,17 @@ export function UserRaidProgressPanel({
                                                             <label
                                                                 key={raidId}
                                                                 className={`flex items-center justify-between rounded-lg border px-2.5 py-2 transition-all ${isDone
-                                                                        ? 'bg-zinc-100/50 border-transparent opacity-60 cursor-default dark:bg-zinc-900/30 dark:border-transparent'
-                                                                        : 'bg-white border-zinc-200 cursor-pointer hover:border-indigo-300 hover:bg-indigo-50/50 dark:bg-zinc-900 dark:border-zinc-700 dark:hover:border-indigo-500/50 dark:hover:bg-indigo-900/30 shadow-sm'
+                                                                    ? 'bg-zinc-100/50 border-transparent opacity-60 cursor-default dark:bg-zinc-900/30 dark:border-transparent'
+                                                                    : 'bg-white border-zinc-200 cursor-pointer hover:border-indigo-300 hover:bg-indigo-50/50 dark:bg-zinc-900 dark:border-zinc-700 dark:hover:border-indigo-500/50 dark:hover:bg-indigo-900/30 shadow-sm'
                                                                     }`}
                                                             >
                                                                 <div className="flex items-center gap-2.5">
                                                                     <input
                                                                         type="checkbox"
                                                                         checked={isDone}
+                                                                        // ✨ 불필요한 confirm 제거. 체크 시 바로 onMarkRaidComplete 호출 ✨
                                                                         onChange={() => {
-                                                                            const actionText = isDone ? '완료를 취소' : '완료';
-                                                                            const confirmed = window.confirm(`${c.discordName}님의 Lv.${c.itemLevel} ${c.jobCode}, \n${meta.label} 레이드를 ${actionText}하시겠습니까?`);
-                                                                            if (confirmed) {
-                                                                                onMarkRaidComplete?.(raidId, c.id, isDone);
-                                                                            }
+                                                                            onMarkRaidComplete?.(raidId, c.id, isDone);
                                                                         }}
                                                                         className="h-3.5 w-3.5 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer dark:border-zinc-600 dark:bg-zinc-800"
                                                                     />
@@ -451,6 +455,9 @@ export function UserRaidProgressPanel({
                     );
                 })}
             </div>
+            
+            {/* ✨ 최상단 커스텀 Confirm 모달 렌더링 컨테이너 */}
+            <ConfirmModal />
         </div>
     );
 }
