@@ -525,7 +525,7 @@ const App: React.FC = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isManageMenuOpen, setIsManageMenuOpen] = useState(false);
   const [isToolMenuOpen, setIsToolMenuOpen] = useState(false);
-  const [isGameMenuOpen, setIsGameMenuOpen] = useState(false);
+  const [isGameMenuOpen, setIsGameMenuOpen] = useState(true);
   const toggleSidebar = () => setIsSidebarOpen(!isSidebarOpen);
   const handleNavClick = (path: string) => {
     navigate(path);
@@ -589,6 +589,25 @@ const App: React.FC = () => {
 
   <div className="my-3 h-px bg-zinc-100 dark:bg-zinc-800" />
 
+  
+  <button
+    onClick={() => setIsGameMenuOpen((prev) => !prev)}
+    className="flex w-full items-center justify-between rounded-xl px-4 py-3 text-sm font-bold text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+  >
+    <span className="flex items-center gap-3">
+      <Orbit size={18} /> 게임
+    </span>
+    <ChevronDown size={16} className={isGameMenuOpen ? 'rotate-180 transition-transform' : 'transition-transform'} />
+  </button>
+
+  {isGameMenuOpen && (
+    <div className="ml-3 flex flex-col gap-1 border-l border-zinc-200 pl-3 dark:border-zinc-800">
+      <button onClick={() => setIsLadderModalOpen(true)} className={subMenuButtonClass}>경매 사다리 타기</button>
+      <button onClick={() => setIsRouletteModalOpen(true)} className={subMenuButtonClass}>경매 룰렛</button>
+      <button onClick={() => setIsPinballModalOpen(true)} className={subMenuButtonClass}>마블 레이스</button>
+    </div>
+  )}
+
   <button
     onClick={() => setIsManageMenuOpen((prev) => !prev)}
     className="flex w-full items-center justify-between rounded-xl px-4 py-3 text-sm font-bold text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
@@ -634,23 +653,6 @@ const App: React.FC = () => {
     </div>
   )}
 
-  <button
-    onClick={() => setIsGameMenuOpen((prev) => !prev)}
-    className="flex w-full items-center justify-between rounded-xl px-4 py-3 text-sm font-bold text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
-  >
-    <span className="flex items-center gap-3">
-      <Orbit size={18} /> 게임
-    </span>
-    <ChevronDown size={16} className={isGameMenuOpen ? 'rotate-180 transition-transform' : 'transition-transform'} />
-  </button>
-
-  {isGameMenuOpen && (
-    <div className="ml-3 flex flex-col gap-1 border-l border-zinc-200 pl-3 dark:border-zinc-800">
-      <button onClick={() => setIsLadderModalOpen(true)} className={subMenuButtonClass}>경매 사다리 타기</button>
-      <button onClick={() => setIsRouletteModalOpen(true)} className={subMenuButtonClass}>경매 룰렛</button>
-      <button onClick={() => setIsPinballModalOpen(true)} className={subMenuButtonClass}>마블 레이스</button>
-    </div>
-  )}
 </nav>
         </div>
 
