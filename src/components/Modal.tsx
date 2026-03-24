@@ -30,7 +30,7 @@ export const Modal: React.FC<ModalProps> = ({
       
       {/* Content */}
       {/* 🌟 max-w-3xl 자리에 maxWidth 변수 적용 */}
-      <div className={`font-['Paperozi'] relative z-10 w-full ${maxWidth} transform overflow-hidden rounded-3xl bg-white shadow-2xl ring-1 ring-zinc-900/5 transition-all dark:bg-zinc-900 dark:ring-zinc-800`}>
+      <div className={`relative z-10 w-full ${maxWidth} transform overflow-hidden rounded-3xl bg-white shadow-2xl ring-1 ring-zinc-900/5 transition-all dark:bg-zinc-900 dark:ring-zinc-800`}>
         <div className="flex items-center justify-between border-b border-zinc-100 bg-white/50 px-6 py-4 backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/50">
           <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">
             {title ?? '정보'}

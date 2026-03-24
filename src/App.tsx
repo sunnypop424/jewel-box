@@ -31,9 +31,9 @@ import { PinballGame } from './components/PinballGame';
 import { AuctionCalculatorModal } from './components/AuctionCalculatorModal';
 import { GatheringModal } from './components/GatheringModal'; 
 import {
-  Swords, Sun, Moon, UserCog, RefreshCw, LayoutDashboard, Eraser,
-  ClipboardList, ChartGantt, Menu, X, Users, ChevronDown, Waypoints,
-  CircleDot, Orbit, Calculator, Megaphone 
+  Swords, Sun, Moon, UserCog, LayoutDashboard, 
+  ClipboardList, ChartGantt, Menu, X, Users, ChevronDown,  
+  Orbit, Megaphone 
 } from 'lucide-react';
 
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
@@ -523,12 +523,25 @@ const App: React.FC = () => {
   };
 
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isManageMenuOpen, setIsManageMenuOpen] = useState(false);
+  const [isToolMenuOpen, setIsToolMenuOpen] = useState(false);
+  const [isGameMenuOpen, setIsGameMenuOpen] = useState(false);
   const toggleSidebar = () => setIsSidebarOpen(!isSidebarOpen);
   const handleNavClick = (path: string) => {
     navigate(path);
     setIsSidebarOpen(false);
   };
   const isActive = (path: string) => location.pathname === path;
+
+  const navButtonClass = (active: boolean) =>
+  `flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-bold transition-all ${
+    active
+      ? 'bg-indigo-50 text-indigo-700 shadow-sm ring-1 ring-indigo-200 dark:bg-indigo-900/20 dark:text-indigo-300 dark:ring-indigo-900/40'
+      : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800'
+  }`;
+
+  const subMenuButtonClass =
+  'rounded-lg px-3 py-2 text-left text-sm font-medium text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100';
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-zinc-50 font-sans text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
@@ -557,72 +570,88 @@ const App: React.FC = () => {
         </div>
 
         <div className="flex-1 overflow-y-auto px-4 py-4">
-          <nav className="flex flex-col gap-1.5">
-            <div className="mb-2 px-2 text-xs font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
-              Main Menu
-            </div>
+<nav className="flex flex-col gap-2">
+  <div className="mb-2 px-2 text-xs font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+    운영
+  </div>
 
-            <button onClick={() => handleNavClick('/')} className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-bold transition-all ${isActive('/') ? 'bg-indigo-50 text-indigo-700 shadow-sm ring-1 ring-indigo-200 dark:bg-indigo-900/20 dark:text-indigo-300 dark:ring-indigo-900/40' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800'}`}>
-              <LayoutDashboard size={18} /> 개인별 진행 현황
-            </button>
+  <button onClick={() => handleNavClick('/')} className={navButtonClass(isActive('/'))}>
+    <LayoutDashboard size={18} /> 개인별 진행 현황
+  </button>
 
-            <button onClick={() => handleNavClick('/schedule')} className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-bold transition-all ${isActive('/schedule') ? 'bg-indigo-50 text-indigo-700 shadow-sm ring-1 ring-indigo-200 dark:bg-indigo-900/20 dark:text-indigo-300 dark:ring-indigo-900/40' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800'}`}>
-              <ClipboardList size={18} /> 레이드 배정 결과
-            </button>
+  <button onClick={() => handleNavClick('/schedule')} className={navButtonClass(isActive('/schedule'))}>
+    <ClipboardList size={18} /> 레이드 배정 결과
+  </button>
 
-            <button onClick={() => handleNavClick('/sequence')} className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-bold transition-all ${isActive('/sequence') ? 'bg-indigo-50 text-indigo-700 shadow-sm ring-1 ring-indigo-200 dark:bg-indigo-900/20 dark:text-indigo-300 dark:ring-indigo-900/40' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800'}`}>
-              <ChartGantt size={18} /> 레이드 진행 순서
-            </button>
+  <button onClick={() => handleNavClick('/sequence')} className={navButtonClass(isActive('/sequence'))}>
+    <ChartGantt size={18} /> 레이드 진행 순서
+  </button>
 
-            <div className="my-4 h-px bg-zinc-100 dark:bg-zinc-800" />
+  <div className="my-3 h-px bg-zinc-100 dark:bg-zinc-800" />
 
-            <div className="mb-2 px-2 text-xs font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">Party</div>
+  <button
+    onClick={() => setIsManageMenuOpen((prev) => !prev)}
+    className="flex w-full items-center justify-between rounded-xl px-4 py-3 text-sm font-bold text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+  >
+    <span className="flex items-center gap-3">
+      <UserCog size={18} /> 관리
+    </span>
+    <ChevronDown size={16} className={isManageMenuOpen ? 'rotate-180 transition-transform' : 'transition-transform'} />
+  </button>
 
-            <button onClick={() => setIsGatheringModalOpen(true)} className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-bold text-zinc-600 transition-colors hover:bg-indigo-50 hover:text-indigo-600 dark:text-zinc-400 dark:hover:bg-indigo-900/20 dark:hover:text-indigo-400">
-              <Megaphone size={18} /> 레이드 파티 모집
-            </button>
+  {isManageMenuOpen && (
+    <div className="ml-3 flex flex-col gap-1 border-l border-zinc-200 pl-3 dark:border-zinc-800">
+      <button onClick={() => setIsModalOpen(true)} className={subMenuButtonClass}>
+        내 원정대 관리
+      </button>
+      <button onClick={handleRefresh} disabled={loading || saving || isSwapping} className={subMenuButtonClass}>
+        전체 전투력 갱신
+      </button>
+      <button onClick={handleResetExclusions} disabled={loadingExclusions || isSwapping} className={`${subMenuButtonClass} text-rose-600 dark:text-rose-400`}>
+        레이드 완료 내역 초기화
+      </button>
+    </div>
+  )}
 
-            <div className="my-4 h-px bg-zinc-100 dark:bg-zinc-800" />
+  <button
+    onClick={() => setIsToolMenuOpen((prev) => !prev)}
+    className="flex w-full items-center justify-between rounded-xl px-4 py-3 text-sm font-bold text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+  >
+    <span className="flex items-center gap-3">
+      <Megaphone size={18} /> 도구
+    </span>
+    <ChevronDown size={16} className={isToolMenuOpen ? 'rotate-180 transition-transform' : 'transition-transform'} />
+  </button>
 
-            <div className="mb-2 px-2 text-xs font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">Actions</div>
+  {isToolMenuOpen && (
+    <div className="ml-3 flex flex-col gap-1 border-l border-zinc-200 pl-3 dark:border-zinc-800">
+      <button onClick={() => setIsGatheringModalOpen(true)} className={subMenuButtonClass}>
+        레이드 파티 모집
+      </button>
+      <button onClick={() => setIsCalcOpen(true)} className={subMenuButtonClass}>
+        경매 입찰 계산기
+      </button>
+    </div>
+  )}
 
-            <button onClick={() => setIsModalOpen(true)} className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-bold text-zinc-600 transition-colors hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800">
-              <UserCog size={18} /> 내 원정대 관리
-            </button>
+  <button
+    onClick={() => setIsGameMenuOpen((prev) => !prev)}
+    className="flex w-full items-center justify-between rounded-xl px-4 py-3 text-sm font-bold text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+  >
+    <span className="flex items-center gap-3">
+      <Orbit size={18} /> 게임
+    </span>
+    <ChevronDown size={16} className={isGameMenuOpen ? 'rotate-180 transition-transform' : 'transition-transform'} />
+  </button>
 
-            <button onClick={handleRefresh} disabled={loading || saving || isSwapping} className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-bold text-zinc-600 transition-colors hover:bg-zinc-100 disabled:opacity-50 dark:text-zinc-400 dark:hover:bg-zinc-800">
-              <RefreshCw size={18} className={loading ? 'animate-spin' : ''} /> 전체 전투력 갱신
-            </button>
-
-            <button onClick={handleResetExclusions} disabled={loadingExclusions || isSwapping} className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-bold text-zinc-600 transition-colors hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50 dark:text-zinc-400 dark:hover:bg-rose-900/20 dark:hover:text-rose-400">
-              <Eraser size={18} /> 레이드 완료 내역 초기화
-            </button>
-
-            <div className="my-4 h-px bg-zinc-100 dark:bg-zinc-800" />
-
-            <div className="mb-2 px-2 text-xs font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">Games</div>
-
-            <button onClick={() => setIsLadderModalOpen(true)} className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-bold text-zinc-600 transition-colors hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800">
-              <Waypoints size={18} /> 경매 사다리 타기
-            </button>
-
-            <button onClick={() => setIsRouletteModalOpen(true)} className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-bold text-zinc-600 transition-colors hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800">
-              <CircleDot size={18} /> 경매 룰렛
-            </button>
-
-            <button onClick={() => setIsPinballModalOpen(true)} className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-bold text-zinc-600 transition-colors hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800">
-              <Orbit size={18} /> 마블 레이스
-            </button>
-            
-            <div className="my-4 h-px bg-zinc-100 dark:bg-zinc-800" />
-
-            <div className="mb-2 px-2 text-xs font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">Utilities</div>
-
-            <button onClick={() => setIsCalcOpen(true)} className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-bold text-zinc-600 transition-colors hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800">
-              <Calculator size={18} /> 경매 입찰 계산기
-            </button>
-
-          </nav>
+  {isGameMenuOpen && (
+    <div className="ml-3 flex flex-col gap-1 border-l border-zinc-200 pl-3 dark:border-zinc-800">
+      <button onClick={() => setIsLadderModalOpen(true)} className={subMenuButtonClass}>경매 사다리 타기</button>
+      <button onClick={() => setIsRouletteModalOpen(true)} className={subMenuButtonClass}>경매 룰렛</button>
+      <button onClick={() => setIsPinballModalOpen(true)} className={subMenuButtonClass}>마블 레이스</button>
+    </div>
+  )}
+</nav>
         </div>
 
         <div className="border-t border-zinc-100 p-4 dark:border-zinc-800">
