@@ -3,8 +3,9 @@ import { User, Shield, Swords, Coins, RefreshCw } from 'lucide-react';
 import { RAID_META } from '../constants';
 import type { Character, RaidId, RaidExclusionMap, RaidSchedule } from '../types';
 
-// ✨ Hook 추가
+// ✨ Hook 및 Toast 추가
 import { useConfirm } from '../hooks/useConfirm';
+import { toast } from 'sonner'; 
 
 type RaidProgressState = 'DONE' | 'ASSIGNED' | 'UNASSIGNED';
 
@@ -83,7 +84,7 @@ export function UserRaidProgressPanel({
     onRefreshUser,
     onResetAccumulatedGold,
 }: UserRaidProgressPanelProps) {
-    const { confirm, ConfirmModal } = useConfirm(); // ✨ Confirm Hook
+    const { confirm, ConfirmModal } = useConfirm(); 
     
     const [refreshingId, setRefreshingId] = useState<string | null>(null);
     const [refreshingUser, setRefreshingUser] = useState<string | null>(null);
@@ -200,7 +201,6 @@ export function UserRaidProgressPanel({
                     const boundPercent = totalPossibleGold > 0 ? (userCollectedBound / totalPossibleGold) * 100 : 0;
                     const totalPercent = totalPossibleGold > 0 ? (totalCollectedGold / totalPossibleGold) * 100 : 0;
 
-                    // ✨ 누적 골드 현황 (과거 DB값 + 이번 주 완료액 실시간 합산) ✨
                     const userAccGold = accumulatedGold?.[discordName] || { general: 0, bound: 0 };
                     const displayGeneral = Math.max(0, userAccGold.general + userCollectedGeneral);
                     const displayBound = Math.max(0, userAccGold.bound + userCollectedBound);
@@ -246,20 +246,16 @@ export function UserRaidProgressPanel({
                                                     귀속 <span className="text-orange-600 dark:text-orange-400">{userCollectedBound.toLocaleString()}G</span> / {userTotalBound.toLocaleString()}G
                                                 </span>
                                             </div>
-
                                         </div>
                                     </div>
 
-                                    {/* ✨ 누적 골드 표기 및 초기화 영역 ✨ */}
                                     <div className="mt-1.5 flex flex-wrap items-center gap-2.5 lg:justify-end">
                                         <div className="flex flex-wrap items-center gap-2 text-[12px] sm:text-[13px]">
-                                            {/* 누적 총액 뱃지 */}
                                             <div className="flex items-center gap-1 px-1.5 py-0.5 rounded text-zinc-700 bg-zinc-50 dark:text-zinc-300 dark:bg-zinc-900/30 font-bold">
                                                 <Coins size={12} />
                                                 전체 누적 {totalAccGold.toLocaleString()}G
                                             </div>
 
-                                            {/* 세부 내역 (일반/귀속) */}
                                             <div className="flex items-center gap-1.5 font-medium text-zinc-500 dark:text-zinc-400">
                                                 <span>
                                                     일반 <span className="text-amber-600 dark:text-amber-400 font-bold">{displayGeneral.toLocaleString()}G</span>
@@ -271,7 +267,6 @@ export function UserRaidProgressPanel({
                                             </div>
                                         </div>
 
-                                        {/* 초기화 버튼 */}
                                         {onResetAccumulatedGold && (
                                             <button
                                                 onClick={() => onResetAccumulatedGold(discordName, userCollectedGeneral, userCollectedBound)}
@@ -282,7 +277,6 @@ export function UserRaidProgressPanel({
                                             </button>
                                         )}
                                     </div>
-
                                 </div>
 
                                 <div className="mt-1 flex items-center gap-2 sm:gap-3">
@@ -311,7 +305,6 @@ export function UserRaidProgressPanel({
                                             key={c.id}
                                             className="group flex h-full flex-col gap-3 rounded-xl bg-zinc-50/50 p-4 shadow-sm ring-1 ring-zinc-900/5 transition-all hover:shadow-md dark:bg-zinc-950/50 dark:ring-zinc-800"
                                         >
-
                                             <div className="flex flex-col gap-3">
                                                 <div className="flex items-center justify-between">
                                                     <div className="flex items-center gap-3">
@@ -341,7 +334,6 @@ export function UserRaidProgressPanel({
                                                             <button
                                                                 onClick={async () => {
                                                                     if (onRefreshCharacter && !refreshingId) {
-                                                                        // ✨ 커스텀 confirm 으로 교체
                                                                         const isConfirmed = await confirm(
                                                                             `${c.lostArkName}의 정보를 업데이트 하시겠습니까?\n\n` +
                                                                             `※ 안내: 전체 갱신과 달리, 캐릭터 정보 업데이트는 현재 전투력이 이전보다 낮아진 경우(의도적인 스펙 하락)에도 그대로 반영됩니다.`,
@@ -404,6 +396,8 @@ export function UserRaidProgressPanel({
                                                         const isAct3Single = raidId.startsWith('ACT3_') && c.singleRaids?.includes('ACT3_NORMAL');
                                                         const isSingle = isAct2Single || isAct3Single;
 
+                                                        const raidLabel = isSingle ? (raidId.startsWith('ACT2_') ? '2막 노말' : '3막 노말') : meta.label;
+
                                                         return (
                                                             <label
                                                                 key={raidId}
@@ -416,14 +410,20 @@ export function UserRaidProgressPanel({
                                                                     <input
                                                                         type="checkbox"
                                                                         checked={isDone}
-                                                                        // ✨ 불필요한 confirm 제거. 체크 시 바로 onMarkRaidComplete 호출 ✨
                                                                         onChange={() => {
                                                                             onMarkRaidComplete?.(raidId, c.id, isDone);
+                                                                            // ✨ Toast 알림 추가
+                                                                            const charName = c.lostArkName || c.jobCode;
+                                                                            if (!isDone) {
+                                                                                toast.success(`${charName} 캐릭터의 ${raidLabel} 레이드 완료 처리하였습니다.`);
+                                                                            } else {
+                                                                                toast.success(`${charName} 캐릭터의 ${raidLabel} 레이드 완료를 취소 처리하였습니다.`);
+                                                                            }
                                                                         }}
                                                                         className="h-3.5 w-3.5 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer dark:border-zinc-600 dark:bg-zinc-800"
                                                                     />
                                                                     <span className={`text-xs font-bold transition-colors ${isDone ? 'text-zinc-400 line-through dark:text-zinc-600' : 'text-zinc-700 dark:text-zinc-200'}`}>
-                                                                        {isSingle ? (raidId.startsWith('ACT2_') ? '2막 노말' : '3막 노말') : meta.label}
+                                                                        {raidLabel}
                                                                         {isSingle && <span className="ml-1 text-blue-400">(싱글)</span>}
                                                                     </span>
                                                                 </div>
@@ -446,7 +446,6 @@ export function UserRaidProgressPanel({
                                                     })
                                                 )}
                                             </div>
-
                                         </div>
                                     );
                                 })}
@@ -456,7 +455,6 @@ export function UserRaidProgressPanel({
                 })}
             </div>
             
-            {/* ✨ 최상단 커스텀 Confirm 모달 렌더링 컨테이너 */}
             <ConfirmModal />
         </div>
     );
