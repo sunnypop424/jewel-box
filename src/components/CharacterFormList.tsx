@@ -454,7 +454,7 @@ export const CharacterFormList: React.FC<Props> = ({
                 <h4 className="flex items-center gap-2 text-sm font-bold text-indigo-700 dark:text-indigo-400">
                     <Users size={18} /> 로스트아크 연동
                 </h4>
-                <div className="grid gap-4 md:grid-cols-2">
+                <div className="flex flex-col md:grid gap-4 md:grid-cols-2">
                     <div className="w-full space-y-3 rounded-xl border border-zinc-200 bg-white p-4 dark:bg-zinc-900 dark:border-zinc-700 shadow-sm">
                         <label className="text-xs font-bold text-zinc-500 flex items-center gap-1.5"><Info size={14}/> 1680+ 원정대 가져오기</label>
                         <div className="flex flex-col gap-2 sm:flex-row">
