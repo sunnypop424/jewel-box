@@ -46,8 +46,6 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 
 import { SwapModal } from './SwapModal';
-
-// ✨ Toast 및 Confirm Hook 추가
 import { toast } from 'sonner';
 import { useConfirm } from '../hooks/useConfirm';
 
@@ -67,7 +65,7 @@ const INITIAL_RAID_ORDER: RaidId[] = [
   'SERKA_NIGHTMARE',
   'HORIZON_STEP1',
   'HORIZON_STEP2',
-  'HORIZON_STEP3'
+  'HORIZON_STEP3',
 ];
 
 const DIFF_LABEL = {
@@ -76,7 +74,7 @@ const DIFF_LABEL = {
   NIGHTMARE: '나이트메어',
   STEP1: '1단계',
   STEP2: '2단계',
-  STEP3: '3단계'
+  STEP3: '3단계',
 } as const;
 
 function getDifficultyStyle(diff: string) {
@@ -136,6 +134,7 @@ interface ParticipantGroup {
 }
 
 type Role = 'DPS' | 'SUPPORT';
+
 const SUPPORT_JOBS = new Set(
   ['BARD', 'PALADIN', 'HOLYKNIGHT', 'ARTIST'].map((s) => s.toUpperCase()),
 );
@@ -332,6 +331,7 @@ function CharacterBadge({
   let bgClass = '';
   let textClass = '';
   let borderClass = '';
+
   if (char.isGuest) {
     bgClass = 'bg-amber-50 dark:bg-amber-950/40';
     textClass = 'text-amber-700 dark:text-amber-400 font-bold';
@@ -428,7 +428,7 @@ function StartRoster({
                 {visibleMembers.map((m) => (
                   <div
                     key={m.id}
-                    className="flex items-center justify-between rounded-xl bg-white px-3 py-2 shadow-sm ring-1 ring-zinc-900/5 dark:bg-zinc-900 dark:ring-zinc-800 h-12"
+                    className="flex h-12 items-center justify-between rounded-xl bg-white px-3 py-2 shadow-sm ring-1 ring-zinc-900/5 dark:bg-zinc-900 dark:ring-zinc-800"
                   >
                     <div className="flex items-center gap-3">
                       <div
@@ -440,28 +440,28 @@ function StartRoster({
                               : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400'
                         }`}
                       >
-                        {m.role === 'SUPPORT' ? (
-                          <Shield size={16} />
-                        ) : (
-                          <Swords size={16} />
-                        )}
+                        {m.role === 'SUPPORT' ? <Shield size={16} /> : <Swords size={16} />}
                       </div>
+
                       <div>
                         <div className="flex items-center gap-1.5">
                           <span className="text-sm font-bold dark:text-zinc-100">{m.jobCode}</span>
                         </div>
-                        <div className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400 max-w-[80px] overflow-hidden text-ellipsis whitespace-nowrap">
-                          {m.isGuest ? "임시 게스트" : m.lostArkName}
+                        <div className="max-w-[80px] overflow-hidden text-ellipsis whitespace-nowrap text-[11px] font-medium text-zinc-500 dark:text-zinc-400">
+                          {m.isGuest ? '임시 게스트' : m.lostArkName}
                         </div>
                       </div>
                     </div>
+
                     <div className="flex items-center gap-3">
                       {!m.isGuest && (
                         <div className="text-right">
                           <div className="text-xs font-bold text-zinc-700 dark:text-zinc-300">
                             Lv.{m.itemLevel}
                           </div>
-                          <div className="text-[10px] text-zinc-400">CP {m.combatPower.toLocaleString()}</div>
+                          <div className="text-[10px] text-zinc-400">
+                            CP {m.combatPower.toLocaleString()}
+                          </div>
                         </div>
                       )}
 
@@ -488,7 +488,8 @@ function StartRoster({
                     key={`empty-${run.runIndex}-${party.partyIndex}-${i}`}
                     className="flex items-center justify-center gap-2 rounded-xl border border-dashed border-zinc-200 py-3 text-xs text-zinc-400 dark:border-zinc-800 dark:text-zinc-600"
                   >
-                    <User size={14} className="opacity-50 min-h-[30.5px]" /> 빈 자리 (공팟)
+                    <User size={14} className="min-h-[30.5px] opacity-50" />
+                    빈 자리 (공팟)
                   </div>
                 ))}
               </div>
@@ -500,7 +501,6 @@ function StartRoster({
   );
 }
 
-// ✅ Sortable Item Component
 function SortableFilterItem({
   raidId,
   isActive,
@@ -590,7 +590,6 @@ export const RaidSequenceView: React.FC<Props> = ({
   inactiveUsers = new Set(),
   onToggleUser,
 }) => {
-  
   const { confirm, ConfirmModal } = useConfirm();
 
   const SHOW_SERKA_FILTER = true;
@@ -598,7 +597,10 @@ export const RaidSequenceView: React.FC<Props> = ({
   const [raidOrder, setRaidOrder] = useState<RaidId[]>(INITIAL_RAID_ORDER);
 
   const [selectedRaids, setSelectedRaids] = useState<Set<RaidId>>(
-    () => new Set(INITIAL_RAID_ORDER.filter((id) => SHOW_SERKA_FILTER || !id.startsWith('SERKA_'))),
+    () =>
+      new Set(
+        INITIAL_RAID_ORDER.filter((id) => SHOW_SERKA_FILTER || !id.startsWith('SERKA_')),
+      ),
   );
 
   const [swapTarget, setSwapTarget] = useState<{ raidId: RaidId; char: Character } | null>(null);
@@ -656,7 +658,7 @@ export const RaidSequenceView: React.FC<Props> = ({
       HORIZON_STEP3: [],
       ACT1_HARD: [],
       ACT2_NORMAL: [],
-      ACT3_NORMAL: []
+      ACT3_NORMAL: [],
     };
 
     selectedRaids.forEach((raidId) => {
@@ -677,6 +679,7 @@ export const RaidSequenceView: React.FC<Props> = ({
   const bundledGroups = useMemo(() => {
     const bundles: Array<typeof groups> = [];
     let i = 0;
+
     while (i < groups.length) {
       const current = groups[i];
       const next = groups[i + 1];
@@ -689,6 +692,7 @@ export const RaidSequenceView: React.FC<Props> = ({
         i += 1;
       }
     }
+
     return bundles;
   }, [groups]);
 
@@ -703,6 +707,7 @@ export const RaidSequenceView: React.FC<Props> = ({
 
   const flatSteps: GlobalStep[] = groups.flatMap((g) => g.steps);
   const diffs: (TransitionDiff | null)[] = [];
+
   flatSteps.forEach((step, idx) => {
     if (idx === 0) {
       diffs.push(null);
@@ -750,16 +755,16 @@ export const RaidSequenceView: React.FC<Props> = ({
     const prevKey =
       currentFlatIdx > 0
         ? Array.from(
-          new Set(
-            getVisibleMembers(
-              flatSteps[currentFlatIdx - 1].raidId,
-              flatSteps[currentFlatIdx - 1].run,
-              localExclusions,
-            ).map((m) => m.discordName),
-          ),
-        )
-          .sort()
-          .join('|')
+            new Set(
+              getVisibleMembers(
+                flatSteps[currentFlatIdx - 1].raidId,
+                flatSteps[currentFlatIdx - 1].run,
+                localExclusions,
+              ).map((m) => m.discordName),
+            ),
+          )
+            .sort()
+            .join('|')
         : null;
 
     const currentVisibleMembers = getVisibleMembers(step.raidId, step.run, localExclusions);
@@ -771,17 +776,13 @@ export const RaidSequenceView: React.FC<Props> = ({
     const showStartRoster = isGroupFirst && (isFirst || prevKey !== currentKey);
 
     const completeTargetIds = Array.from(
-      new Set(
-        currentVisibleMembers
-          .map((m) => String(m.id ?? '').trim())
-          .filter(Boolean),
-      ),
+      new Set(currentVisibleMembers.map((m) => String(m.id ?? '').trim()).filter(Boolean)),
     );
 
     const completeBtnKey = `${step.raidId}-${step.run.runIndex}`;
     const isCompleting = completingKey === completeBtnKey;
 
-    const realMembers = currentVisibleMembers.filter(m => !m.isGuest);
+    const realMembers = currentVisibleMembers.filter((m) => !m.isGuest);
     const dpsMembers = realMembers.filter((m) => resolveRole(m) === 'DPS');
     const supMembers = realMembers.filter((m) => resolveRole(m) === 'SUPPORT');
 
@@ -798,20 +799,22 @@ export const RaidSequenceView: React.FC<Props> = ({
     const overallAvg =
       currentVisibleMembers.length > 0
         ? Math.round(
-          currentVisibleMembers.reduce((sum, m) => sum + m.combatPower, 0) /
-          currentVisibleMembers.length,
-        )
+            currentVisibleMembers.reduce((sum, m) => sum + m.combatPower, 0) /
+              currentVisibleMembers.length,
+          )
         : null;
 
     const renderCharacterWithSwap = (char: Character, raidId: RaidId) => (
-      <div key={char.id} className="group relative flex gap-2 items-center">
+      <div key={char.id} className="group relative flex items-center gap-2">
         <CharacterBadge char={char} type="neutral" />
         {!char.isGuest && onSwapCharacter && (
           <button
             disabled={swapDisabled}
             onClick={() => {
               if (swapDisabled) {
-                toast.error(completingKey ? '레이드 완료 처리 중입니다.' : '캐릭터 변경 반영 중입니다.');
+                toast.error(
+                  completingKey ? '레이드 완료 처리 중입니다.' : '캐릭터 변경 반영 중입니다.',
+                );
                 return;
               }
               setSwapTarget({ raidId, char });
@@ -838,7 +841,9 @@ export const RaidSequenceView: React.FC<Props> = ({
                 <div>
                   <div className="flex items-center gap-2">
                     <h4 className={`font-bold ${titleClass}`}>{meta.label}</h4>
-                    <span className={`text-[10px] font-extrabold uppercase tracking-wider ${labelClass}`}>
+                    <span
+                      className={`text-[10px] font-extrabold uppercase tracking-wider ${labelClass}`}
+                    >
                       {DIFF_LABEL[difficulty] ?? difficulty}
                     </span>
                   </div>
@@ -867,7 +872,7 @@ export const RaidSequenceView: React.FC<Props> = ({
                   ) : (
                     <span className="inline-flex items-center gap-1.5 rounded-md bg-white px-2 py-1 text-[11px] font-medium text-zinc-500 shadow-sm ring-1 ring-zinc-100 dark:bg-zinc-900 dark:text-zinc-400 dark:ring-zinc-700">
                       <Swords className="h-3 w-3 text-zinc-600 dark:text-zinc-300" />
-                      <span className="tracking-wide whitespace-nowrap">평균 전투력</span>
+                      <span className="whitespace-nowrap tracking-wide">평균 전투력</span>
                       <strong className="ml-1 text-zinc-800 dark:text-zinc-100">
                         {overallAvg !== null ? overallAvg.toLocaleString() : '없음'}
                       </strong>
@@ -890,14 +895,17 @@ export const RaidSequenceView: React.FC<Props> = ({
                       }
 
                       const ok = await confirm(
-                        `${meta.label} #${step.run.runIndex} 공격대를 완료 처리할까요?\n이 공격대의 멤버들이 이 레이드에서 제외됩니다.`
+                        `${meta.label} #${step.run.runIndex} 공격대를 완료 처리할까요?\n이 공격대의 멤버들이 이 레이드에서 제외됩니다.`,
                       );
                       if (!ok) return;
 
                       try {
                         setCompletingKey(completeBtnKey);
 
-                        const next = await excludeCharactersOnRaid(step.raidId, completeTargetIds);
+                        const next = await excludeCharactersOnRaid(
+                          step.raidId,
+                          completeTargetIds,
+                        );
 
                         setLocalExclusions(next);
                         onExclusionsUpdated?.(next);
@@ -908,7 +916,7 @@ export const RaidSequenceView: React.FC<Props> = ({
                         setCompletingKey(null);
                       }
                     }}
-                    className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-bold border border-emerald-200 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-900/50 dark:text-emerald-200 dark:hover:bg-emerald-950/40 disabled:cursor-not-allowed disabled:opacity-40 whitespace-nowrap"
+                    className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md border border-emerald-200 px-2.5 py-1 text-xs font-bold text-emerald-700 hover:bg-emerald-50 dark:border-emerald-900/50 dark:text-emerald-200 dark:hover:bg-emerald-950/40 disabled:cursor-not-allowed disabled:opacity-40"
                     title="레이드 완료"
                   >
                     <CheckCircle2 className="h-3.5 w-3.5" />
@@ -968,7 +976,9 @@ export const RaidSequenceView: React.FC<Props> = ({
                               <CharacterBadge char={s.from} type="switch-from" />
                               <ArrowRight className="h-3 w-3 text-amber-400" />
                             </div>
-                            <div className="w-full sm:w-auto">{renderCharacterWithSwap(s.to, step.raidId)}</div>
+                            <div className="w-full sm:w-auto">
+                              {renderCharacterWithSwap(s.to, step.raidId)}
+                            </div>
                           </div>
                         </div>
                       ))}
@@ -994,7 +1004,6 @@ export const RaidSequenceView: React.FC<Props> = ({
       );
     }
 
-    // Default Render (With Dot)
     return (
       <div key={`${step.raidId}-${step.run.runIndex}`} className="relative flex gap-6">
         <div className="relative z-10 mt-1.5 flex h-3 w-3 shrink-0 items-center justify-center -translate-x-[2px]">
@@ -1012,7 +1021,9 @@ export const RaidSequenceView: React.FC<Props> = ({
               <div>
                 <div className="flex items-center gap-2">
                   <h4 className={`font-bold ${titleClass}`}>{meta.label}</h4>
-                  <span className={`text-[10px] font-extrabold uppercase tracking-wider ${labelClass}`}>
+                  <span
+                    className={`text-[10px] font-extrabold uppercase tracking-wider ${labelClass}`}
+                  >
                     {DIFF_LABEL[difficulty] ?? difficulty}
                   </span>
                 </div>
@@ -1041,7 +1052,7 @@ export const RaidSequenceView: React.FC<Props> = ({
                 ) : (
                   <span className="inline-flex items-center gap-1.5 rounded-md bg-white px-2 py-1 text-[11px] font-medium text-zinc-500 shadow-sm ring-1 ring-zinc-100 dark:bg-zinc-900 dark:text-zinc-400 dark:ring-zinc-700">
                     <Swords className="h-3 w-3 text-zinc-600 dark:text-zinc-300" />
-                    <span className="tracking-wide whitespace-nowrap">평균 전투력</span>
+                    <span className="whitespace-nowrap tracking-wide">평균 전투력</span>
                     <strong className="ml-1 text-zinc-800 dark:text-zinc-100">
                       {overallAvg !== null ? overallAvg.toLocaleString() : '없음'}
                     </strong>
@@ -1064,7 +1075,7 @@ export const RaidSequenceView: React.FC<Props> = ({
                     }
 
                     const ok = await confirm(
-                      `${meta.label} #${step.run.runIndex} 공격대를 완료 처리할까요?\n이 공격대의 멤버들이 이 레이드에서 제외됩니다.`
+                      `${meta.label} #${step.run.runIndex} 공격대를 완료 처리할까요?\n이 공격대의 멤버들이 이 레이드에서 제외됩니다.`,
                     );
                     if (!ok) return;
 
@@ -1081,7 +1092,7 @@ export const RaidSequenceView: React.FC<Props> = ({
                       setCompletingKey(null);
                     }
                   }}
-                  className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-bold border border-emerald-200 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-900/50 dark:text-emerald-200 dark:hover:bg-emerald-950/40 disabled:cursor-not-allowed disabled:opacity-40 whitespace-nowrap"
+                  className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md border border-emerald-200 px-2.5 py-1 text-xs font-bold text-emerald-700 hover:bg-emerald-50 dark:border-emerald-900/50 dark:text-emerald-200 dark:hover:bg-emerald-950/40 disabled:cursor-not-allowed disabled:opacity-40"
                   title="레이드 완료"
                 >
                   <CheckCircle2 className="h-3.5 w-3.5" />
@@ -1141,7 +1152,9 @@ export const RaidSequenceView: React.FC<Props> = ({
                             <CharacterBadge char={s.from} type="switch-from" />
                             <ArrowRight className="h-3 w-3 text-amber-400" />
                           </div>
-                          <div className="w-full sm:w-auto">{renderCharacterWithSwap(s.to, step.raidId)}</div>
+                          <div className="w-full sm:w-auto">
+                            {renderCharacterWithSwap(s.to, step.raidId)}
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -1171,12 +1184,10 @@ export const RaidSequenceView: React.FC<Props> = ({
 
   return (
     <div className="relative mx-auto w-full space-y-4">
-      {/* ✅ User Filter Controls */}
-      <div className="relative z-30 md:sticky md:top-0 flex flex-col gap-3 rounded-2xl border border-zinc-200 bg-white/90 px-4 py-3 shadow-sm backdrop-blur-md dark:border-zinc-800 dark:bg-zinc-900/90">
-        {/* 유저 필터 */}
+      <div className="sticky top-0 z-30 flex flex-col gap-3 rounded-2xl border border-zinc-200 bg-white/90 px-4 py-3 shadow-sm backdrop-blur-md dark:border-zinc-800 dark:bg-zinc-900/90 sm:top-0">
         {allUserNames.length > 0 && onToggleUser && (
           <div className="flex flex-col gap-2">
-            <div className="flex items-center gap-2 text-sm font-semibold text-zinc-600 dark:text-zinc-400">
+            <div className="flex items-start gap-2 text-sm font-semibold text-zinc-600 dark:text-zinc-400 sm:items-center">
               <Users className="h-4 w-4" />
               <span>참여 인원 (토글 시 전체 레이드 배정에서 제외 후 재배정)</span>
             </div>
@@ -1184,17 +1195,23 @@ export const RaidSequenceView: React.FC<Props> = ({
             <div className="flex flex-wrap gap-2">
               {allUserNames.map((name) => {
                 const isInactive = inactiveUsers.has(name);
-                const isSelected = !isInactive; // 비활성화 되지 않았으면 선택됨
+                const isSelected = !isInactive;
+
                 return (
                   <button
                     key={name}
                     onClick={() => onToggleUser(name)}
-                    className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-bold transition-all border ${isSelected
-                      ? 'bg-indigo-50 border-indigo-200 text-indigo-700 dark:bg-indigo-950/30 dark:border-indigo-900 dark:text-indigo-200'
-                      : 'bg-transparent border-zinc-200 text-zinc-400 decoration-zinc-400 line-through dark:border-zinc-800 dark:text-zinc-600'
-                      }`}
+                    className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-bold transition-all ${
+                      isSelected
+                        ? 'border-indigo-200 bg-indigo-50 text-indigo-700 dark:border-indigo-900 dark:bg-indigo-950/30 dark:text-indigo-200'
+                        : 'border-zinc-200 bg-transparent text-zinc-400 decoration-zinc-400 line-through dark:border-zinc-800 dark:text-zinc-600'
+                    }`}
                   >
-                    {isSelected ? <UserCheck className="h-3 w-3" /> : <UserX className="h-3 w-3" />}
+                    {isSelected ? (
+                      <UserCheck className="h-3 w-3" />
+                    ) : (
+                      <UserX className="h-3 w-3" />
+                    )}
                     {name}
                   </button>
                 );
@@ -1206,15 +1223,18 @@ export const RaidSequenceView: React.FC<Props> = ({
         <div className="h-px w-full bg-zinc-100 dark:bg-zinc-800" />
 
         <div className="flex flex-col gap-2">
-          {/* 레이드 필터 + 정렬 */}
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-2 text-sm font-semibold text-zinc-600 dark:text-zinc-400">
               <Filter className="h-4 w-4" />
               <span>오늘 진행할 레이드 (드래그하여 순서 변경)</span>
             </div>
           </div>
 
-          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={handleDragEnd}
+          >
             <SortableContext items={visibleRaidIds} strategy={horizontalListSortingStrategy}>
               <div className="flex flex-wrap gap-2">
                 {visibleRaidIds.map((raidId) => (
@@ -1239,7 +1259,6 @@ export const RaidSequenceView: React.FC<Props> = ({
         </div>
       )}
 
-      {/* Empty */}
       {flatSteps.length === 0 && (
         <div className="flex flex-col items-center justify-center py-20 text-zinc-400">
           <Filter className="mb-2 h-8 w-8 opacity-20" />
@@ -1247,76 +1266,138 @@ export const RaidSequenceView: React.FC<Props> = ({
         </div>
       )}
 
-      <div className="relative">
-        {flatSteps.length > 0 && (
-          <div className="absolute bottom-0 left-[19px] top-4 w-0.5 bg-zinc-200 dark:bg-zinc-800" />
-        )}
+      {flatSteps.length > 0 && (
+        <>
+          {/* Mobile: timeline 제거하고 카드형 세로 나열 */}
+          <div className="space-y-6 md:hidden">
+            {bundledGroups.map((bundle, bundleIdx) => (
+              <div key={`mobile-bundle-${bundleIdx}`} className="space-y-5">
+                {bundle.map((group, gIdx) => {
+                  const isConcurrent = bundle.length > 1;
 
-        <div className="space-y-16">
-          {bundledGroups.map((bundle, bundleIdx) => {
-            const isConcurrent = bundle.length > 1;
-
-            return (
-              <div key={`bundle-${bundleIdx}`} className="relative">
-                {!isConcurrent && (
-                  <div className="absolute top-8 bottom-[-32px] left-[19px] w-0.5 bg-zinc-200 dark:bg-zinc-800" />
-                )}
-
-                {/* Group Header */}
-                <div
-                  className={`relative mb-8 flex items-start gap-4 ${isConcurrent ? 'flex-col xl:flex-row xl:items-center' : 'items-center'
-                    }`}
-                >
-                  <div className="relative z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-md shadow-indigo-200 dark:bg-indigo-500 dark:shadow-none">
-                    {isConcurrent ? <Split className="h-5 w-5" /> : <Users className="h-5 w-5" />}
-                  </div>
-
-                  <div className={`flex flex-1 flex-col gap-4 ${isConcurrent ? 'w-full xl:flex-row xl:gap-12' : ''}`}>
-                    {bundle.map((group, gIdx) => (
-                      <div key={gIdx} className="flex-1">
-                        {isConcurrent && (
-                          <div className="mb-2 text-xs font-bold uppercase text-zinc-400">
-                            GROUP {String.fromCharCode(65 + gIdx)}
+                  return (
+                    <div
+                      key={`mobile-group-${bundleIdx}-${gIdx}`}
+                      className="space-y-3"
+                    >
+                      <div className="flex flex-col gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="inline-flex rounded-full bg-indigo-50 px-2.5 py-1 text-[11px] font-bold text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300">
+                            {isConcurrent
+                              ? `동시진행 그룹 ${String.fromCharCode(65 + gIdx)}`
+                              : `그룹 ${bundleIdx + 1}`}
+                          </span>
+                          <div className="flex flex-wrap gap-1.5">
+                            {group.participants
+                              .slice()
+                              .sort()
+                              .map((name) => (
+                                <span
+                                  key={name}
+                                  className="inline-block rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"
+                                >
+                                  {name}
+                                </span>
+                              ))}
                           </div>
-                        )}
-                        <div className="flex flex-wrap gap-1.5">
-                          {group.participants
-                            .slice()
-                            .sort()
-                            .map((name) => (
-                              <span
-                                key={name}
-                                className="inline-block rounded bg-zinc-100 px-2 py-0.5 text-sm text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400"
-                              >
-                                {name}
-                              </span>
-                            ))}
                         </div>
                       </div>
-                    ))}
-                  </div>
-                </div>
 
-                {/* Steps */}
-                <div className="pl-4">
-                  <div className={`grid gap-x-12 gap-y-8 ${isConcurrent ? 'grid-cols-1 xl:grid-cols-2' : 'grid-cols-1'}`}>
-                    <div className="space-y-8">{bundle[0].steps.map((step) => renderStep(step, bundle[0]))}</div>
-
-                    {bundle[1] && (
-                      <div className="relative">
-                        <div className="absolute bottom-0 left-[3px] top-4 hidden w-0.5 bg-zinc-200 dark:bg-zinc-800 xl:block" />
-                        <div className="space-y-8">{bundle[1].steps.map((step) => renderStep(step, bundle[1], false))}</div>
+                      <div className="space-y-4">
+                        {group.steps.map((step) => renderStep(step, group, true))}
                       </div>
-                    )}
-                  </div>
-                </div>
+                    </div>
+                  );
+                })}
               </div>
-            );
-          })}
-        </div>
-      </div>
+            ))}
+          </div>
 
-      {/* SwapModal */}
+          {/* Desktop: 기존 timeline 유지 */}
+          <div className="relative hidden md:block">
+            {flatSteps.length > 0 && (
+              <div className="absolute bottom-0 left-[19px] top-4 w-0.5 bg-zinc-200 dark:bg-zinc-800" />
+            )}
+
+            <div className="space-y-16">
+              {bundledGroups.map((bundle, bundleIdx) => {
+                const isConcurrent = bundle.length > 1;
+
+                return (
+                  <div key={`bundle-${bundleIdx}`} className="relative">
+                    {!isConcurrent && (
+                      <div className="absolute bottom-[-32px] left-[19px] top-8 w-0.5 bg-zinc-200 dark:bg-zinc-800" />
+                    )}
+
+                    <div
+                      className={`relative mb-8 flex items-start gap-4 ${
+                        isConcurrent ? 'flex-col xl:flex-row xl:items-center' : 'items-center'
+                      }`}
+                    >
+                      <div className="relative z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-md shadow-indigo-200 dark:bg-indigo-500 dark:shadow-none">
+                        {isConcurrent ? <Split className="h-5 w-5" /> : <Users className="h-5 w-5" />}
+                      </div>
+
+                      <div
+                        className={`flex flex-1 flex-col gap-4 ${
+                          isConcurrent ? 'w-full xl:flex-row xl:gap-12' : ''
+                        }`}
+                      >
+                        {bundle.map((group, gIdx) => (
+                          <div key={gIdx} className="flex-1">
+                            {isConcurrent && (
+                              <div className="mb-2 text-xs font-bold uppercase text-zinc-400">
+                                GROUP {String.fromCharCode(65 + gIdx)}
+                              </div>
+                            )}
+                            <div className="flex flex-wrap gap-1.5">
+                              {group.participants
+                                .slice()
+                                .sort()
+                                .map((name) => (
+                                  <span
+                                    key={name}
+                                    className="inline-block rounded bg-zinc-100 px-2 py-0.5 text-sm text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400"
+                                  >
+                                    {name}
+                                  </span>
+                                ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="pl-4">
+                      <div
+                        className={`grid gap-x-12 gap-y-8 ${
+                          isConcurrent ? 'grid-cols-1 xl:grid-cols-2' : 'grid-cols-1'
+                        }`}
+                      >
+                        <div className="space-y-8">
+                          {bundle[0].steps.map((step) => renderStep(step, bundle[0]))}
+                        </div>
+
+                        {bundle[1] && (
+                          <div className="relative">
+                            <div className="absolute bottom-0 left-[3px] top-4 hidden w-0.5 bg-zinc-200 dark:bg-zinc-800 xl:block" />
+                            <div className="space-y-8">
+                              {bundle[1].steps.map((step) =>
+                                renderStep(step, bundle[1], false),
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </>
+      )}
+
       {swapTarget && (
         <SwapModal
           isOpen={!!swapTarget}
@@ -1348,7 +1429,6 @@ export const RaidSequenceView: React.FC<Props> = ({
         />
       )}
 
-      {/* ✨ ConfirmModal 마운트 */}
       <ConfirmModal />
     </div>
   );

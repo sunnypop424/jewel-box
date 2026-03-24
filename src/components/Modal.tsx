@@ -39,7 +39,7 @@ export const Modal: React.FC<ModalProps> = ({
   if (!isMounted) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 flex items-end justify-center p-0 sm:items-center sm:p-4">
       {/* 🌟 Backdrop (배경 흐림) 애니메이션 */}
       <div 
         className={`absolute inset-0 bg-zinc-900/60 backdrop-blur-sm transition-opacity duration-300 ease-out ${
@@ -50,13 +50,13 @@ export const Modal: React.FC<ModalProps> = ({
       
       {/* 🌟 Content (모달 창) 애니메이션 */}
       <div 
-        className={`relative z-10 w-full ${maxWidth} transform overflow-hidden rounded-3xl bg-white shadow-2xl ring-1 ring-zinc-900/5 transition-all duration-300 ease-out dark:bg-zinc-900 dark:ring-zinc-800 ${
+        className={`relative z-10 flex max-h-[92dvh] w-full flex-col transform overflow-hidden rounded-t-[1.75rem] bg-white shadow-2xl ring-1 ring-zinc-900/5 transition-all duration-300 ease-out dark:bg-zinc-900 dark:ring-zinc-800 ${maxWidth} sm:max-h-[85vh] sm:rounded-3xl ${
           isVisible 
             ? 'translate-y-0 scale-100 opacity-100' // 열렸을 때 (정위치, 원래 크기)
             : 'translate-y-8 scale-95 opacity-0'    // 닫혔을 때 (아래로 쳐짐, 약간 축소)
         }`}
       >
-        <div className="flex items-center justify-between border-b border-zinc-100 bg-white/50 px-6 py-4 backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/50">
+        <div className="flex items-center justify-between border-b border-zinc-100 bg-white/50 px-4 py-3 backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/50 sm:px-6 sm:py-4">
           <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">
             {title ?? '정보'}
           </h2>
@@ -69,7 +69,7 @@ export const Modal: React.FC<ModalProps> = ({
           </button>
         </div>
 
-        <div className="max-h-[85vh] overflow-y-auto px-6 py-6 scrollbar-thin scrollbar-thumb-zinc-300 dark:scrollbar-thumb-zinc-700">
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 scrollbar-thin scrollbar-thumb-zinc-300 dark:scrollbar-thumb-zinc-700 sm:px-6 sm:py-6">
           {children}
         </div>
       </div>

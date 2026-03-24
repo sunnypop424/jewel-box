@@ -78,7 +78,48 @@
 
 /* 3. 전역 기본 폰트 적용 */
 @layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
   body {
-    @apply font-sans;
+    @apply font-sans antialiased;
+    overflow-x: hidden;
+  }
+
+  #root {
+    min-height: 100dvh;
+  }
+
+  input,
+  select,
+  textarea,
+  button {
+    font: inherit;
+  }
+}
+
+@media (max-width: 640px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
+
+@layer components {
+  .mobile-app-header {
+    padding-top: max(0.7rem, env(safe-area-inset-top));
+  }
+
+  .mobile-app-header::after {
+    content: '';
+    position: absolute;
+    inset-inline: 1rem;
+    bottom: 0;
+    height: 1px;
+    border-radius: 9999px;
+    background: linear-gradient(90deg, transparent, rgba(99, 102, 241, 0.18), transparent);
   }
 }

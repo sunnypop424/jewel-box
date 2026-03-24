@@ -210,8 +210,8 @@ export function UserRaidProgressPanel({
                         <div key={discordName} className="flex flex-col gap-4 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm transition-all hover:shadow-md dark:border-zinc-800 dark:bg-zinc-900/80">
 
                             <div className="flex flex-col gap-3">
-                                <div className="flex items-start justify-between">
-                                    <div className="flex items-center gap-3">
+                                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                                    <div className="flex items-start gap-3">
                                         <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
                                             <User size={20} />
                                         </div>
@@ -251,8 +251,8 @@ export function UserRaidProgressPanel({
                                     </div>
 
                                     {/* ✨ 누적 골드 표기 및 초기화 영역 ✨ */}
-                                    <div className="flex items-center gap-2.5 mt-1.5">
-                                        <div className="flex items-center gap-2 text-[13px]">
+                                    <div className="mt-1.5 flex flex-wrap items-center gap-2.5 lg:justify-end">
+                                        <div className="flex flex-wrap items-center gap-2 text-[12px] sm:text-[13px]">
                                             {/* 누적 총액 뱃지 */}
                                             <div className="flex items-center gap-1 px-1.5 py-0.5 rounded text-zinc-700 bg-zinc-50 dark:text-zinc-300 dark:bg-zinc-900/30 font-bold">
                                                 <Coins size={12} />
@@ -275,7 +275,7 @@ export function UserRaidProgressPanel({
                                         {onResetAccumulatedGold && (
                                             <button
                                                 onClick={() => onResetAccumulatedGold(discordName, userCollectedGeneral, userCollectedBound)}
-                                                className="text-[13px] font-bold text-zinc-400 bg-zinc-100 hover:text-rose-500 hover:bg-rose-50 dark:bg-zinc-700 dark:hover:bg-rose-900/20 px-1.5 py-0.5 rounded transition-all"
+                                                className="shrink-0 rounded bg-zinc-100 px-1.5 py-0.5 text-[12px] font-bold text-zinc-400 transition-all hover:bg-rose-50 hover:text-rose-500 dark:bg-zinc-700 dark:hover:bg-rose-900/20 sm:text-[13px]"
                                                 title="누적 골드 초기화"
                                             >
                                                 초기화
@@ -285,7 +285,7 @@ export function UserRaidProgressPanel({
 
                                 </div>
 
-                                <div className="flex items-center gap-3 mt-1">
+                                <div className="mt-1 flex items-center gap-2 sm:gap-3">
                                     <div className="flex flex-1 h-1.5 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-700">
                                         <div
                                             className="bg-amber-400 dark:bg-amber-500 transition-all duration-500 ease-out"

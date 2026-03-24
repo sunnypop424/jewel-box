@@ -412,12 +412,12 @@ export const CharacterFormList: React.FC<Props> = ({
             <div className="grid gap-5 sm:grid-cols-2">
                 <div className="space-y-2">
                     <label className="text-sm font-bold text-zinc-900 dark:text-zinc-100">디스코드 닉네임</label>
-                    <div className="flex gap-2">
+                    <div className="flex flex-col gap-2 sm:flex-row">
                         <div className="relative flex-1">
                             <User size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400" />
                             <input className="w-full rounded-xl border border-zinc-200 bg-zinc-50 py-3 pl-10 pr-4 text-sm text-zinc-900 shadow-sm transition-all focus:border-indigo-500 focus:bg-white dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100" value={localDiscord} onChange={(e) => setLocalDiscord(e.target.value)} onKeyDown={(e) => handlePressEnter(e, handleFetchFromCloud)} placeholder="Nickname" disabled={isSaving} />
                         </div>
-                        <button type="button" onClick={handleFetchFromCloud} disabled={isSaving} className="inline-flex items-center gap-2 rounded-xl border border-zinc-200 bg-white px-4 text-sm font-bold text-zinc-700 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
+                        <button type="button" onClick={handleFetchFromCloud} disabled={isSaving} className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-zinc-200 bg-white px-4 py-3 text-sm font-bold text-zinc-700 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 sm:w-auto sm:py-0">
                             {isFetching ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
                         </button>
                     </div>
@@ -457,7 +457,7 @@ export const CharacterFormList: React.FC<Props> = ({
                 <div className="grid gap-4 sm:grid-cols-2">
                     <div className="space-y-3 rounded-xl border border-zinc-200 bg-white p-4 dark:bg-zinc-900 dark:border-zinc-700 shadow-sm">
                         <label className="text-xs font-bold text-zinc-500 flex items-center gap-1.5"><Info size={14}/> 1680+ 원정대 가져오기</label>
-                        <div className="flex gap-2">
+                        <div className="flex flex-col gap-2 sm:flex-row">
                             <input value={searchRosterName} onChange={(e) => setSearchRosterName(e.target.value)} onKeyDown={(e) => handlePressEnter(e, handleSearchRoster)} placeholder="대표 캐릭터명" className="flex-1 rounded-lg border px-3 py-2 text-sm dark:bg-zinc-800 dark:border-zinc-600 dark:text-white" />
                             <button onClick={handleSearchRoster} disabled={isSearchingRoster} className="flex items-center gap-1 rounded-lg bg-indigo-100 px-3 py-2 text-sm font-bold text-indigo-700 hover:bg-indigo-200 dark:bg-indigo-900/50 dark:text-indigo-300 disabled:opacity-50">
                                 {isSearchingRoster ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />} 검색
@@ -508,7 +508,7 @@ export const CharacterFormList: React.FC<Props> = ({
                     </div>
                     <div className="space-y-3 rounded-xl border border-zinc-200 bg-white p-4 dark:bg-zinc-900 dark:border-zinc-700 shadow-sm">
                         <label className="text-xs font-bold text-zinc-500 flex items-center gap-1.5"><Plus size={14}/> 개별 캐릭터 추가</label>
-                        <div className="flex gap-2">
+                        <div className="flex flex-col gap-2 sm:flex-row">
                             <input value={searchSingleName} onChange={(e) => setSearchSingleName(e.target.value)} onKeyDown={(e) => handlePressEnter(e, handleAddSingle)} placeholder="캐릭터 닉네임" className="flex-1 rounded-lg border px-3 py-2 text-sm dark:bg-zinc-800 dark:border-zinc-600 dark:text-white" />
                             <button onClick={handleAddSingle} disabled={isSearchingSingle} className="flex items-center gap-1 rounded-lg bg-indigo-100 px-3 py-2 text-sm font-bold text-indigo-700 hover:bg-indigo-200 dark:bg-indigo-900/50 dark:text-indigo-300 disabled:opacity-50">
                                 {isSearchingSingle ? <Loader2 size={16} className="animate-spin" /> : <Plus size={18} />} 추가
@@ -553,11 +553,11 @@ export const CharacterFormList: React.FC<Props> = ({
                 </div>
             </div>
 
-            <div className="flex items-center justify-end gap-3 border-t border-zinc-100 pt-6 dark:border-zinc-800">
+            <div className="flex flex-col-reverse gap-3 border-t border-zinc-100 pt-6 dark:border-zinc-800 sm:flex-row sm:items-center sm:justify-end">
                 {onCancel && (
-                    <button type="button" className="rounded-xl px-6 py-3 text-sm font-bold text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800" onClick={onCancel} disabled={isSaving}>취소</button>
+                    <button type="button" className="w-full rounded-xl px-6 py-3 text-sm font-bold text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 sm:w-auto" onClick={onCancel} disabled={isSaving}>취소</button>
                 )}
-                <button type="button" className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-10 py-3 text-sm font-bold text-white shadow-lg shadow-indigo-500/20 hover:bg-indigo-500 disabled:opacity-70" onClick={handleSubmit} disabled={isSaving}>
+                <button type="button" className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-10 py-3 text-sm font-bold text-white shadow-lg shadow-indigo-500/20 hover:bg-indigo-500 disabled:opacity-70 sm:w-auto" onClick={handleSubmit} disabled={isSaving}>
                     {isLoading ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />} {isLoading ? '저장 중...' : '설정 저장하기'}
                 </button>
             </div>

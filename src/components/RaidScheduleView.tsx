@@ -223,10 +223,10 @@ export const RaidScheduleView: React.FC<Props> = ({
 
   return (
     <div className="grid gap-6">
-      <div className="relative z-30 md:sticky md:top-0 flex flex-col gap-3 rounded-2xl border border-zinc-200 bg-white/90 px-4 py-3 shadow-sm backdrop-blur-md dark:border-zinc-800 dark:bg-zinc-900/90">
+      <div className="sticky top-0 sm:top-0 z-30 flex flex-col gap-3 rounded-2xl border border-zinc-200 bg-white/90 px-4 py-3 shadow-sm backdrop-blur-md dark:border-zinc-800 dark:bg-zinc-900/90">
         {allUserNames.length > 0 && onToggleUser && (
           <div className="flex flex-col gap-2">
-            <div className="flex items-center gap-2 text-sm font-semibold text-zinc-600 dark:text-zinc-400">
+            <div className="flex items-start gap-2 text-sm font-semibold text-zinc-600 dark:text-zinc-400 sm:items-center">
               <Users className="h-4 w-4" />
               <span>참여 인원 (토글 시 전체 레이드 배정에서 제외 후 재배정)</span>
             </div>
@@ -258,7 +258,7 @@ export const RaidScheduleView: React.FC<Props> = ({
         )}
 
         <div className="flex flex-col gap-2">
-          <div className="flex items-center gap-2 text-sm font-semibold text-zinc-600 dark:text-zinc-400">
+          <div className="flex items-start gap-2 text-sm font-semibold text-zinc-600 dark:text-zinc-400 sm:items-center">
             <Filter className="h-4 w-4" />
             <span>레이드 바로가기</span>
           </div>
@@ -345,13 +345,13 @@ export const RaidScheduleView: React.FC<Props> = ({
           >
             <div
               onClick={() => toggleRaid(raidId as string)}
-              className={`flex w-full items-center justify-between border-b px-5 py-4 text-left transition-colors cursor-pointer select-none ${headerClass} ${
+              className={`flex w-full flex-col items-start gap-3 border-b px-4 py-4 text-left transition-colors cursor-pointer select-none sm:flex-row sm:items-center sm:justify-between sm:px-5 ${headerClass} ${
                 isRaidOpen
                   ? 'border-b-zinc-100 dark:border-b-zinc-800'
                   : 'border-transparent'
               }`}
             >
-              <div className="flex flex-wrap items-center gap-2 flex-1 mr-4">
+              <div className="flex w-full flex-wrap items-center gap-2 sm:flex-1 sm:mr-4">
                 <div
                   className={`h-3 w-3 rounded-full shadow-sm ring-2 ring-white/50 bg-current shrink-0 ${dotColor}`}
                 />
@@ -360,7 +360,7 @@ export const RaidScheduleView: React.FC<Props> = ({
                 </h4>
 
                 {allUserNames.length > 0 && (
-                  <div className="flex flex-wrap items-center gap-1.5 ml-2 border-l pl-3 border-current/20">
+                  <div className="flex basis-full flex-wrap items-center gap-1.5 border-current/20 pt-1 sm:ml-2 sm:basis-auto sm:border-l sm:pl-3 sm:pt-0">
                     {allUserNames.map((name) => {
                       const remainingCount = userRemainingCountsForThisRaid.get(name) || 0;
                       const isActive = remainingCount > 0;
@@ -386,14 +386,14 @@ export const RaidScheduleView: React.FC<Props> = ({
                       e.stopPropagation();
                       onOpenGuestAdd(raidId as RaidId);
                     }}
-                    className="ml-2 rounded-md bg-indigo-50 px-2 py-1 text-xs font-semibold text-indigo-600 hover:bg-indigo-100 dark:bg-indigo-900/40 dark:text-indigo-300 transition-colors whitespace-nowrap"
+                    className="w-full rounded-md bg-indigo-50 px-2 py-1.5 text-center text-xs font-semibold text-indigo-600 transition-colors hover:bg-indigo-100 dark:bg-indigo-900/40 dark:text-indigo-300 sm:ml-2 sm:w-auto sm:py-1 whitespace-nowrap"
                   >
                     + 게스트 추가
                   </button>
                 )}
               </div>
 
-              <div className="flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400 shrink-0">
+              <div className="flex w-full items-center justify-between gap-2 text-xs text-zinc-500 dark:text-zinc-400 sm:w-auto sm:shrink-0 sm:justify-end">
                 {onToggleSupportShortage && (
                   <div
                     onClick={(e) => e.stopPropagation()}
@@ -448,7 +448,7 @@ export const RaidScheduleView: React.FC<Props> = ({
                   getUserCardClass={getUserCardClass}
                   userColorMap={userColorMap}
                 />
-                <div className="grid gap-4 lg:grid-cols-3 lg:gap-6 p-6">
+                <div className="grid gap-4 p-4 sm:p-6 lg:grid-cols-3 lg:gap-6">
                   {runs.map((run: RaidRun) => {
                     const runKey = `${raidId}-${run.runIndex}`;
                     const isRunOpen = runOpenState[runKey] ?? true;
@@ -482,7 +482,7 @@ export const RaidScheduleView: React.FC<Props> = ({
 
                     return (
                       <div key={run.runIndex}>
-                        <div className="flex items-center justify-between rounded-xl bg-zinc-50 px-3 py-2 dark:bg-zinc-900/60">
+                        <div className="flex flex-col gap-3 rounded-xl bg-zinc-50 px-3 py-3 dark:bg-zinc-900/60 sm:flex-row sm:items-center sm:justify-between sm:py-2">
                           <button
                             onClick={() => toggleRun(raidId as string, run.runIndex)}
                             className="flex flex-1 items-center gap-2 text-left"
@@ -495,7 +495,7 @@ export const RaidScheduleView: React.FC<Props> = ({
                             </span>
                           </button>
 
-                          <div className="flex items-center gap-3">
+                          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:gap-3">
                             {balanceMode === 'role' ? (
                               <div className="flex gap-2 text-[10px] font-medium text-zinc-500 dark:text-zinc-400">
                                 <span className="flex items-center gap-1">
@@ -589,7 +589,7 @@ export const RaidScheduleView: React.FC<Props> = ({
                                         key={m.id}
                                         className="flex items-center justify-between rounded-xl bg-white p-2.5 shadow-sm ring-1 ring-zinc-900/5 dark:bg-zinc-900 dark:ring-zinc-800"
                                       >
-                                        <div className="flex items-center gap-3">
+                                        <div className="flex min-w-0 items-center gap-3">
                                           <div
                                             className={`flex h-8 w-8 items-center justify-center rounded-lg ${
                                               m.isGuest
@@ -617,7 +617,7 @@ export const RaidScheduleView: React.FC<Props> = ({
                                           </div>
                                         </div>
 
-                                        <div className="flex items-center gap-2">
+                                        <div className="flex w-full items-center justify-between gap-2 sm:w-auto sm:justify-end">
                                           {!m.isGuest && (
                                             <div className="text-right">
                                               <div className="text-xs font-bold dark:text-zinc-300">
@@ -829,7 +829,7 @@ function StatusColumn({ title, count, icon, color, children }: any) {
   };
 
   return (
-    <div className="flex flex-col rounded-2xl border border-zinc-200 bg-zinc-50/50 h-full dark:border-zinc-800 dark:bg-zinc-950/20">
+    <div className="flex h-full flex-col rounded-2xl border border-zinc-200 bg-zinc-50/50 dark:border-zinc-800 dark:bg-zinc-950/20">
       <div
         className={`flex items-center justify-between border-b px-4 py-3 rounded-t-2xl ${colors[color]} border-inherit`}
       >
@@ -842,7 +842,7 @@ function StatusColumn({ title, count, icon, color, children }: any) {
         </span>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-3 max-h-[274px] flex flex-col gap-2">
+      <div className="flex flex-1 flex-col gap-2 overflow-y-auto p-3 lg:max-h-[274px]">
         {React.Children.count(children) === 0 ? (
           <div className="py-8 text-center text-xs text-zinc-400">없음</div>
         ) : (
@@ -862,11 +862,11 @@ function RaidMemberCard({
 }: any) {
   return (
     <div
-      className={`group flex items-center justify-between rounded-xl p-2.5 shadow-sm ring-1 hover:shadow-md
+      className={`group flex flex-col gap-3 rounded-xl p-2.5 shadow-sm ring-1 hover:shadow-md sm:flex-row sm:items-center sm:justify-between
       ${userCardClass}
       ring-zinc-900/5 dark:ring-zinc-800`}
     >
-      <div className="flex items-center gap-3">
+      <div className="flex min-w-0 items-center gap-3">
         <div
           className={`flex h-8 w-8 items-center justify-center rounded-lg ${
             member.isGuest
@@ -889,7 +889,7 @@ function RaidMemberCard({
         </div>
       </div>
 
-      <div className="flex items-center gap-3">
+      <div className="flex w-full items-center justify-between gap-3 sm:w-auto">
         <div className="text-right">
           <div className="text-xs font-bold dark:text-zinc-200">
             Lv.{member.itemLevel}

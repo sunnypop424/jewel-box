@@ -94,9 +94,9 @@ export const GatheringModal: React.FC<GatheringModalProps> = ({ isOpen, onClose 
           </div>
         </div>
 
-        <div className="flex items-center justify-end gap-3 border-t border-zinc-100 pt-6 dark:border-zinc-800">
-          <button type="button" onClick={onClose} disabled={isSubmitting} className="rounded-xl px-6 py-3 text-sm font-bold text-zinc-500 transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-800">취소</button>
-          <button type="submit" disabled={isSubmitting} className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-8 py-3 text-sm font-bold text-white shadow-lg shadow-indigo-500/20 transition-colors hover:bg-indigo-500 disabled:opacity-70">
+        <div className="flex flex-col-reverse gap-3 border-t border-zinc-100 pt-6 dark:border-zinc-800 sm:flex-row sm:items-center sm:justify-end">
+          <button type="button" onClick={onClose} disabled={isSubmitting} className="w-full rounded-xl px-6 py-3 text-sm font-bold text-zinc-500 transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-800 sm:w-auto">취소</button>
+          <button type="submit" disabled={isSubmitting} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-8 py-3 text-sm font-bold text-white shadow-lg shadow-indigo-500/20 transition-colors hover:bg-indigo-500 disabled:opacity-70 sm:w-auto">
             {isSubmitting ? <Loader2 size={18} className="animate-spin" /> : <Megaphone size={18} />}
             {isSubmitting ? '전송 중...' : '디스코드로 알림 보내기'}
           </button>

@@ -503,12 +503,32 @@ const App: React.FC = () => {
     const [isManageMenuOpen, setIsManageMenuOpen] = useState(false);
     const [isToolMenuOpen, setIsToolMenuOpen] = useState(false);
     const [isGameMenuOpen, setIsGameMenuOpen] = useState(true);
+    const [isUserFilterOpen, setIsUserFilterOpen] = useState(false);
     const toggleSidebar = () => setIsSidebarOpen(!isSidebarOpen);
     const handleNavClick = (path: string) => {
         navigate(path);
         setIsSidebarOpen(false);
     };
     const isActive = (path: string) => location.pathname === path;
+
+    const currentPageMeta = useMemo(() => {
+        if (location.pathname === '/schedule') {
+            return { title: '레이드 배정 결과', Icon: ClipboardList };
+        }
+        if (location.pathname === '/sequence') {
+            return { title: '레이드 진행 순서', Icon: ChartGantt };
+        }
+        return { title: '개인별 진행 현황', Icon: LayoutDashboard };
+    }, [location.pathname]);
+
+    const isUserProgressPage = currentPageMeta.title === '개인별 진행 현황';
+
+    const mobileUserFilterLabel =
+    selectedUserFilter === 'ALL'
+        ? '전체'
+        : selectedUserFilter.length > 3
+            ? `${selectedUserFilter.slice(0, 3)}…`
+            : selectedUserFilter;
 
     const navButtonClass = (active: boolean) =>
     `flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-bold transition-all ${
@@ -521,7 +541,7 @@ const App: React.FC = () => {
     'rounded-lg px-3 py-2 text-left text-sm font-medium text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100';
 
     return (
-        <div className="flex h-screen w-full overflow-hidden bg-zinc-50 font-sans text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
+        <div className="flex min-h-[100dvh] w-full overflow-hidden bg-zinc-50 font-sans text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100 md:h-screen">
             {isSidebarOpen && (
                 <div className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm md:hidden" onClick={() => setIsSidebarOpen(false)} />
             )}
@@ -642,34 +662,121 @@ const App: React.FC = () => {
                 </div>
             </aside>
 
-            <main className="flex flex-1 flex-col overflow-hidden">
-                <header className="flex h-16 items-center justify-between border-b border-zinc-200 bg-white/90 px-4 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/90 md:hidden">
-                    <div className="flex items-center gap-3">
-                        <button onClick={toggleSidebar} className="rounded-lg p-2 text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800">
-                            <Menu size={24} />
-                        </button>
-                        <span className="text-lg font-bold text-zinc-900 dark:text-zinc-100">
-                            {location.pathname === '/' && '개인별 현황'}
-                            {location.pathname === '/schedule' && '배정 결과'}
-                            {location.pathname === '/sequence' && '진행 순서'}
-                        </span>
-                    </div>
-                </header>
+            <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
+            <header className="mobile-app-header sticky top-0 z-30 border-b border-zinc-200/80 bg-white/78 px-3 pb-3 pt-[calc(env(safe-area-inset-top)+0.7rem)] shadow-[0_12px_30px_rgba(15,23,42,0.06)] backdrop-blur-xl dark:border-zinc-800/80 dark:bg-zinc-950/82 md:hidden">
+                <div className="relative flex items-center justify-between gap-2">
+                    <button
+                        onClick={toggleSidebar}
+                        className="z-10 flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-zinc-200/80 bg-white/90 text-zinc-700 shadow-sm transition-colors hover:bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-900/90 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                        aria-label="메뉴 열기"
+                    >
+                        <Menu size={22} />
+                    </button>
 
-                <div className="flex-1 overflow-y-auto bg-zinc-50/50 p-4 dark:bg-zinc-950 sm:p-6 lg:p-8">
+                    <div className="pointer-events-none absolute left-1/2 flex -translate-x-1/2 items-center gap-2.5">
+                        <div className="flex flex-col items-center leading-none gap-0.5">
+                            <span className="text-[0.7rem] font-black uppercase tracking-[0.22em] text-zinc-400 dark:text-zinc-500">
+                                Raid Manager
+                            </span>
+                            <span className="max-w-[140px] truncate text-sm font-bold tracking-tight text-zinc-900 dark:text-zinc-100">
+                                {currentPageMeta.title}
+                            </span>
+                        </div>
+                    </div>
+
+                    {isUserProgressPage ? (
+                        <button
+                            onClick={() => setIsUserFilterOpen(true)}
+                            className="z-10 inline-flex h-11 min-w-[56px] max-w-[84px] shrink-0 items-center justify-center gap-1 rounded-2xl border border-zinc-200/80 bg-white/90 px-3 text-xs font-bold text-zinc-700 shadow-sm transition-colors hover:bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-900/90 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                            aria-label="유저 선택 열기"
+                            type="button"
+                        >
+                            <span className="max-w-[40px] truncate">
+                                {mobileUserFilterLabel}
+                            </span>
+                            <ChevronDown size={12} strokeWidth={3} className="shrink-0" />
+                        </button>
+                    ) : (
+                        <div className="h-11 w-11 shrink-0" aria-hidden="true" />
+                    )}
+                </div>
+            </header>
+
+            {isUserProgressPage && isUserFilterOpen && (
+                <>
+                    <div
+                        className="fixed inset-0 z-40 bg-black/30 md:hidden"
+                        onClick={() => setIsUserFilterOpen(false)}
+                    />
+
+                    <div className="fixed inset-x-0 bottom-0 z-50 rounded-t-3xl border border-zinc-200 bg-white p-4 shadow-2xl dark:border-zinc-800 dark:bg-zinc-900 md:hidden">
+                        <div className="mx-auto mb-4 h-1.5 w-12 rounded-full bg-zinc-200 dark:bg-zinc-700" />
+
+                        <div className="mb-3 flex items-center justify-between">
+                            <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">
+                                유저 선택
+                            </h3>
+                            <button
+                                type="button"
+                                onClick={() => setIsUserFilterOpen(false)}
+                                className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+                            >
+                                <X size={18} />
+                            </button>
+                        </div>
+
+                        <div className="max-h-[50vh] overflow-y-auto space-y-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)]">
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setSelectedUserFilter('ALL');
+                                    setIsUserFilterOpen(false);
+                                }}
+                                className={`flex w-full items-center justify-between rounded-2xl px-4 py-3 text-left text-sm font-bold transition ${
+                                    selectedUserFilter === 'ALL'
+                                        ? 'bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200 dark:bg-indigo-950/40 dark:text-indigo-300 dark:ring-indigo-900'
+                                        : 'bg-zinc-50 text-zinc-700 hover:bg-zinc-100 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700'
+                                }`}
+                            >
+                                <span>전체 유저</span>
+                            </button>
+
+                            {allUserNames.map((name) => (
+                                <button
+                                    key={name}
+                                    type="button"
+                                    onClick={() => {
+                                        setSelectedUserFilter(name);
+                                        setIsUserFilterOpen(false);
+                                    }}
+                                    className={`flex w-full items-center justify-between rounded-2xl px-4 py-3 text-left text-sm font-bold transition ${
+                                        selectedUserFilter === name
+                                            ? 'bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200 dark:bg-indigo-950/40 dark:text-indigo-300 dark:ring-indigo-900'
+                                            : 'bg-zinc-50 text-zinc-700 hover:bg-zinc-100 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700'
+                                    }`}
+                                >
+                                    <span>{name}</span>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                </>
+            )}
+
+                <div className="flex-1 overflow-y-auto bg-zinc-50/50 p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] dark:bg-zinc-950 sm:p-6 lg:p-8">
                     <div className="mx-auto space-y-6">
                         <Routes>
                             <Route path="/" element={
-                                <section className="animate-fade-in space-y-6">
-                                    <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
-                                        <div className="flex items-center gap-4">
+                                <section className="flex flex-col gap-6">
+                                    <div className="hidden flex-col justify-between gap-3 sm:flex-row sm:items-center md:flex">
+                                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
                                             <h2 className="flex items-center gap-2 text-xl font-bold text-zinc-900 dark:text-zinc-100">
                                                 <LayoutDashboard className="text-indigo-500" />
                                                 개인별 진행 현황
                                             </h2>
 
                                             <div className="relative">
-                                                <select value={selectedUserFilter} onChange={(e) => setSelectedUserFilter(e.target.value)} className="cursor-pointer appearance-none rounded-lg border border-zinc-200 bg-white py-1.5 pl-3 pr-9 text-sm font-bold text-zinc-700 shadow-sm transition-colors hover:border-indigo-300 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200">
+                                                <select value={selectedUserFilter} onChange={(e) => setSelectedUserFilter(e.target.value)} className="w-full cursor-pointer appearance-none rounded-lg border border-zinc-200 bg-white py-2 pl-3 pr-9 text-sm font-bold text-zinc-700 shadow-sm transition-colors hover:border-indigo-300 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 sm:w-auto">
                                                     <option value="ALL">전체 유저</option>
                                                     {allUserNames.map((name) => (
                                                         <option key={name} value={name}>{name}</option>
@@ -681,7 +788,7 @@ const App: React.FC = () => {
                                             </div>
                                         </div>
 
-                                        <div className="flex gap-3 text-xs font-medium text-zinc-500 dark:text-zinc-400">
+                                        <div className="flex flex-wrap gap-2.5 text-xs font-medium text-zinc-500 dark:text-zinc-400">
                                             <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-amber-400 ring-1 ring-amber-400/50" />대기</span>
                                             <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-indigo-500 ring-1 ring-indigo-500/50" />배치됨</span>
                                             <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-zinc-300 ring-1 ring-zinc-300/50" />완료</span>
@@ -703,8 +810,8 @@ const App: React.FC = () => {
                             } />
 
                             <Route path="/schedule" element={
-                                <section className="animate-fade-in space-y-6">
-                                    <div className="flex items-center justify-between">
+                                <section className="flex flex-col gap-6">
+                                    <div className="hidden flex-col gap-3 sm:flex-row sm:items-center sm:justify-between md:flex">
                                         <h2 className="flex items-center gap-2 text-xl font-bold text-zinc-900 dark:text-zinc-100">
                                             <ClipboardList className="text-indigo-500" /> 레이드 배정 결과
                                         </h2>
@@ -744,8 +851,8 @@ const App: React.FC = () => {
                             } />
 
                             <Route path="/sequence" element={
-                                <section className="animate-fade-in space-y-6">
-                                    <div className="flex items-center justify-between">
+                                <section className="flex flex-col gap-6">
+                                    <div className="hidden flex-col gap-3 sm:flex-row sm:items-center sm:justify-between md:flex">
                                         <h2 className="flex items-center gap-2 text-xl font-bold text-zinc-900 dark:text-zinc-100">
                                             <ChartGantt className="text-indigo-500" /> 레이드 진행 순서
                                         </h2>

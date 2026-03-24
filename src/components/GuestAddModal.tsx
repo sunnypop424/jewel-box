@@ -51,9 +51,9 @@ export const GuestAddModal: React.FC<GuestAddModalProps> = ({ isOpen, onClose, o
                     </div>
                 </div>
 
-                <div className="flex gap-3 pt-4 border-t border-zinc-100 dark:border-zinc-800">
-                    <button onClick={onClose} className="flex-1 rounded-xl bg-zinc-100 py-3 text-sm font-bold text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700">취소</button>
-                    <button onClick={handleAdd} className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 py-3 text-sm font-bold text-white shadow-lg shadow-indigo-500/30 hover:bg-indigo-500 transition-all"><UserPlus size={18} />게스트 추가하기</button>
+                <div className="flex flex-col-reverse gap-3 border-t border-zinc-100 pt-4 dark:border-zinc-800 sm:flex-row">
+                    <button onClick={onClose} className="w-full flex-1 rounded-xl bg-zinc-100 py-3 text-sm font-bold text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700">취소</button>
+                    <button onClick={handleAdd} className="inline-flex w-full flex-1 items-center justify-center gap-2 rounded-xl bg-indigo-600 py-3 text-sm font-bold text-white shadow-lg shadow-indigo-500/30 transition-all hover:bg-indigo-500"><UserPlus size={18} />게스트 추가하기</button>
                 </div>
             </div>
         </Modal>
