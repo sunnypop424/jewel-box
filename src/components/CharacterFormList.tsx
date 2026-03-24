@@ -450,7 +450,7 @@ export const CharacterFormList: React.FC<Props> = ({
                 </div>
             </div>
 
-            <div className="flex flex-col gap-4 rounded-2xl border border-indigo-100 bg-indigo-50/30 p-5 dark:border-indigo-900/30 dark:bg-indigo-900/10">
+            <div className="flex flex-col gap-4 rounded-2xl md:border md:border-indigo-100 md:bg-indigo-50/30 md:p-5 md:dark:border-indigo-900/30 md:dark:bg-indigo-900/10">
                 <h4 className="flex items-center gap-2 text-sm font-bold text-indigo-700 dark:text-indigo-400">
                     <Users size={18} /> 로스트아크 연동
                 </h4>
