@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import type { Character, Role, GoldOption, RaidId } from '../types';
 import { JOB_OPTIONS, ROLE_OPTIONS } from '../constants';
-import { Trash2, Plus, Save, User, Shield, Swords, Loader2, Download, ChevronDown, GripVertical, Search, Users, Info } from 'lucide-react';
+import { Trash2, Plus, Save, User, Shield, Swords, Loader2, Download, ChevronDown, GripVertical, Search, Users, Info, Hash } from 'lucide-react';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -11,6 +11,7 @@ interface CharacterFormRow {
     uid: string;
     id?: string;
     discordName: string;
+    discordId?: string; 
     jobCode: string;
     role: Role;
     itemLevel: number | '';
@@ -176,7 +177,9 @@ export const CharacterFormList: React.FC<Props> = ({
     onCancel,
     onLoadByDiscordName
 }) => {
+    // 🌟 상태 선언 (에러 방지를 위해 최상단에 배치)
     const [localDiscord, setLocalDiscord] = useState(discordName);
+    const [localDiscordId, setLocalDiscordId] = useState(''); 
     const [rows, setRows] = useState<CharacterFormRow[]>([]);
     const [isFetching, setIsFetching] = useState(false);
     const [goldOption, setGoldOption] = useState<GoldOption>('ALL_MAX');
@@ -196,6 +199,7 @@ export const CharacterFormList: React.FC<Props> = ({
     useEffect(() => {
         setLocalDiscord(discordName);
         if (characters.length > 0) {
+            setLocalDiscordId(characters[0].discordId || ''); 
             setGoldOption(characters[0].goldOption ?? 'ALL_MAX');
             setRows(characters.map((c, i) => ({
                 ...c,
@@ -206,38 +210,26 @@ export const CharacterFormList: React.FC<Props> = ({
                 singleRaids: c.singleRaids || [],
             })));
         } else {
+            setLocalDiscordId('');
             setGoldOption('ALL_MAX'); 
             setRows([{ uid: `new-0-${Date.now()}`, discordName, jobCode: '', role: 'DPS', itemLevel: 1700, combatPower: '', serkaNightmare: false, valkyCanSupport: false, receiveBoundGold: false, singleRaids: [] }]);
         }
     }, [discordName, characters]);
 
-    // 🌟 귀속 체크박스 조합에 따라 원정대 옵션을 알아서 변경해주는 마법의 로직
     useEffect(() => {
         if (rows.length === 0) return;
-
-        // 원정대 내 가장 높은 레벨(본캐) 파악
         const maxIlvl = Math.max(...rows.map(r => Number(r.itemLevel) || 0));
-        
-        // 체크박스 상태 분석
         const allChecked = rows.every(r => r.receiveBoundGold);
         const noneChecked = rows.every(r => !r.receiveBoundGold);
-        
-        // 본캐(최고레벨)들은 모두 체크되어 있고, 부캐들은 모두 해제되어 있는지 확인
         const mainsChecked = rows.filter(r => (Number(r.itemLevel) || 0) === maxIlvl).every(r => r.receiveBoundGold);
         const altsUnchecked = rows.filter(r => (Number(r.itemLevel) || 0) !== maxIlvl).every(r => !r.receiveBoundGold);
         const hasAlts = rows.some(r => (Number(r.itemLevel) || 0) !== maxIlvl);
 
-        // 조합에 맞춰 드롭다운 옵션 자동 결정
         let autoOption: GoldOption = 'CUSTOM';
-        if (allChecked) {
-            autoOption = 'ALL_MAX';
-        } else if (noneChecked) {
-            autoOption = 'GENERAL_MAX';
-        } else if (mainsChecked && altsUnchecked && hasAlts) {
-            autoOption = 'MAIN_ALL_ALT_GENERAL';
-        }
+        if (allChecked) autoOption = 'ALL_MAX';
+        else if (noneChecked) autoOption = 'GENERAL_MAX';
+        else if (mainsChecked && altsUnchecked && hasAlts) autoOption = 'MAIN_ALL_ALT_GENERAL';
 
-        // 현재 선택된 옵션과 다르면 자동 변경
         setGoldOption(prev => prev !== autoOption ? autoOption : prev);
     }, [rows]);
 
@@ -255,12 +247,74 @@ export const CharacterFormList: React.FC<Props> = ({
                 let receiveBound = false;
                 if (newOption === 'ALL_MAX') receiveBound = true;
                 else if (newOption === 'GENERAL_MAX') receiveBound = false;
-                else if (newOption === 'MAIN_ALL_ALT_GENERAL') {
-                    receiveBound = (Number(row.itemLevel) || 0) === maxIlvl;
-                }
+                else if (newOption === 'MAIN_ALL_ALT_GENERAL') receiveBound = (Number(row.itemLevel) || 0) === maxIlvl;
                 return { ...row, receiveBoundGold: receiveBound };
             });
         });
+    };
+
+    // 🌟 로직: 검색된 원정대 캐릭터 추가
+    const handleAddSelectedRoster = async () => {
+        if (checkedRosterNames.size === 0) return;
+        setIsSearchingRoster(true);
+        const newRows: CharacterFormRow[] = [];
+        for (const charName of Array.from(checkedRosterNames)) {
+            if (rows.some(r => r.lostArkName === charName)) continue;
+            try {
+                const profile = await fetchProfile(charName);
+                if (profile) {
+                    const lv = parseFloat(profile.ItemAvgLevel.replace(/,/g, ''));
+                    const cp = parseFloat(profile.CombatPower.replace(/,/g, ''));
+                    newRows.push({
+                        uid: `api-${charName}-${Date.now()}`,
+                        discordName: localDiscord,
+                        discordId: localDiscordId, // 상단 State 참조
+                        lostArkName: profile.CharacterName,
+                        jobCode: profile.CharacterClassName,
+                        role: getRoleFromClass(profile.CharacterClassName),
+                        itemLevel: Math.floor(lv),
+                        combatPower: Math.floor(cp),
+                        serkaNightmare: lv >= 1740,
+                        valkyCanSupport: false,
+                        receiveBoundGold: false,
+                        singleRaids: []
+                    } as any);
+                }
+            } catch (e) { console.error(`${charName} 조회 실패`); }
+        }
+        setRows(prev => [...prev, ...newRows]);
+        setRosterList([]); 
+        setIsSearchingRoster(false);
+    };
+
+    // 🌟 로직: 개별 캐릭터 추가
+    const handleAddSingle = async () => {
+        if (!searchSingleName.trim()) return;
+        if (rows.some(r => r.lostArkName === searchSingleName)) { alert('이미 추가된 캐릭터입니다.'); return; }
+        try {
+            setIsSearchingSingle(true);
+            const profile = await fetchProfile(searchSingleName);
+            if (profile && profile.CharacterName) {
+                const lv = parseFloat(profile.ItemAvgLevel.replace(/,/g, ''));
+                const cp = parseFloat(profile.CombatPower.replace(/,/g, ''));
+                setRows(prev => [...prev, {
+                    uid: `api-${profile.CharacterName}-${Date.now()}`,
+                    discordName: localDiscord,
+                    discordId: localDiscordId, // 상단 State 참조
+                    lostArkName: profile.CharacterName,
+                    jobCode: profile.CharacterClassName,
+                    role: getRoleFromClass(profile.CharacterClassName),
+                    itemLevel: Math.floor(lv),
+                    combatPower: Math.floor(cp),
+                    serkaNightmare: lv >= 1740,
+                    valkyCanSupport: false,
+                    receiveBoundGold: false,
+                    singleRaids: []
+                }]);
+                setSearchSingleName('');
+            }
+        } catch (e: any) { alert(`캐릭터 검색 실패: ${e.message}`); }
+        finally { setIsSearchingSingle(false); }
     };
 
     const handleSearchRoster = async () => {
@@ -280,66 +334,6 @@ export const CharacterFormList: React.FC<Props> = ({
         finally { setIsSearchingRoster(false); }
     };
 
-    const handleAddSelectedRoster = async () => {
-        if (checkedRosterNames.size === 0) return;
-        setIsSearchingRoster(true);
-        const newRows: CharacterFormRow[] = [];
-        for (const charName of Array.from(checkedRosterNames)) {
-            if (rows.some(r => r.lostArkName === charName)) continue;
-            try {
-                const profile = await fetchProfile(charName);
-                if (profile) {
-                    const lv = parseFloat(profile.ItemAvgLevel.replace(/,/g, ''));
-                    const cp = parseFloat(profile.CombatPower.replace(/,/g, ''));
-                    newRows.push({
-                        uid: `api-${charName}-${Date.now()}`,
-                        discordName: localDiscord,
-                        lostArkName: profile.CharacterName,
-                        jobCode: profile.CharacterClassName,
-                        role: getRoleFromClass(profile.CharacterClassName),
-                        itemLevel: Math.floor(lv),
-                        combatPower: Math.floor(cp),
-                        serkaNightmare: lv >= 1740,
-                        valkyCanSupport: false,
-                        receiveBoundGold: false,
-                        singleRaids: []
-                    } as any);
-                }
-            } catch (e) { console.error(`${charName} 조회 실패`); }
-        }
-        setRows(prev => [...prev, ...newRows]);
-        setRosterList([]); 
-        setIsSearchingRoster(false);
-    };
-
-    const handleAddSingle = async () => {
-        if (!searchSingleName.trim()) return;
-        if (rows.some(r => r.lostArkName === searchSingleName)) { alert('이미 추가된 캐릭터입니다.'); return; }
-        try {
-            setIsSearchingSingle(true);
-            const profile = await fetchProfile(searchSingleName);
-            if (profile && profile.CharacterName) {
-                const lv = parseFloat(profile.ItemAvgLevel.replace(/,/g, ''));
-                const cp = parseFloat(profile.CombatPower.replace(/,/g, ''));
-                setRows(prev => [...prev, {
-                    uid: `api-${profile.CharacterName}-${Date.now()}`,
-                    discordName: localDiscord,
-                    lostArkName: profile.CharacterName,
-                    jobCode: profile.CharacterClassName,
-                    role: getRoleFromClass(profile.CharacterClassName),
-                    itemLevel: Math.floor(lv),
-                    combatPower: Math.floor(cp),
-                    serkaNightmare: lv >= 1740,
-                    valkyCanSupport: false,
-                    receiveBoundGold: false,
-                    singleRaids: []
-                }]);
-                setSearchSingleName('');
-            }
-        } catch (e: any) { alert(`캐릭터 검색 실패: ${e.message}`); }
-        finally { setIsSearchingSingle(false); }
-    };
-
     const handleFetchFromCloud = async () => {
         const trimmedName = localDiscord.trim();
         if (!trimmedName) { alert('디스코드 닉네임을 먼저 입력해주세요.'); return; }
@@ -347,6 +341,7 @@ export const CharacterFormList: React.FC<Props> = ({
             setIsFetching(true);
             const myCharacters = onLoadByDiscordName(trimmedName);
             if (myCharacters.length > 0) {
+                setLocalDiscordId(myCharacters[0].discordId || ''); 
                 setGoldOption(myCharacters[0].goldOption ?? 'ALL_MAX');
                 setRows(myCharacters.map((c, i) => ({
                     ...c,
@@ -383,7 +378,6 @@ export const CharacterFormList: React.FC<Props> = ({
                     if (nextIl < 1680 || nextIl >= 1710) {
                         nextSingleRaids = nextSingleRaids.filter(id => id !== 'ACT2_NORMAL' && id !== 'ACT3_NORMAL');
                     }
-
                     return { ...row, [field]: numValue, serkaNightmare: nextSerkaNightmare, singleRaids: nextSingleRaids } as CharacterFormRow;
                 }
                 return { ...row, [field]: numValue } as CharacterFormRow;
@@ -393,7 +387,7 @@ export const CharacterFormList: React.FC<Props> = ({
     };
 
     const handleAddRow = () => {
-        setRows(prev => [...prev, { uid: `new-${Date.now()}`, discordName: localDiscord, jobCode: '', role: 'DPS', itemLevel: 1700, combatPower: '', serkaNightmare: false, valkyCanSupport: false, receiveBoundGold: false, singleRaids: [] }]);
+        setRows(prev => [...prev, { uid: `new-${Date.now()}`, discordName: localDiscord, discordId: localDiscordId, jobCode: '', role: 'DPS', itemLevel: 1700, combatPower: '', serkaNightmare: false, valkyCanSupport: false, receiveBoundGold: false, singleRaids: [] }]);
     };
 
     const handleRemoveRow = (index: number) => {
@@ -415,12 +409,15 @@ export const CharacterFormList: React.FC<Props> = ({
 
     const handleSubmit = () => {
         const trimmedName = localDiscord.trim();
+        const trimmedId = localDiscordId.trim();
+
         const cleaned: Character[] = rows
             .filter(r => r.jobCode && r.itemLevel && r.combatPower !== '')
             .map((r, idx) => {
                 const charData: Character = {
                     id: r.id ?? `${trimmedName}-${idx}-${Date.now()}`,
                     discordName: trimmedName, 
+                    discordId: trimmedId, 
                     jobCode: r.jobCode, 
                     role: r.role,
                     itemLevel: Number(r.itemLevel), 
@@ -431,11 +428,7 @@ export const CharacterFormList: React.FC<Props> = ({
                     goldOption,
                     singleRaids: r.singleRaids || [],
                 };
-
-                if (r.lostArkName) {
-                    charData.lostArkName = r.lostArkName;
-                }
-
+                if (r.lostArkName) charData.lostArkName = r.lostArkName;
                 return charData;
             });
 
@@ -456,22 +449,36 @@ export const CharacterFormList: React.FC<Props> = ({
                     <label className="text-sm font-bold text-zinc-900 dark:text-zinc-100">디스코드 닉네임</label>
                     <div className="flex gap-2">
                         <div className="relative flex-1">
-                            <User size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400" />
-                            <input className="w-full rounded-xl border border-zinc-200 bg-zinc-50 py-3 pl-10 pr-4 text-zinc-900 shadow-sm transition-all focus:border-indigo-500 focus:bg-white dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100" value={localDiscord} onChange={(e) => setLocalDiscord(e.target.value)} onKeyDown={(e) => handlePressEnter(e, handleFetchFromCloud)} placeholder="Nickname" disabled={isSaving} />
+                            <User size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400" />
+                            <input className="w-full rounded-xl border border-zinc-200 bg-zinc-50 py-3 pl-10 pr-4 text-sm text-zinc-900 shadow-sm transition-all focus:border-indigo-500 focus:bg-white dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100" value={localDiscord} onChange={(e) => setLocalDiscord(e.target.value)} onKeyDown={(e) => handlePressEnter(e, handleFetchFromCloud)} placeholder="Nickname" disabled={isSaving} />
                         </div>
                         <button type="button" onClick={handleFetchFromCloud} disabled={isSaving} className="inline-flex items-center gap-2 rounded-xl border border-zinc-200 bg-white px-4 text-sm font-bold text-zinc-700 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
-                            {isFetching ? <Loader2 size={18} className="animate-spin" /> : <Download size={18} />} <span className="hidden sm:inline">불러오기</span>
+                            {isFetching ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
                         </button>
                     </div>
                 </div>
+                
+                <div className="space-y-2 hidden">
+                    <label className="flex items-center gap-1 text-sm font-bold text-zinc-900 dark:text-zinc-100">
+                        디스코드 고유 ID <span className="text-[10px] font-normal text-zinc-400">(자동연동용)</span>
+                    </label>
+                    <div className="relative">
+                        <Hash size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400" />
+                        <input className="w-full rounded-xl border border-zinc-200 bg-zinc-50 py-3 pl-10 pr-4 text-zinc-900 shadow-sm transition-all focus:border-indigo-500 focus:bg-white dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 placeholder:text-zinc-300" value={localDiscordId} onChange={(e) => setLocalDiscordId(e.target.value)} placeholder="예: 123456789012345678" disabled={isSaving} />
+                    </div>
+                    <p className="text-[10px] text-zinc-500 dark:text-zinc-400">
+                        디스코드 설정 ➔ 고급 ➔ <b>개발자 모드 켜기</b> ➔ 내 프로필 우클릭 '사용자 ID 복사'
+                    </p>
+                </div>
+
                 <div className="space-y-2">
                     <label className="text-sm font-bold text-zinc-900 dark:text-zinc-100">원정대 골드 수급 옵션</label>
                     <div className="relative">
-                        <select className="w-full appearance-none rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-3 pr-10 text-sm font-medium text-zinc-700 focus:border-indigo-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200" value={goldOption} onChange={(e) => handleGoldOptionChange(e.target.value as GoldOption)} disabled={isSaving}>
-                            <option value="ALL_MAX">귀속 골드 포함 최대 골드</option>
-                            <option value="GENERAL_MAX">귀속 골드 제외 최대 골드</option>
-                            <option value="MAIN_ALL_ALT_GENERAL">본캐만 귀속 포함 (부캐 제외)</option>
-                            <option value="CUSTOM">자유 (캐릭터별 개별 설정)</option>
+                        <select className="w-full appearance-none rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-3 pr-10 text-sm font-medium text-zinc-700 focus:border-indigo-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200" value={goldOption} onChange={(e) => handleGoldOptionChange(e.target.value as GoldOption)} disabled={isSaving}>
+                            <option value="ALL_MAX">귀속 포함 최대 골드</option>
+                            <option value="GENERAL_MAX">귀속 제외 최대 골드</option>
+                            <option value="MAIN_ALL_ALT_GENERAL">본캐만 귀속 포함</option>
+                            <option value="CUSTOM">자유 (개별 설정)</option>
                         </select>
                         <ChevronDown size={16} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400" />
                     </div>

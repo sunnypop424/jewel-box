@@ -17,6 +17,7 @@ export type RaidSingleMap = Partial<Record<RaidId, string[]>>; // RaidId별 싱�
 export type Character = {
   id: string;
   discordName: string;
+  discordId?: string;
   jobCode: string;
   role: Role;
   itemLevel: number;
