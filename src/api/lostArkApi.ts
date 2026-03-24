@@ -58,7 +58,7 @@ export async function syncCharactersWithLostArkAPI(
 
   const finalList = characters.map(c => updatedMap.get(c.id) || c);
 
-  // DB 갱신 (유저별 저장)
+  // DB 업데이트 (유저별 저장)
   const grouped = finalList.reduce((acc, char) => {
     const name = char.discordName;
     if (!acc[name]) acc[name] = [];

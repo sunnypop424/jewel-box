@@ -20,7 +20,7 @@ export const GatheringModal: React.FC<GatheringModalProps> = ({ isOpen, onClose 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!targetDate || !targetTime) {
-      toast.error('날짜와 시간을 입력해주세요.'); // ✨ 교체
+      toast.error('날짜와 시간을 입력해 주세요.'); // ✨ 교체
       return;
     }
 
@@ -47,7 +47,7 @@ export const GatheringModal: React.FC<GatheringModalProps> = ({ isOpen, onClose 
       
     } catch (error) {
       console.error(error);
-      toast.error('전송 중 오류가 발생했습니다. Worker URL과 상태를 확인해주세요.'); // ✨ 교체
+      toast.error('전송 중 오류가 발생했습니다. Worker URL과 상태를 확인해 주세요.'); // ✨ 교체
     } finally {
       setIsSubmitting(false);
     }
@@ -98,7 +98,7 @@ export const GatheringModal: React.FC<GatheringModalProps> = ({ isOpen, onClose 
           <button type="button" onClick={onClose} disabled={isSubmitting} className="w-full rounded-xl px-6 py-3 text-sm font-bold text-zinc-500 transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-800 sm:w-auto">취소</button>
           <button type="submit" disabled={isSubmitting} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-8 py-3 text-sm font-bold text-white shadow-lg shadow-indigo-500/20 transition-colors hover:bg-indigo-500 disabled:opacity-70 sm:w-auto">
             {isSubmitting ? <Loader2 size={18} className="animate-spin" /> : <Megaphone size={18} />}
-            {isSubmitting ? '전송 중...' : '디스코드로 알림 보내기'}
+            {isSubmitting ? '전송하고 있습니다.' : '디스코드로 알림 보내기'}
           </button>
         </div>
       </form>

@@ -267,7 +267,7 @@ export const LadderGame: React.FC<Props> = ({ allUserNames = [] }) => {
   return (
     <div className="flex flex-col gap-4 animate-fade-in">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">결과를 확인할 참여자를 클릭하세요!</h3>
+        <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">결과를 확인할 참여자를 클릭해 주세요.</h3>
         <div className="flex gap-2">
           <button onClick={revealAll} disabled={showAll} className="flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-bold text-indigo-700 hover:bg-indigo-100 disabled:opacity-50 dark:border-indigo-900/50 dark:bg-indigo-900/30 dark:text-indigo-300"><ArrowDown size={14} />전체 결과 보기</button>
           <button onClick={resetGame} className="flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs font-bold text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"><RefreshCw size={14} />다시 설정</button>

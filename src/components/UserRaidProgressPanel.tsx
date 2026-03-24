@@ -335,9 +335,9 @@ export function UserRaidProgressPanel({
                                                                 onClick={async () => {
                                                                     if (onRefreshCharacter && !refreshingId) {
                                                                         const isConfirmed = await confirm(
-                                                                            `${c.lostArkName}의 정보를 업데이트 하시겠습니까?\n\n` +
-                                                                            `※ 안내: 전체 갱신과 달리, 캐릭터 정보 업데이트는 현재 전투력이 이전보다 낮아진 경우(의도적인 스펙 하락)에도 그대로 반영됩니다.`,
-                                                                            '캐릭터 정보 갱신'
+                                                                            `${c.lostArkName}의 정보를 업데이트하시겠습니까?\n\n` +
+                                                                            `※ 안내: 전체 업데이트와 달리, 캐릭터 정보 업데이트는 현재 전투력이 이전보다 낮아진 경우(의도적인 스펙 하락)에도 그대로 반영됩니다.`,
+                                                                            '캐릭터 정보 업데이트'
                                                                         );
                                                                         if (!isConfirmed) return;
 
@@ -384,7 +384,7 @@ export function UserRaidProgressPanel({
 
                                             <div className="flex flex-col gap-1.5 border-t border-zinc-100 pt-3 dark:border-zinc-800 mt-1">
                                                 {raidsForChar.length === 0 ? (
-                                                    <span className="text-xs text-zinc-400 text-center py-2">잔여 레이드 없음</span>
+                                                    <span className="text-xs text-zinc-400 text-center py-2">잔여 레이드가 없습니다.</span>
                                                 ) : (
                                                     raidsForChar.map((raidId) => {
                                                         const state = getState(raidId, c.id);
@@ -415,9 +415,9 @@ export function UserRaidProgressPanel({
                                                                             // ✨ Toast 알림 추가
                                                                             const charName = c.lostArkName || c.jobCode;
                                                                             if (!isDone) {
-                                                                                toast.success(`${charName} 캐릭터의 ${raidLabel} 레이드 완료 처리하였습니다.`);
+                                                                                toast.success(`${charName} 캐릭터의 ${raidLabel} 레이드 완료 처리했습니다.`);
                                                                             } else {
-                                                                                toast.success(`${charName} 캐릭터의 ${raidLabel} 레이드 완료를 취소 처리하였습니다.`);
+                                                                                toast.success(`${charName} 캐릭터의 ${raidLabel} 레이드 완료를 취소했습니다.`);
                                                                             }
                                                                         }}
                                                                         className="h-3.5 w-3.5 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer dark:border-zinc-600 dark:bg-zinc-800"

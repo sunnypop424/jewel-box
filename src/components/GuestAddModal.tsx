@@ -16,7 +16,7 @@ export const GuestAddModal: React.FC<GuestAddModalProps> = ({ isOpen, onClose, o
 
     const handleAdd = () => {
         if (!jobCode) {
-            toast.error('직업을 선택해주세요.'); // ✨ 교체
+            toast.error('직업을 선택해 주세요.'); // ✨ 교체
             return;
         }
         onAdd(role, jobCode);
@@ -44,7 +44,7 @@ export const GuestAddModal: React.FC<GuestAddModalProps> = ({ isOpen, onClose, o
                     <label className="text-sm font-bold text-zinc-900 dark:text-zinc-100">직업</label>
                     <div className="relative">
                         <select className="w-full appearance-none rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm font-bold text-zinc-700 transition-all focus:border-indigo-500 focus:bg-white dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100" value={jobCode} onChange={(e) => setJobCode(e.target.value)}>
-                            <option value="">직업을 선택하세요</option>
+                            <option value="">직업을 선택해 주세요</option>
                             {JOB_OPTIONS.map(job => <option key={job} value={job}>{job}</option>)}
                         </select>
                         <ChevronDown size={18} className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-zinc-400" />

@@ -813,7 +813,7 @@ export const RaidSequenceView: React.FC<Props> = ({
             onClick={() => {
               if (swapDisabled) {
                 toast.error(
-                  completingKey ? '레이드 완료 처리 중입니다.' : '캐릭터 변경 반영 중입니다.',
+                  completingKey ? '레이드 완료를 처리하고 있습니다.' : '캐릭터 변경을 반영하고 있습니다.',
                 );
                 return;
               }
@@ -890,7 +890,7 @@ export const RaidSequenceView: React.FC<Props> = ({
                     disabled={completeTargetIds.length === 0 || isCompleting || isSwapping}
                     onClick={async () => {
                       if (isSwapping) {
-                        toast.error('캐릭터 변경 반영 중입니다. 잠시 후 다시 시도해주세요.');
+                        toast.error('캐릭터 변경을 반영하고 있습니다. 잠시 후 다시 시도해 주세요.');
                         return;
                       }
 
@@ -911,7 +911,7 @@ export const RaidSequenceView: React.FC<Props> = ({
                         onExclusionsUpdated?.(next);
                       } catch (e) {
                         console.error(e);
-                        toast.error('레이드 완료 처리 실패');
+                        toast.error('레이드 완료 처리에 실패했습니다.');
                       } finally {
                         setCompletingKey(null);
                       }
@@ -1070,7 +1070,7 @@ export const RaidSequenceView: React.FC<Props> = ({
                   disabled={completeTargetIds.length === 0 || isCompleting || isSwapping}
                   onClick={async () => {
                     if (isSwapping) {
-                      toast.error('캐릭터 변경 반영 중입니다. 잠시 후 다시 시도해주세요.');
+                      toast.error('캐릭터 변경을 반영하고 있습니다. 잠시 후 다시 시도해 주세요.');
                       return;
                     }
 
@@ -1087,7 +1087,7 @@ export const RaidSequenceView: React.FC<Props> = ({
                       onExclusionsUpdated?.(next);
                     } catch (e) {
                       console.error(e);
-                      toast.error('레이드 완료 처리 실패');
+                      toast.error('레이드 완료 처리에 실패했습니다.');
                     } finally {
                       setCompletingKey(null);
                     }
@@ -1189,7 +1189,7 @@ export const RaidSequenceView: React.FC<Props> = ({
           <div className="flex flex-col gap-2">
             <div className="flex items-start gap-2 text-sm font-semibold text-zinc-600 dark:text-zinc-400 sm:items-center">
               <Users className="h-4 w-4" />
-              <span>참여 인원 (토글 시 전체 레이드 배정에서 제외 후 재배정)</span>
+              <span>참여 인원</span>
             </div>
 
             <div className="flex flex-wrap gap-2">
@@ -1254,7 +1254,7 @@ export const RaidSequenceView: React.FC<Props> = ({
       {isBlocking && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 backdrop-blur-sm">
           <div className="rounded-2xl bg-white px-5 py-4 text-sm font-bold text-zinc-900 shadow-lg dark:bg-zinc-900 dark:text-zinc-100">
-            {completingKey !== null ? '레이드 완료 처리 중...' : '캐릭터 변경 반영 중...'}
+            {completingKey !== null ? '레이드를 완료 처리하고 있습니다.' : '캐릭터 변경을 반영하고 있습니다.'}
           </div>
         </div>
       )}
@@ -1411,7 +1411,7 @@ export const RaidSequenceView: React.FC<Props> = ({
             if (!onSwapCharacter) return;
 
             if (completingKey !== null) {
-              toast.error('레이드 완료 처리 중입니다. 잠시 후 다시 시도해주세요.');
+              toast.error('레이드를 완료 처리하고 있습니다. 잠시 후 다시 시도해 주세요.');
               return;
             }
 
@@ -1421,7 +1421,7 @@ export const RaidSequenceView: React.FC<Props> = ({
               setSwapTarget(null);
             } catch (e) {
               console.error(e);
-              toast.error('캐릭터 교체 실패');
+              toast.error('캐릭터 교체에 실패했습니다.');
             } finally {
               setIsSwappingLocal(false);
             }

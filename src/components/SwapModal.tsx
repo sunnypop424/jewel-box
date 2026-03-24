@@ -78,7 +78,7 @@ export const SwapModal: React.FC<SwapModalProps> = ({
             <span className="font-bold text-zinc-900 dark:text-zinc-100">
               {target.char.jobCode}
             </span>
-            ({target.char.discordName}) 캐릭터를 교체할 캐릭터를 선택하세요.
+            ({target.char.discordName}) 캐릭터와 교체할 캐릭터를 선택해 주세요.
             <br />
             <span className="text-[11px] text-indigo-500 font-medium">
               * 레이드 배정 기준에 따라 이 레이드를 가는 캐릭터만 표시됩니다.
@@ -89,7 +89,7 @@ export const SwapModal: React.FC<SwapModalProps> = ({
             {swapCandidates.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-8 text-center">
                 <p className="text-xs text-zinc-400">교체 가능한 캐릭터가 없습니다.</p>
-                <p className="text-[10px] text-zinc-500 mt-1">이 난이도를 가도록 설정된 다른 캐릭터가 있는지 확인해주세요.</p>
+                <p className="text-[10px] text-zinc-500 mt-1">이 난이도를 가도록 설정된 다른 캐릭터가 있는지 확인해 주세요.</p>
               </div>
             ) : (
               swapCandidates.map((c) => (

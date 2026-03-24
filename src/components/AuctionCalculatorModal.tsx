@@ -63,7 +63,7 @@ export function AuctionCalculatorModal({ isOpen, onClose }: Props) {
                 type="number"
                 value={priceStr}
                 onChange={(e) => setPriceStr(e.target.value)}
-                placeholder="가격을 입력하세요 (예: 300000)"
+                placeholder="가격을 입력해 주세요 (예: 300000)"
                 className="w-full rounded-xl border border-zinc-200 bg-zinc-50 py-3 pl-4 pr-10 text-zinc-900 shadow-sm transition-all focus:border-indigo-500 focus:bg-white dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 outline-none"
               />
               <Coins size={18} className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-400" />

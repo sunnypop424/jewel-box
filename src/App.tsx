@@ -89,15 +89,16 @@ const App: React.FC = () => {
     const location = useLocation();
 
     // ✨ Hook 초기화
-    
     const { confirm, ConfirmModal } = useConfirm();
+
+    // ✨ 전체 화면 오버레이용 상태 추가
+    const [isUpdating, setIsUpdating] = useState(false);
 
     const [allCharacters, setAllCharacters] = useState<Character[]>([]);
     const [localSquad, setLocalSquad] = useState<Squad>({ discordName: '', characters: [] });
 
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
-    const [status, setStatus] = useState<string | null>(null);
 
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isLadderModalOpen, setIsLadderModalOpen] = useState(false);
@@ -141,16 +142,12 @@ const App: React.FC = () => {
     const refreshAllCharacters = async () => {
         try {
             setLoading(true);
-            setStatus('데이터 동기화 중...');
             const list = await fetchCharacters();
             setAllCharacters(list);
-            const uniqueUsers = new Set(list.map((c) => c.discordName)).size;
-            const totalChars = list.length;
-            setStatus(`유저 ${uniqueUsers}명 / 캐릭터 ${totalChars}개 로드 완료`);
+            // 초기 진입 시 반복되는 성공 토스트 제거
         } catch (e: any) {
             console.error(e);
-            setStatus('로드 실패');
-            toast.error(`데이터 로드 실패: ${e?.message ?? e}`); // ✨ 교체
+            toast.error(`데이터 불러오기에 실패했습니다.`);
         } finally {
             setLoading(false);
         }
@@ -279,11 +276,11 @@ const App: React.FC = () => {
 
     const handleToggleSupportShortage = async (raidId: RaidId, next: boolean) => {
         try {
-            setStatus('랏폿 설정 저장 중...');
             const rs = await setRaidSetting(raidId, next);
             setRaidSettings(rs);
-            setStatus('랏폿 설정이 저장되었습니다.');
+            // 잦은 설정 토글이므로 토스트 생략
         } catch (e) {
+            toast.error('설정 저장에 실패했습니다.');
             refreshRaidSettings().catch(console.error);
         }
     };
@@ -296,11 +293,10 @@ const App: React.FC = () => {
             setLocalSquad(newSquad);
             await Promise.all([refreshAllCharacters(), refreshSwaps()]);
             setIsModalOpen(false);
-            toast.success(`${discordName}님의 정보가 저장되었습니다.`); // ✨ 교체
-            setStatus('저장 완료');
+            toast.success(`${discordName}님의 정보가 저장되었습니다.`);
         } catch (e: any) {
             console.error(e);
-            toast.error(`저장 실패: ${e?.message ?? e}`); // ✨ 교체
+            toast.error(`저장 실패: ${e?.message ?? e}`);
         } finally {
             setSaving(false);
         }
@@ -309,11 +305,12 @@ const App: React.FC = () => {
     const handleExcludeCharacterFromRaid = async (raidId: RaidId, charId: string, isCurrentlyExcluded: boolean = false) => {
         try {
             if (isSwapping) return;
-            setStatus(isCurrentlyExcluded ? '레이드 완료 취소 중...' : '레이드 제외 처리 중...');
             const next = await toggleCharacterOnRaid(raidId, charId, isCurrentlyExcluded);
             setRaidExclusions(next);
-            setStatus(isCurrentlyExcluded ? '완료가 취소되었습니다.' : '레이드가 완료 처리되었습니다.');
-        } catch (e) { }
+            // 단일 체크박스 클릭이므로 토스트 생략
+        } catch (e) {
+            toast.error('상태 변경에 실패했습니다.');
+        }
     };
 
     const handleExcludeRun = async (raidId: RaidId, charIds: string[]) => {
@@ -322,21 +319,20 @@ const App: React.FC = () => {
             const uniqIds = Array.from(new Set((charIds ?? []).map((id) => String(id ?? '').trim()).filter(Boolean)));
             if (uniqIds.length === 0) return;
 
-            setStatus('공격대 완료 처리 중...');
             const next = await excludeCharactersOnRaid(raidId, uniqIds);
             setRaidExclusions(next);
-            toast.success('공격대가 완료 처리되었습니다.'); // ✨
-            setStatus('공격대 완료 처리됨');
-        } catch (e) { }
+            toast.success('공격대가 완료 처리되었습니다.');
+        } catch (e) {
+            toast.error('공격대 완료 처리에 실패했습니다.');
+        }
     };
 
     const handleResetExclusions = async () => {
-        // ✨ 모달 교체
         const ok = await confirm('모든 레이드 완료 내역을 초기화하시겠습니까?\n\n(이번 주 획득한 골드는 이전 누적 골드에 안전하게 합산되어 이관됩니다.)', '주간 내역 초기화');
         if (!ok) return;
 
+        setIsUpdating(true);
         try {
-            setStatus('내역 초기화 및 누적 골드 이관 중...');
             const updatesMap: Record<string, { g: number, b: number }> = {};
             
             for (const [raidId, charIds] of Object.entries(raidExclusions)) {
@@ -364,26 +360,24 @@ const App: React.FC = () => {
             
             await Promise.all([refreshExclusions(), refreshSwaps(), refreshAccumulatedGold()]); 
             
-            toast.success('모든 내역이 초기화되고 골드가 이관되었습니다.'); // ✨
-            setStatus('초기화 및 이관 완료');
+            toast.success('모든 내역이 초기화되었습니다.');
         } catch (e) {
             console.error(e);
-            toast.error('초기화 실패'); // ✨
+            toast.error('초기화에 실패했습니다.');
+        } finally {
+            setIsUpdating(false);
         }
     };
 
     const handleResetAccumulatedGold = async (discordName: string, offsetGeneral: number, offsetBound: number) => {
-        // ✨ 모달 교체
         if (await confirm(`[${discordName}]님의 누적 골드를 완전히 초기화하시겠습니까?`, '누적 골드 초기화')) {
             try {
-                setStatus(`${discordName}님의 누적 골드 초기화 중...`);
                 const nextGold = await resetAccumulatedGold(discordName, offsetGeneral, offsetBound);
                 setAccumulatedGold(nextGold);
-                toast.success(`${discordName}님의 누적 골드가 초기화되었습니다.`); // ✨
-                setStatus('누적 골드 초기화 완료');
+                toast.success(`${discordName}님의 누적 골드가 초기화되었습니다.`);
             } catch (e) {
                 console.error(e);
-                toast.error('누적 골드 초기화에 실패했습니다.'); // ✨
+                toast.error('누적 골드 초기화에 실패했습니다.');
             }
         }
     };
@@ -391,26 +385,23 @@ const App: React.FC = () => {
     const handleSwapCharacter = async (raidId: RaidId, charId1: string, charId2: string) => {
         try {
             setIsSwapping(true);
-            setStatus('캐릭터 교체 중...');
             const nextSwaps = await addSwap(raidId, charId1, charId2);
             setRaidSwaps(nextSwaps);
-            toast.success('캐릭터 교체가 완료되었습니다.'); // ✨
-            setStatus('캐릭터 교체 완료');
+            toast.success('캐릭터 교체가 완료되었습니다.');
         } catch (e) {
-            toast.error('캐릭터 교체 실패'); // ✨
+            toast.error('캐릭터 교체에 실패했습니다.');
         } finally {
             setIsSwapping(false);
         }
     };
 
     const handleRefreshUserCharacters = async (discordName: string, userChars: Character[]) => {
-        // ✨ 모달 교체
-        const ok = await confirm(`${discordName}님의 원정대 정보를 업데이트 하시겠습니까?`, '원정대 갱신');
+        const ok = await confirm(`${discordName}님의 원정대 정보를 업데이트하시겠습니까?`, '원정대 업데이트');
         if (!ok) return;
 
+        let skippedMessages: string[] = [];
+        setIsUpdating(true);
         try {
-            setStatus(`${discordName}님의 원정대 정보 업데이트 중...`);
-            const skippedMessages: string[] = [];
             const updatedUserChars = await syncCharactersWithLostArkAPI(userChars, saveCharacters, (msg) => {
                 skippedMessages.push(msg);
             });
@@ -418,28 +409,30 @@ const App: React.FC = () => {
                 const others = prev.filter(c => c.discordName !== discordName);
                 return [...others, ...updatedUserChars];
             });
-            toast.success(`${discordName}님의 원정대 정보다 업데이트 되었습니다.`); // ✨
-            setStatus('업데이트 완료');
-
-            if (skippedMessages.length > 0) {
-                await confirm(
-                    `[전투력 미갱신 알림]\n\n` +
-                    `아래 캐릭터들은 현재 전투력이 기존보다 낮아 기존 전투력으로 유지되었습니다.\n\n` +
-                    `${skippedMessages.join('\n')}\n\n` +
-                    `의도적으로 전투력을 낮추신 경우, 개인별 현황에서 캐릭터별 새로고침을 진행해주세요.`,
-                    '안내'
-                ); // ✨
-            }
+            toast.success(`${discordName}님의 원정대 정보가 업데이트되었습니다.`); 
         } catch (e: any) {
             console.error(e);
-            toast.error(`갱신 실패: ${e?.message ?? e}`); // ✨
+            toast.error(`업데이트 실패: ${e?.message ?? e}`);
+        } finally {
+            setIsUpdating(false);
+        }
+
+        if (skippedMessages.length > 0) {
+            await confirm(
+                `[전투력 미업데이트 알림]\n\n` +
+                `아래 캐릭터들은 현재 전투력이 기존보다 낮아 기존 전투력으로 유지되었습니다.\n\n` +
+                `${skippedMessages.join('\n')}\n\n` +
+                `의도적으로 전투력을 낮추신 경우, 개인별 현황에서 캐릭터별 새로고침을 진행해 주세요.`,
+                '안내'
+            );
         }
     };
 
     const handleRefreshSingleCharacter = async (char: Character) => {
         if (!char.lostArkName) return;
+
+        setIsUpdating(true);
         try {
-            setStatus(`${char.discordName}님의 ${char.lostArkName} 갱신 중...`);
             const profile = await fetchProfile(char.lostArkName);
             
             if (profile && profile.ItemAvgLevel && profile.CombatPower) {
@@ -454,24 +447,24 @@ const App: React.FC = () => {
                 const userCharsToSave = nextAllChars.filter(c => c.discordName === char.discordName);
                 await saveCharacters(char.discordName, userCharsToSave);
                 
-                toast.success(`${char.lostArkName} 갱신 완료`); // ✨
-                setStatus('갱신 완료');
+                toast.success(`${char.lostArkName} 캐릭터의 정보가 업데이트되었습니다.`);
             }
         } catch (e: any) { 
-            toast.error('캐릭터 갱신 실패'); // ✨
+            toast.error('캐릭터 업데이트에 실패했습니다.');
+        } finally {
+            setIsUpdating(false);
         }
     };
 
     const handleRefresh = async () => {
-        const ok = await confirm('로아 API를 통해 모든 유저의 정보를 업데이트 하시겠습니까?', '전체 유저 갱신'); // ✨
+        const ok = await confirm('로아 API를 통해 모든 유저의 정보를 업데이트하시겠습니까?', '전체 유저 업데이트');
         if (!ok) return;
 
+        let skippedMessages: string[] = [];
+        setIsUpdating(true);
         try {
             setLoading(true);
-            setStatus('전체 유저 정보 업데이트 중... (페이지를 닫지 마세요)');
-            
             let list = await fetchCharacters();
-            const skippedMessages: string[] = [];
             
             list = await syncCharactersWithLostArkAPI(list, saveCharacters, (msg) => {
                 skippedMessages.push(msg);
@@ -479,23 +472,22 @@ const App: React.FC = () => {
             
             setAllCharacters(list);
             await Promise.all([refreshExclusions(), refreshRaidSettings(), refreshSwaps()]);
-            toast.success('모든 캐릭터의 정보가 갱신되었습니다.'); // ✨
-            setStatus('전체 정보 갱신 완료');
-
-            if (skippedMessages.length > 0) {
-                await confirm(
-                    `[전투력 미갱신 알림]\n\n` +
-                    `아래 캐릭터들은 현재 전투력이 기존보다 낮아 기존 전투력으로 유지되었습니다.\n\n` +
-                    `${skippedMessages.join('\n')}\n\n` +
-                    `의도적으로 전투력을 낮추신 경우, 개인별 현황에서 캐릭터별 새로고침을 진행해주세요.`,
-                    '안내'
-                ); // ✨
-            }
-
+            toast.success('모든 캐릭터의 정보가 업데이트되었습니다.'); 
         } catch (e) {
-            toast.error('전체 갱신 중 오류가 발생했습니다.'); // ✨
+            toast.error('전체 업데이트 중 오류가 발생했습니다.');
         } finally {
             setLoading(false);
+            setIsUpdating(false);
+        }
+
+        if (skippedMessages.length > 0) {
+            await confirm(
+                `[전투력 미업데이트 알림]\n\n` +
+                `아래 캐릭터들은 현재 전투력이 기존보다 낮아 기존 전투력으로 유지되었습니다.\n\n` +
+                `${skippedMessages.join('\n')}\n\n` +
+                `의도적으로 전투력을 낮추신 경우, 개인별 현황에서 캐릭터별 새로고침을 진행해 주세요.`,
+                '안내'
+            );
         }
     };
 
@@ -542,6 +534,18 @@ const App: React.FC = () => {
 
     return (
         <div className="flex min-h-[100dvh] w-full overflow-hidden bg-zinc-50 font-sans text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100 md:h-screen">
+            {/* ✨ 저장 및 업데이트 시 화면 조작을 막는 오버레이 */}
+            {(saving || isUpdating) && (
+                <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-zinc-900/20 backdrop-blur-[2px] touch-none cursor-wait dark:bg-black/40">
+                    <div className="flex flex-col items-center gap-4 rounded-2xl bg-white/95 px-8 py-6 shadow-2xl dark:bg-zinc-900/95 border border-zinc-200 dark:border-zinc-800">
+                        <div className="h-10 w-10 animate-spin rounded-full border-4 border-zinc-200 border-t-indigo-600 dark:border-zinc-700 dark:border-t-indigo-500" />
+                        <p className="text-sm font-bold text-zinc-700 dark:text-zinc-200 text-center whitespace-pre-wrap">
+                            데이터를 처리하고 있습니다.
+                        </p>
+                    </div>
+                </div>
+            )}
+
             {isSidebarOpen && (
                 <div className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm md:hidden" onClick={() => setIsSidebarOpen(false)} />
             )}
@@ -553,12 +557,12 @@ const App: React.FC = () => {
                             <Swords size={22} strokeWidth={2.5} />
                         </div>
                         <div className="flex flex-col">
+                            <span className="text-[10px] font-medium text-zinc-400">
+                                Dintto's Jewel Box
+                            </span>
                             <h1 className="text-lg font-bold tracking-tight text-zinc-900 dark:text-white">
                                 Raid <span className="text-indigo-600 dark:text-indigo-400">Manager</span>
                             </h1>
-                            <span className="text-[10px] font-medium text-zinc-400">
-                                {status || (loading ? '데이터 불러오는 중...' : '시스템 정상 작동 중')}
-                            </span>
                         </div>
                     </div>
                     <button onClick={() => setIsSidebarOpen(false)} className="rounded-lg p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 md:hidden">
@@ -620,7 +624,7 @@ const App: React.FC = () => {
                                     내 원정대 관리
                                 </button>
                                 <button onClick={handleRefresh} disabled={loading || saving || isSwapping} className={subMenuButtonClass}>
-                                    전체 전투력 갱신
+                                    전체 전투력 업데이트
                                 </button>
                                 <button onClick={handleResetExclusions} disabled={loadingExclusions || isSwapping} className={`${subMenuButtonClass} text-rose-600 dark:text-rose-400`}>
                                     레이드 완료 내역 초기화
@@ -823,7 +827,7 @@ const App: React.FC = () => {
                                                 <Users size={32} className="text-zinc-400" />
                                             </div>
                                             <p className="text-lg font-medium text-zinc-600 dark:text-zinc-300">등록된 캐릭터가 없습니다.</p>
-                                            <p className="mt-1 text-sm text-zinc-500">좌측 메뉴의 &quot;내 원정대 관리&quot;에서 캐릭터를 등록해주세요.</p>
+                                            <p className="mt-1 text-sm text-zinc-500">좌측 메뉴의 &quot;내 원정대 관리&quot;에서 캐릭터를 등록해 주세요.</p>
                                         </div>
                                     ) : (
                                         <RaidScheduleView

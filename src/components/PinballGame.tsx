@@ -579,10 +579,10 @@ export const PinballGame: React.FC<Props> = ({ allUserNames = [] }) => {
                   : winningRank === playerCount - 1
                   ? '가장 늦게'
                   : `${winningRank + 1}번째로`}{' '}
-                도착한 구슬이 승리!
+                도착한 구슬이 승리합니다.
               </div>
               <div className="text-[11px] text-zinc-500 dark:text-zinc-400">
-                현재 {finishOrder.length} / {playerCount} 명 도착 완료
+                현재 {finishOrder.length} / {playerCount}명 도착했습니다.
               </div>
             </div>
 

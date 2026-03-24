@@ -172,7 +172,7 @@ export const RaidScheduleView: React.FC<Props> = ({
   ) => {
     if (!onExcludeCharacter) return;
     if (isSwapping) {
-      toast.error('캐릭터 변경 반영 중입니다. 잠시 후 다시 시도해주세요.');
+      toast.error('캐릭터 변경을 반영하고 있습니다. 잠시 후 다시 시도해 주세요.');
       return;
     }
     await onExcludeCharacter(raidId, characterId, isCurrentlyExcluded);
@@ -228,7 +228,7 @@ export const RaidScheduleView: React.FC<Props> = ({
           <div className="flex flex-col gap-2">
             <div className="flex items-start gap-2 text-sm font-semibold text-zinc-600 dark:text-zinc-400 sm:items-center">
               <Users className="h-4 w-4" />
-              <span>참여 인원 (토글 시 전체 레이드 배정에서 제외 후 재배정)</span>
+              <span>참여 인원</span>
             </div>
             <div className="flex flex-wrap gap-2">
               {allUserNames.map((name) => {
@@ -518,7 +518,7 @@ export const RaidScheduleView: React.FC<Props> = ({
                                   e.stopPropagation();
 
                                   if (isSwapping) {
-                                    toast.error('캐릭터 변경 반영 중입니다. 잠시 후 다시 시도해주세요.');
+                                    toast.error('캐릭터 변경을 반영하고 있습니다. 잠시 후 다시 시도해 주세요.');
                                     return;
                                   }
                                   if (isCompleting) return;
@@ -546,7 +546,7 @@ export const RaidScheduleView: React.FC<Props> = ({
                                 className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-bold border border-emerald-200 text-emerald-700 bg-white hover:bg-emerald-50 dark:border-emerald-900/50 dark:text-emerald-200 dark:bg-transparent dark:hover:bg-emerald-950/40 disabled:cursor-not-allowed disabled:opacity-40 whitespace-nowrap"
                               >
                                 <CheckCircle2 className="h-3.5 w-3.5" />
-                                {isCompleting ? '처리중...' : '레이드 완료'}
+                                {isCompleting ? '처리하고 있습니다.' : '레이드 완료'}
                               </button>
                             )}
 
@@ -645,7 +645,7 @@ export const RaidScheduleView: React.FC<Props> = ({
                                                 disabled={isSwapping}
                                                 onClick={() => {
                                                   if (isSwapping) {
-                                                    toast.error('캐릭터 변경 반영 중입니다. 잠시 후 다시 시도해주세요.');
+                                                    toast.error('캐릭터 변경을 반영하고 있습니다. 잠시 후 다시 시도해 주세요.');
                                                     return;
                                                   }
                                                   setSwapTarget({

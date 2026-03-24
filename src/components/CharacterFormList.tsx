@@ -267,7 +267,7 @@ export const CharacterFormList: React.FC<Props> = ({
                 setSearchSingleName('');
             }
         } catch (e: any) { 
-            toast.error(`캐릭터 검색 실패: ${e.message}`); // ✨
+            toast.error(`캐릭터 검색에 실패했습니다. : ${e.message}`); // ✨
         }
         finally { setIsSearchingSingle(false); }
     };
@@ -286,7 +286,7 @@ export const CharacterFormList: React.FC<Props> = ({
             setRosterList(over1680);
             setCheckedRosterNames(new Set<string>(over1680.slice(0, 6).map((s: any) => s.CharacterName)));
         } catch (e: any) { 
-            toast.error(`원정대 검색 실패: ${e.message}`); // ✨
+            toast.error(`원정대 검색에 실패했습니다. : ${e.message}`); // ✨
         }
         finally { setIsSearchingRoster(false); }
     };
@@ -294,7 +294,7 @@ export const CharacterFormList: React.FC<Props> = ({
     const handleFetchFromCloud = async () => {
         const trimmedName = localDiscord.trim();
         if (!trimmedName) { 
-            toast.error('디스코드 닉네임을 먼저 입력해주세요.'); // ✨
+            toast.error('디스코드 닉네임을 먼저 입력해 주세요.'); // ✨
             return; 
         }
         try {
@@ -398,7 +398,7 @@ export const CharacterFormList: React.FC<Props> = ({
             });
 
         if (cleaned.length === 0) { 
-            toast.error('최소 1개 이상의 캐릭터 정보를 입력해주세요.'); // ✨
+            toast.error('최소 1개 이상의 캐릭터 정보를 입력해 주세요.'); // ✨
             return; 
         }
         onSubmit(trimmedName, cleaned);
@@ -482,7 +482,7 @@ export const CharacterFormList: React.FC<Props> = ({
                                                 const next = new Set<string>(checkedRosterNames);
                                                 if(next.has(char.CharacterName)) next.delete(char.CharacterName);
                                                 else { 
-                                                    if(next.size >= 6) { toast.error('최대 6개까지 선택 가능합니다.'); return; } // ✨
+                                                    if(next.size >= 6) { toast.error('최대 6개까지만 선택할 수 있습니다.'); return; } // ✨
                                                     next.add(char.CharacterName); 
                                                 }
                                                 setCheckedRosterNames(next);
@@ -558,7 +558,7 @@ export const CharacterFormList: React.FC<Props> = ({
                     <button type="button" className="w-full rounded-xl px-6 py-3 text-sm font-bold text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 sm:w-auto" onClick={onCancel} disabled={isSaving}>취소</button>
                 )}
                 <button type="button" className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-10 py-3 text-sm font-bold text-white shadow-lg shadow-indigo-500/20 hover:bg-indigo-500 disabled:opacity-70 sm:w-auto" onClick={handleSubmit} disabled={isSaving}>
-                    {isLoading ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />} {isLoading ? '저장 중...' : '설정 저장하기'}
+                    {isLoading ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />} {isLoading ? '저장하고 있습니다.' : '설정 저장하기'}
                 </button>
             </div>
         </div>

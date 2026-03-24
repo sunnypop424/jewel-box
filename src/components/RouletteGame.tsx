@@ -343,7 +343,7 @@ export const RouletteGame: React.FC<Props> = ({ allUserNames = [] }) => {
           className="flex w-full max-w-xs items-center justify-center gap-2 rounded-2xl bg-indigo-600 py-3.5 text-base font-bold text-white shadow-lg shadow-indigo-500/20 transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Play size={18} fill="currentColor" />
-          {isSpinning ? '돌리는 중...' : '룰렛 돌리기'}
+          {isSpinning ? '추첨하고 있습니다.' : '룰렛 추첨하기'}
         </button>
       </div>
     </div>
