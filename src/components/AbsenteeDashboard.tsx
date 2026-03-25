@@ -238,13 +238,36 @@ const SectionBlock: React.FC<SectionBlockProps> = ({
   );
 };
 
+const RAID_SORT_ORDER: RaidId[] = [
+  'ACT4_NORMAL',
+  'ACT4_HARD',
+  'FINAL_NORMAL',
+  'FINAL_HARD',
+  'SERKA_NORMAL',
+  'SERKA_HARD',
+  'SERKA_NIGHTMARE',
+  'HORIZON_STEP1',
+  'HORIZON_STEP2',
+  'HORIZON_STEP3',
+];
+
 export const AbsenteeDashboard: React.FC<Props> = ({
   reports,
   selectedAbsentees = [],
   allUserNames = [],
   onToggleAbsentee,
 }) => {
-  const raidIds = useMemo(() => reports.map((report) => report.raidId), [reports]);
+  const sortedReports = useMemo(() => {
+    return [...reports].sort((a, b) => {
+      const indexA = RAID_SORT_ORDER.indexOf(a.raidId);
+      const indexB = RAID_SORT_ORDER.indexOf(b.raidId);
+      const weightA = indexA !== -1 ? indexA : 999;
+      const weightB = indexB !== -1 ? indexB : 999;
+      return weightA - weightB;
+    });
+  }, [reports]);
+
+  const raidIds = useMemo(() => sortedReports.map((report) => report.raidId), [sortedReports]);
 
   const scrollToRaid = (raidId: RaidId) => {
     const el = document.getElementById(`absentee-raid-section-${raidId}`);
@@ -335,7 +358,7 @@ export const AbsenteeDashboard: React.FC<Props> = ({
             선택된 인원을 기준으로 레이드별 결석 캐릭터, 대기 권장, 먼저 진행 가능 대상을 보여줍니다.
           </p>
         </div>
-      ) : reports.length === 0 ? (
+      ) : sortedReports.length === 0 ? (
         <div className="flex min-h-[280px] flex-col items-center justify-center rounded-3xl border-2 border-dashed border-zinc-200 bg-white/50 p-8 text-center dark:border-zinc-800 dark:bg-zinc-900/50">
           <div className="text-lg font-bold text-zinc-700 dark:text-zinc-200">
             조정이 필요한 레이드가 없습니다.
@@ -346,7 +369,7 @@ export const AbsenteeDashboard: React.FC<Props> = ({
         </div>
       ) : (
         <div className="flex flex-col gap-6">
-          {reports.map((report) => {
+          {sortedReports.map((report) => {
             const meta = RAID_META[report.raidId];
             const style = getDifficultyStyle(meta.difficulty);
 

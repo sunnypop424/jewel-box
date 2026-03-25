@@ -1806,15 +1806,6 @@ export interface AbsenteeActionReport {
   freeSup: Character[];
 }
 
-function sortByHoldbackPriority(a: Character, b: Character): number {
-  if (a.combatPower !== b.combatPower) {
-    return a.combatPower - b.combatPower;
-  }
-  if (a.itemLevel !== b.itemLevel) {
-    return a.itemLevel - b.itemLevel;
-  }
-  return String(a.id).localeCompare(String(b.id));
-}
 
 function sortByDisplayPriority(a: Character, b: Character): number {
   if (a.combatPower !== b.combatPower) {
@@ -1826,75 +1817,6 @@ function sortByDisplayPriority(a: Character, b: Character): number {
   return a.discordName.localeCompare(b.discordName, 'ko');
 }
 
-function pickBalancedHoldbacks(
-  chars: Character[],
-  count: number,
-  maxPerUser: number,
-  userPickCount: Record<string, number>,
-): Character[] {
-  if (count <= 0 || maxPerUser <= 0 || chars.length === 0) return [];
-
-  const byUser = new Map<string, Character[]>();
-
-  for (const ch of chars) {
-    if (!byUser.has(ch.discordName)) {
-      byUser.set(ch.discordName, []);
-    }
-    byUser.get(ch.discordName)!.push(ch);
-  }
-
-  byUser.forEach((list) => {
-    list.sort(sortByHoldbackPriority);
-  });
-
-  const selected: Character[] = [];
-
-  while (selected.length < count) {
-    const candidateUsers = Array.from(byUser.keys())
-      .filter((userName) => {
-        const remains = byUser.get(userName)?.length ?? 0;
-        const picked = userPickCount[userName] || 0;
-        return remains > 0 && picked < maxPerUser;
-      })
-      .sort((userA, userB) => {
-        const pickedDiff =
-          (userPickCount[userA] || 0) - (userPickCount[userB] || 0);
-        if (pickedDiff !== 0) return pickedDiff;
-
-        const nextA = byUser.get(userA)?.[0];
-        const nextB = byUser.get(userB)?.[0];
-
-        if (nextA && nextB) {
-          const priorityDiff = sortByHoldbackPriority(nextA, nextB);
-          if (priorityDiff !== 0) return priorityDiff;
-        }
-
-        return userA.localeCompare(userB, 'ko');
-      });
-
-    if (candidateUsers.length === 0) break;
-
-    let progressed = false;
-
-    for (const userName of candidateUsers) {
-      if (selected.length >= count) break;
-
-      const picked = userPickCount[userName] || 0;
-      if (picked >= maxPerUser) continue;
-
-      const nextChar = byUser.get(userName)?.shift();
-      if (!nextChar) continue;
-
-      selected.push(nextChar);
-      userPickCount[userName] = picked + 1;
-      progressed = true;
-    }
-
-    if (!progressed) break;
-  }
-
-  return selected;
-}
 
 function buildRecommendations(
   heldDps: Character[],
@@ -1932,8 +1854,8 @@ function buildRecommendations(
 
 export function calculateHoldbacksSpecific(
   absentUserNames: string | string[],
+  schedule: RaidSchedule, // 🌟 핵심: 전체 캐릭터 풀이 아닌 '생성된 스케줄'을 주입받습니다!
   allCharacters: Character[],
-  exclusions: RaidExclusionMap,
 ): AbsenteeActionReport[] {
   const absentNames = Array.isArray(absentUserNames)
     ? Array.from(new Set(absentUserNames.filter(Boolean)))
@@ -1942,161 +1864,84 @@ export function calculateHoldbacksSpecific(
   if (absentNames.length === 0) return [];
 
   const absentSet = new Set(absentNames);
-  const activeChars = allCharacters.filter(
-    (c) => c.isParticipating !== false && !c.isGuest,
-  );
-
-  const remainingByRaid: Partial<Record<RaidId, Character[]>> = {};
-
-  activeChars.forEach((ch) => {
-    const targets = getTargetRaidsForCharacter(ch);
-    targets.forEach((rId) => {
-      if (!(exclusions[rId] || []).includes(ch.id)) {
-        if (!remainingByRaid[rId]) remainingByRaid[rId] = [];
-        remainingByRaid[rId]!.push(ch);
-      }
-    });
-  });
-
   const reportList: AbsenteeActionReport[] = [];
 
-  for (const [raidIdRaw, charsInRaid] of Object.entries(remainingByRaid)) {
+  for (const [raidIdRaw, runs] of Object.entries(schedule)) {
     const raidId = raidIdRaw as RaidId;
+    if (!runs || runs.length === 0) continue;
 
-    const absentChars = charsInRaid
-      .filter((c) => absentSet.has(c.discordName))
-      .sort(sortByDisplayPriority);
-
-    if (absentChars.length === 0) continue;
-
-    const resolvedPreset = resolveFixedPresetRunsForRaid(raidId, charsInRaid);
-
+    const absentCharsInRaid: Character[] = [];
     const heldDps: Character[] = [];
     const heldSup: Character[] = [];
     const heldIds = new Set<string>();
-    const handledAbsentIds = new Set<string>();
 
     let shortageDps = 0;
     let shortageSup = 0;
 
-    // 1) 고정 파티에 속한 결석자는 그 파티의 나머지 멤버를 무조건 대기 처리
-    if (resolvedPreset.presetRuns.length > 0) {
-      const affectedRunIndexes = new Set<number>();
+    // 전체 스케줄 된 캐릭터 중, 결석자와 엮이지 않은 온전한 런의 멤버들 (잉여 인력풀)
+    const freeDps: Character[] = [];
+    const freeSup: Character[] = [];
 
-      absentChars.forEach((char) => {
-        const fixedRunIndex = resolvedPreset.assignmentMap.get(char.id);
-        if (!fixedRunIndex) return;
+    // 1. 완성된 스케줄(runs)을 순회하면서 결석자가 포함된 Run을 찾습니다.
+    runs.forEach((run) => {
+      // 해당 런(공대)의 모든 멤버
+      const runMembers = run.parties.flatMap((p) => p.members);
+      
+      // 이 런에 결석자가 포함되어 있는지 확인
+      const runAbsentees = runMembers.filter((m) => absentSet.has(m.discordName));
 
-        affectedRunIndexes.add(fixedRunIndex);
-        handledAbsentIds.add(char.id);
+      if (runAbsentees.length > 0) {
+        // 🚨 이 런은 결석자로 인해 터졌습니다!
+        runAbsentees.forEach((char) => {
+          if (!absentCharsInRaid.some((c) => c.id === char.id)) {
+            absentCharsInRaid.push(char);
+          }
+          if (char.role === 'SUPPORT') shortageSup++;
+          else shortageDps++;
+        });
 
-        if (char.role === 'SUPPORT') shortageSup += 1;
-        else shortageDps += 1;
-      });
-
-      resolvedPreset.presetRuns.forEach((runMembers, idx) => {
-        const runIndex = idx + 1;
-        if (!affectedRunIndexes.has(runIndex)) return;
-
-        runMembers.forEach((char) => {
-          if (absentSet.has(char.discordName)) return;
-          if (heldIds.has(char.id)) return;
-
+        // 결석자가 아닌 나머지 "불쌍한 파티원들"을 대기자(Holdback)로 지정합니다.
+        const innocentBystanders = runMembers.filter((m) => !absentSet.has(m.discordName));
+        
+        innocentBystanders.forEach((char) => {
+          if (heldIds.has(char.id)) return; // 중복 방지
           heldIds.add(char.id);
+
           if (char.role === 'SUPPORT') heldSup.push(char);
           else heldDps.push(char);
         });
-      });
-    }
-
-    // 2) 고정 파티에 속하지 않은 결석 캐릭터는 기존 일반 규칙으로 계산
-    const genericAbsentChars = absentChars.filter(
-      (char) => !handledAbsentIds.has(char.id),
-    );
-
-    if (genericAbsentChars.length > 0) {
-      const is4Man = isFourPlayerRaid(raidId);
-      const absentDpsCount = genericAbsentChars.filter((c) => c.role === 'DPS').length;
-      const absentSupCount = genericAbsentChars.filter((c) => c.role === 'SUPPORT').length;
-
-      let requiredSup = 0;
-      let requiredDps = 0;
-
-      if (is4Man) {
-        requiredSup = absentDpsCount * 1;
-        requiredDps = absentDpsCount * 2 + absentSupCount * 3;
       } else {
-        requiredSup = absentDpsCount * 2 + absentSupCount * 1;
-        requiredDps = absentDpsCount * 5 + absentSupCount * 6;
+        // ✅ 결석자가 없는 안전한 런의 멤버들은 혹시 모를 땜빵용(Free)으로 분류
+        // (단, 실제로 UI에서 freeDps/freeSup를 어떻게 쓰느냐에 따라 로직 조정 가능)
+        runMembers.forEach((char) => {
+          if (char.role === 'SUPPORT') freeSup.push(char);
+          else freeDps.push(char);
+        });
       }
+    });
 
-      const userPickCount: Record<string, number> = {};
-      const limitPerUser = Math.max(1, genericAbsentChars.length);
+    if (absentCharsInRaid.length === 0) continue;
 
-      // 고정 파티 멤버는 다른 결석 보정용 대기자로 다시 차출하지 않음
-      const genericPartnerPool = charsInRaid.filter(
-        (char) =>
-          !absentSet.has(char.discordName) &&
-          !heldIds.has(char.id) &&
-          !resolvedPreset.matchedIds.has(char.id),
-      );
-
-      const genericHeldSup = pickBalancedHoldbacks(
-        genericPartnerPool.filter((c) => c.role === 'SUPPORT'),
-        requiredSup,
-        limitPerUser,
-        userPickCount,
-      );
-
-      const genericHeldDps = pickBalancedHoldbacks(
-        genericPartnerPool.filter((c) => c.role === 'DPS'),
-        requiredDps,
-        limitPerUser,
-        userPickCount,
-      );
-
-      genericHeldSup.forEach((char) => {
-        if (heldIds.has(char.id)) return;
-        heldIds.add(char.id);
-        heldSup.push(char);
-      });
-
-      genericHeldDps.forEach((char) => {
-        if (heldIds.has(char.id)) return;
-        heldIds.add(char.id);
-        heldDps.push(char);
-      });
-
-      shortageSup += Math.max(0, requiredSup - genericHeldSup.length);
-      shortageDps += Math.max(0, requiredDps - genericHeldDps.length);
-    }
-
-    const freeDps = charsInRaid
-      .filter(
-        (char) =>
-          !absentSet.has(char.discordName) &&
-          !heldIds.has(char.id) &&
-          char.role === 'DPS',
-      )
-      .sort(sortByDisplayPriority);
-
-    const freeSup = charsInRaid
-      .filter(
-        (char) =>
-          !absentSet.has(char.discordName) &&
-          !heldIds.has(char.id) &&
-          char.role === 'SUPPORT',
-      )
-      .sort(sortByDisplayPriority);
+    // 스케줄에 아예 포함되지 못했던 남은 캐릭터들도 Free(예비군) 풀에 추가
+    const scheduledIds = new Set(
+      runs.flatMap((r) => r.parties.flatMap((p) => p.members.map((m) => m.id)))
+    );
+    allCharacters.forEach((char) => {
+      const targets = getTargetRaidsForCharacter(char);
+      if (targets.includes(raidId) && !scheduledIds.has(char.id) && !absentSet.has(char.discordName) && char.isParticipating !== false && !char.isGuest) {
+        if (char.role === 'SUPPORT') freeSup.push(char);
+        else freeDps.push(char);
+      }
+    });
 
     reportList.push({
       raidId,
-      absentChars,
+      absentChars: absentCharsInRaid.sort(sortByDisplayPriority),
       recommendations: buildRecommendations(heldDps, heldSup),
       shortageDps,
       shortageSup,
-      freeDps,
-      freeSup,
+      freeDps: Array.from(new Set(freeDps)).sort(sortByDisplayPriority),
+      freeSup: Array.from(new Set(freeSup)).sort(sortByDisplayPriority),
     });
   }
 

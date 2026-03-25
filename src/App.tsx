@@ -239,9 +239,10 @@ const App: React.FC = () => {
     const [selectedAbsentees, setSelectedAbsentees] = useState<string[]>([]);
 
     const absenteeReports = useMemo(() => {
-        if (selectedAbsentees.length === 0) return [];
-        return calculateHoldbacksSpecific(selectedAbsentees, effectiveCharacters, raidExclusions);
-    }, [selectedAbsentees, effectiveCharacters, raidExclusions]);
+        if (selectedAbsentees.length === 0) return [];
+        // ✨ 수정됨: effectiveCharacters 대신 완성된 schedule을 인자로 전달
+        return calculateHoldbacksSpecific(selectedAbsentees, schedule, effectiveCharacters);
+    }, [selectedAbsentees, schedule, effectiveCharacters]); // 의존성 배열도 맞게 수정
 
     const handleToggleAbsentee = (name: string) => {
         setSelectedAbsentees(prev => {
