@@ -1183,7 +1183,7 @@ export const RaidSequenceView: React.FC<Props> = ({
   const visibleRaidIds = raidOrder.filter((id) => SHOW_SERKA_FILTER || !id.startsWith('SERKA_'));
 
   return (
-    <div className="relative mx-auto w-full space-y-4">
+    <div className="relative mx-auto w-full space-y-6">
       <div className="sticky top-0 z-30 flex flex-col gap-3 rounded-2xl border border-zinc-200 bg-white/90 px-4 py-3 shadow-sm backdrop-blur-md dark:border-zinc-800 dark:bg-zinc-900/90 sm:top-0">
         {allUserNames.length > 0 && onToggleUser && (
           <div className="flex flex-col gap-2">

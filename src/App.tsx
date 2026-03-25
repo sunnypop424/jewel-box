@@ -1,12 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import type { Character, RaidId, RaidExclusionMap, RaidSettingsMap, RaidSwap } from './types';
-import { GuestAddModal } from './components/GuestAddModal'; 
-import { RAID_META } from './constants'; 
-import { buildRaidCandidatesMap, buildRaidSchedule } from './raidLogic';
+import { GuestAddModal } from './components/GuestAddModal';
+import { RAID_META } from './constants';
+import { buildRaidCandidatesMap, buildRaidSchedule, calculateHoldbacksSpecific } from './raidLogic';
 import { CharacterFormList } from './components/CharacterFormList';
 import { RaidScheduleView } from './components/RaidScheduleView';
 import { RaidSequenceView } from './components/RaidSequenceView';
 import { UserRaidProgressPanel, RAID_ORDER_FOR_PROGRESS, getExpectedRaids } from './components/UserRaidProgressPanel';
+import { AbsenteeDashboard } from './components/AbsenteeDashboard';
 import { fetchCharacters, saveCharacters, fetchRaidSettings, setRaidSetting, fetchSwaps, addSwap, resetSwaps, fetchRaidExclusions, toggleCharacterOnRaid, excludeCharactersOnRaid, resetRaidExclusions, fetchAccumulatedGold, updateAccumulatedGoldMulti, resetAccumulatedGold, type AccumulatedGoldMap } from './api/firebaseApi';
 import { syncCharactersWithLostArkAPI, fetchProfile } from './api/lostArkApi';
 import { Modal } from './components/Modal';
@@ -14,8 +15,8 @@ import { LadderGame } from './components/LadderGame';
 import { RouletteGame } from './components/RouletteGame';
 import { PinballGame } from './components/PinballGame';
 import { AuctionCalculatorModal } from './components/AuctionCalculatorModal';
-import { GatheringModal } from './components/GatheringModal'; 
-import { Swords, Sun, Moon, UserCog, LayoutDashboard, ClipboardList, ChartGantt, Menu, X, Users, ChevronDown, Orbit, Megaphone } from 'lucide-react';
+import { GatheringModal } from './components/GatheringModal';
+import { Swords, Sun, Moon, UserCog, LayoutDashboard, ClipboardList, ChartGantt, Menu, X, Users, ChevronDown, Orbit, Megaphone, UserRoundMinus } from 'lucide-react';
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 
 // ✨ Hook 추가
@@ -34,14 +35,14 @@ const USER_FILTER_KEY = 'raid_user_filter_v1';
 function calculateGoldDelta(raidId: RaidId, charId: string, allChars: Character[]): { g: number, b: number } {
     const c = allChars.find(x => x.id === charId);
     if (!c) return { g: 0, b: 0 };
-    
+
     const userChars = allChars.filter(x => x.discordName === c.discordName);
     const mainChar = userChars.reduce((max, curr) => curr.itemLevel > max.itemLevel ? curr : max, userChars[0]);
     const isMain = c.id === mainChar.id;
 
     const expectedIds = getExpectedRaids(c);
     const raidsForChar = RAID_ORDER_FOR_PROGRESS.filter(id => expectedIds.includes(id));
-    
+
     let ignoreBoundGold = false;
     if (c.receiveBoundGold !== undefined) {
         ignoreBoundGold = !c.receiveBoundGold;
@@ -66,12 +67,12 @@ function calculateGoldDelta(raidId: RaidId, charId: string, allChars: Character[
         }
         return { id, ...meta, effectiveGold, isSingle };
     }).sort((a, b) => b.effectiveGold - a.effectiveGold);
-    
+
     const top3Yields = raidYields.filter(y => y.effectiveGold > 0).slice(0, 3);
     const targetYield = top3Yields.find(y => y.id === raidId);
-    
+
     if (!targetYield) return { g: 0, b: 0 };
-    
+
     let g = 0; let b = 0;
     if (targetYield.isSingle) {
         const normalMeta = targetYield.id.startsWith('ACT2_') ? RAID_META['ACT2_NORMAL'] : RAID_META['ACT3_NORMAL'];
@@ -105,7 +106,7 @@ const App: React.FC = () => {
     const [isRouletteModalOpen, setIsRouletteModalOpen] = useState(false);
     const [isPinballModalOpen, setIsPinballModalOpen] = useState(false);
     const [isCalcOpen, setIsCalcOpen] = useState(false);
-    const [isGatheringModalOpen, setIsGatheringModalOpen] = useState(false); 
+    const [isGatheringModalOpen, setIsGatheringModalOpen] = useState(false);
 
     const [raidExclusions, setRaidExclusions] = useState<RaidExclusionMap>({});
     const [loadingExclusions, setLoadingExclusions] = useState(false);
@@ -154,21 +155,21 @@ const App: React.FC = () => {
     };
 
     const refreshExclusions = async () => {
-        try { setLoadingExclusions(true); const ex = await fetchRaidExclusions(); setRaidExclusions(ex); } 
+        try { setLoadingExclusions(true); const ex = await fetchRaidExclusions(); setRaidExclusions(ex); }
         finally { setLoadingExclusions(false); }
     };
 
     const refreshRaidSettings = async () => {
-        try { setLoadingRaidSettings(true); const rs = await fetchRaidSettings(); setRaidSettings(rs); } 
+        try { setLoadingRaidSettings(true); const rs = await fetchRaidSettings(); setRaidSettings(rs); }
         finally { setLoadingRaidSettings(false); }
     };
 
     const refreshSwaps = async () => {
-        try { const s = await fetchSwaps(); setRaidSwaps(s); } catch(e) {}
+        try { const s = await fetchSwaps(); setRaidSwaps(s); } catch (e) { }
     };
 
     const refreshAccumulatedGold = async () => {
-        try { const data = await fetchAccumulatedGold(); setAccumulatedGold(data); } catch(e) {}
+        try { const data = await fetchAccumulatedGold(); setAccumulatedGold(data); } catch (e) { }
     };
 
     useEffect(() => {
@@ -176,7 +177,7 @@ const App: React.FC = () => {
         refreshExclusions().catch(console.error);
         refreshRaidSettings().catch(console.error);
         refreshSwaps().catch(console.error);
-        refreshAccumulatedGold().catch(console.error); 
+        refreshAccumulatedGold().catch(console.error);
     }, []);
 
     const effectiveCharacters = useMemo(() => {
@@ -234,16 +235,33 @@ const App: React.FC = () => {
         return effectiveCharacters.filter((c) => c.discordName === selectedUserFilter);
     }, [effectiveCharacters, selectedUserFilter]);
 
+    // ✨ 결석자 계산을 위한 상태 및 로직
+    const [selectedAbsentees, setSelectedAbsentees] = useState<string[]>([]);
+
+    const absenteeReports = useMemo(() => {
+        if (selectedAbsentees.length === 0) return [];
+        return calculateHoldbacksSpecific(selectedAbsentees, effectiveCharacters, raidExclusions);
+    }, [selectedAbsentees, effectiveCharacters, raidExclusions]);
+
+    const handleToggleAbsentee = (name: string) => {
+        setSelectedAbsentees(prev => {
+            if (prev.includes(name)) {
+                return prev.filter(v => v !== name);
+            }
+            return [...prev, name].sort((a, b) => a.localeCompare(b, 'ko'));
+        });
+    };
+
     const handleToggleUserActive = async (name: string) => {
         const isCurrentlyInactive = inactiveUsers.has(name);
-        const isNowParticipating = isCurrentlyInactive; 
+        const isNowParticipating = isCurrentlyInactive;
 
         const userChars = allCharacters.filter(c => c.discordName === name);
         const updatedUserChars = userChars.map(c => ({
             ...c, isParticipating: isNowParticipating
         }));
 
-        setAllCharacters((prev) => prev.map(c => 
+        setAllCharacters((prev) => prev.map(c =>
             c.discordName === name ? { ...c, isParticipating: isNowParticipating } : c
         ));
 
@@ -334,7 +352,7 @@ const App: React.FC = () => {
         setIsUpdating(true);
         try {
             const updatesMap: Record<string, { g: number, b: number }> = {};
-            
+
             for (const [raidId, charIds] of Object.entries(raidExclusions)) {
                 for (const charId of charIds) {
                     const { g, b } = calculateGoldDelta(raidId as RaidId, charId, effectiveCharacters);
@@ -346,20 +364,20 @@ const App: React.FC = () => {
                     }
                 }
             }
-            
+
             const updates = Object.entries(updatesMap).map(([discordName, val]) => ({
                 discordName, deltaGeneral: val.g, deltaBound: val.b
             }));
-            
+
             if (updates.length > 0) {
                 await updateAccumulatedGoldMulti(updates);
             }
 
             await resetRaidExclusions();
             await resetSwaps();
-            
-            await Promise.all([refreshExclusions(), refreshSwaps(), refreshAccumulatedGold()]); 
-            
+
+            await Promise.all([refreshExclusions(), refreshSwaps(), refreshAccumulatedGold()]);
+
             toast.success('모든 내역이 초기화되었습니다.');
         } catch (e) {
             console.error(e);
@@ -409,7 +427,7 @@ const App: React.FC = () => {
                 const others = prev.filter(c => c.discordName !== discordName);
                 return [...others, ...updatedUserChars];
             });
-            toast.success(`${discordName}님의 원정대 정보가 업데이트되었습니다.`); 
+            toast.success(`${discordName}님의 원정대 정보가 업데이트되었습니다.`);
         } catch (e: any) {
             console.error(e);
             toast.error(`업데이트 실패: ${e?.message ?? e}`);
@@ -434,22 +452,22 @@ const App: React.FC = () => {
         setIsUpdating(true);
         try {
             const profile = await fetchProfile(char.lostArkName);
-            
+
             if (profile && profile.ItemAvgLevel && profile.CombatPower) {
                 const lv = parseFloat(profile.ItemAvgLevel.replace(/,/g, ''));
                 const cp = parseFloat(profile.CombatPower.replace(/,/g, ''));
 
-                const nextAllChars = allCharacters.map(c => 
+                const nextAllChars = allCharacters.map(c =>
                     c.id === char.id ? { ...c, itemLevel: Math.floor(lv), combatPower: Math.floor(cp) } : c
                 );
                 setAllCharacters(nextAllChars);
 
                 const userCharsToSave = nextAllChars.filter(c => c.discordName === char.discordName);
                 await saveCharacters(char.discordName, userCharsToSave);
-                
+
                 toast.success(`${char.lostArkName} 캐릭터의 정보가 업데이트되었습니다.`);
             }
-        } catch (e: any) { 
+        } catch (e: any) {
             toast.error('캐릭터 업데이트에 실패했습니다.');
         } finally {
             setIsUpdating(false);
@@ -465,14 +483,14 @@ const App: React.FC = () => {
         try {
             setLoading(true);
             let list = await fetchCharacters();
-            
+
             list = await syncCharactersWithLostArkAPI(list, saveCharacters, (msg) => {
                 skippedMessages.push(msg);
             });
-            
+
             setAllCharacters(list);
             await Promise.all([refreshExclusions(), refreshRaidSettings(), refreshSwaps()]);
-            toast.success('모든 캐릭터의 정보가 업데이트되었습니다.'); 
+            toast.success('모든 캐릭터의 정보가 업데이트되었습니다.');
         } catch (e) {
             toast.error('전체 업데이트 중 오류가 발생했습니다.');
         } finally {
@@ -510,27 +528,29 @@ const App: React.FC = () => {
         if (location.pathname === '/sequence') {
             return { title: '레이드 진행 순서', Icon: ChartGantt };
         }
+        if (location.pathname === '/absentee') {
+            return { title: '결석 대응 현황', Icon: UserRoundMinus };
+        }
         return { title: '개인별 진행 현황', Icon: LayoutDashboard };
     }, [location.pathname]);
 
     const isUserProgressPage = currentPageMeta.title === '개인별 진행 현황';
 
     const mobileUserFilterLabel =
-    selectedUserFilter === 'ALL'
-        ? '전체'
-        : selectedUserFilter.length > 3
-            ? `${selectedUserFilter.slice(0, 3)}…`
-            : selectedUserFilter;
+        selectedUserFilter === 'ALL'
+            ? '전체'
+            : selectedUserFilter.length > 3
+                ? `${selectedUserFilter.slice(0, 3)}…`
+                : selectedUserFilter;
 
     const navButtonClass = (active: boolean) =>
-    `flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-bold transition-all ${
-        active
+        `flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-bold transition-all ${active
             ? 'bg-indigo-50 text-indigo-700 shadow-sm ring-1 ring-indigo-200 dark:bg-indigo-900/20 dark:text-indigo-300 dark:ring-indigo-900/40'
             : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800'
-    }`;
+        }`;
 
     const subMenuButtonClass =
-    'rounded-lg px-3 py-2 text-left text-sm font-medium text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100';
+        'rounded-lg px-3 py-2 text-left text-sm font-medium text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100';
 
     return (
         <div className="flex min-h-[100dvh] w-full overflow-hidden bg-zinc-50 font-sans text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100 md:h-screen">
@@ -586,6 +606,10 @@ const App: React.FC = () => {
 
                         <button onClick={() => handleNavClick('/sequence')} className={navButtonClass(isActive('/sequence'))}>
                             <ChartGantt size={18} /> 레이드 진행 순서
+                        </button>
+
+                        <button onClick={() => handleNavClick('/absentee')} className={navButtonClass(isActive('/absentee'))}>
+                            <UserRoundMinus size={18} /> 결석 대응 현황
                         </button>
 
                         <div className="my-3 h-px bg-zinc-100 dark:bg-zinc-800" />
@@ -667,105 +691,103 @@ const App: React.FC = () => {
             </aside>
 
             <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
-            <header className="mobile-app-header sticky top-0 z-30 border-b border-zinc-200/80 bg-white/78 px-3 pb-3 pt-[calc(env(safe-area-inset-top)+0.7rem)] shadow-[0_12px_30px_rgba(15,23,42,0.06)] backdrop-blur-xl dark:border-zinc-800/80 dark:bg-zinc-950/82 md:hidden">
-                <div className="relative flex items-center justify-between gap-2">
-                    <button
-                        onClick={toggleSidebar}
-                        className="z-10 flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-zinc-200/80 bg-white/90 text-zinc-700 shadow-sm transition-colors hover:bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-900/90 dark:text-zinc-200 dark:hover:bg-zinc-800"
-                        aria-label="메뉴 열기"
-                    >
-                        <Menu size={22} />
-                    </button>
-
-                    <div className="pointer-events-none absolute left-1/2 flex -translate-x-1/2 items-center gap-2.5">
-                        <div className="flex flex-col items-center leading-none gap-0.5">
-                            <span className="text-[0.7rem] font-black uppercase tracking-[0.22em] text-zinc-400 dark:text-zinc-500">
-                                Raid Manager
-                            </span>
-                            <span className="max-w-[140px] truncate text-sm font-bold tracking-tight text-zinc-900 dark:text-zinc-100">
-                                {currentPageMeta.title}
-                            </span>
-                        </div>
-                    </div>
-
-                    {isUserProgressPage ? (
+                <header className="mobile-app-header sticky top-0 z-30 border-b border-zinc-200/80 bg-white/78 px-3 pb-3 pt-[calc(env(safe-area-inset-top)+0.7rem)] shadow-[0_12px_30px_rgba(15,23,42,0.06)] backdrop-blur-xl dark:border-zinc-800/80 dark:bg-zinc-950/82 md:hidden">
+                    <div className="relative flex items-center justify-between gap-2">
                         <button
-                            onClick={() => setIsUserFilterOpen(true)}
-                            className="z-10 inline-flex h-11 min-w-[56px] max-w-[84px] shrink-0 items-center justify-center gap-1 rounded-2xl border border-zinc-200/80 bg-white/90 px-3 text-xs font-bold text-zinc-700 shadow-sm transition-colors hover:bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-900/90 dark:text-zinc-200 dark:hover:bg-zinc-800"
-                            aria-label="유저 선택 열기"
-                            type="button"
+                            onClick={toggleSidebar}
+                            className="z-10 flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-zinc-200/80 bg-white/90 text-zinc-700 shadow-sm transition-colors hover:bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-900/90 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                            aria-label="메뉴 열기"
                         >
-                            <span className="max-w-[40px] truncate">
-                                {mobileUserFilterLabel}
-                            </span>
-                            <ChevronDown size={12} strokeWidth={3} className="shrink-0" />
+                            <Menu size={22} />
                         </button>
-                    ) : (
-                        <div className="h-11 w-11 shrink-0" aria-hidden="true" />
-                    )}
-                </div>
-            </header>
 
-            {isUserProgressPage && isUserFilterOpen && (
-                <>
-                    <div
-                        className="fixed inset-0 z-40 bg-black/30 md:hidden"
-                        onClick={() => setIsUserFilterOpen(false)}
-                    />
-
-                    <div className="fixed inset-x-0 bottom-0 z-50 rounded-t-3xl border border-zinc-200 bg-white p-4 shadow-2xl dark:border-zinc-800 dark:bg-zinc-900 md:hidden">
-                        <div className="mx-auto mb-4 h-1.5 w-12 rounded-full bg-zinc-200 dark:bg-zinc-700" />
-
-                        <div className="mb-3 flex items-center justify-between">
-                            <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">
-                                유저 선택
-                            </h3>
-                            <button
-                                type="button"
-                                onClick={() => setIsUserFilterOpen(false)}
-                                className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
-                            >
-                                <X size={18} />
-                            </button>
+                        <div className="pointer-events-none absolute left-1/2 flex -translate-x-1/2 items-center gap-2.5">
+                            <div className="flex flex-col items-center leading-none gap-0.5">
+                                <span className="text-[0.7rem] font-black uppercase tracking-[0.22em] text-zinc-400 dark:text-zinc-500">
+                                    Raid Manager
+                                </span>
+                                <span className="max-w-[140px] truncate text-sm font-bold tracking-tight text-zinc-900 dark:text-zinc-100">
+                                    {currentPageMeta.title}
+                                </span>
+                            </div>
                         </div>
 
-                        <div className="max-h-[50vh] overflow-y-auto space-y-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)]">
+                        {isUserProgressPage ? (
                             <button
+                                onClick={() => setIsUserFilterOpen(true)}
+                                className="z-10 inline-flex h-11 min-w-[56px] max-w-[84px] shrink-0 items-center justify-center gap-1 rounded-2xl border border-zinc-200/80 bg-white/90 px-3 text-xs font-bold text-zinc-700 shadow-sm transition-colors hover:bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-900/90 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                                aria-label="유저 선택 열기"
                                 type="button"
-                                onClick={() => {
-                                    setSelectedUserFilter('ALL');
-                                    setIsUserFilterOpen(false);
-                                }}
-                                className={`flex w-full items-center justify-between rounded-2xl px-4 py-3 text-left text-sm font-bold transition ${
-                                    selectedUserFilter === 'ALL'
-                                        ? 'bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200 dark:bg-indigo-950/40 dark:text-indigo-300 dark:ring-indigo-900'
-                                        : 'bg-zinc-50 text-zinc-700 hover:bg-zinc-100 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700'
-                                }`}
                             >
-                                <span>전체 유저</span>
+                                <span className="max-w-[40px] truncate">
+                                    {mobileUserFilterLabel}
+                                </span>
+                                <ChevronDown size={12} strokeWidth={3} className="shrink-0" />
                             </button>
+                        ) : (
+                            <div className="h-11 w-11 shrink-0" aria-hidden="true" />
+                        )}
+                    </div>
+                </header>
 
-                            {allUserNames.map((name) => (
+                {isUserProgressPage && isUserFilterOpen && (
+                    <>
+                        <div
+                            className="fixed inset-0 z-40 bg-black/30 md:hidden"
+                            onClick={() => setIsUserFilterOpen(false)}
+                        />
+
+                        <div className="fixed inset-x-0 bottom-0 z-50 rounded-t-3xl border border-zinc-200 bg-white p-4 shadow-2xl dark:border-zinc-800 dark:bg-zinc-900 md:hidden">
+                            <div className="mx-auto mb-4 h-1.5 w-12 rounded-full bg-zinc-200 dark:bg-zinc-700" />
+
+                            <div className="mb-3 flex items-center justify-between">
+                                <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">
+                                    유저 선택
+                                </h3>
                                 <button
-                                    key={name}
+                                    type="button"
+                                    onClick={() => setIsUserFilterOpen(false)}
+                                    className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+                                >
+                                    <X size={18} />
+                                </button>
+                            </div>
+
+                            <div className="max-h-[50vh] overflow-y-auto space-y-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)]">
+                                <button
                                     type="button"
                                     onClick={() => {
-                                        setSelectedUserFilter(name);
+                                        setSelectedUserFilter('ALL');
                                         setIsUserFilterOpen(false);
                                     }}
-                                    className={`flex w-full items-center justify-between rounded-2xl px-4 py-3 text-left text-sm font-bold transition ${
-                                        selectedUserFilter === name
+                                    className={`flex w-full items-center justify-between rounded-2xl px-4 py-3 text-left text-sm font-bold transition ${selectedUserFilter === 'ALL'
                                             ? 'bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200 dark:bg-indigo-950/40 dark:text-indigo-300 dark:ring-indigo-900'
                                             : 'bg-zinc-50 text-zinc-700 hover:bg-zinc-100 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700'
-                                    }`}
+                                        }`}
                                 >
-                                    <span>{name}</span>
+                                    <span>전체 유저</span>
                                 </button>
-                            ))}
+
+                                {allUserNames.map((name) => (
+                                    <button
+                                        key={name}
+                                        type="button"
+                                        onClick={() => {
+                                            setSelectedUserFilter(name);
+                                            setIsUserFilterOpen(false);
+                                        }}
+                                        className={`flex w-full items-center justify-between rounded-2xl px-4 py-3 text-left text-sm font-bold transition ${selectedUserFilter === name
+                                                ? 'bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200 dark:bg-indigo-950/40 dark:text-indigo-300 dark:ring-indigo-900'
+                                                : 'bg-zinc-50 text-zinc-700 hover:bg-zinc-100 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700'
+                                            }`}
+                                    >
+                                        <span>{name}</span>
+                                    </button>
+                                ))}
+                            </div>
                         </div>
-                    </div>
-                </>
-            )}
+                    </>
+                )}
 
                 <div className="flex-1 overflow-y-auto bg-zinc-50/50 p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] dark:bg-zinc-950 sm:p-6 lg:p-8">
                     <div className="mx-auto space-y-6">
@@ -804,11 +826,11 @@ const App: React.FC = () => {
                                         raidCandidates={raidCandidates}
                                         exclusions={raidExclusions}
                                         schedule={schedule}
-                                        accumulatedGold={accumulatedGold} 
+                                        accumulatedGold={accumulatedGold}
                                         onMarkRaidComplete={handleExcludeCharacterFromRaid}
                                         onRefreshCharacter={handleRefreshSingleCharacter}
                                         onRefreshUser={handleRefreshUserCharacters}
-                                        onResetAccumulatedGold={handleResetAccumulatedGold} 
+                                        onResetAccumulatedGold={handleResetAccumulatedGold}
                                     />
                                 </section>
                             } />
@@ -841,7 +863,7 @@ const App: React.FC = () => {
                                             onToggleSupportShortage={handleToggleSupportShortage}
                                             raidCandidates={raidCandidates}
                                             onSwapCharacter={handleSwapCharacter}
-                                            onExcludeRun={handleExcludeRun} 
+                                            onExcludeRun={handleExcludeRun}
                                             allCharacters={effectiveCharacters}
                                             isSwapping={isSwapping}
                                             allUserNames={allUserNames}
@@ -873,6 +895,23 @@ const App: React.FC = () => {
                                         allUserNames={allUserNames}
                                         inactiveUsers={inactiveUsers}
                                         onToggleUser={handleToggleUserActive}
+                                    />
+                                </section>
+                            } />
+
+                            <Route path="/absentee" element={
+                                <section className="flex flex-col gap-6">
+                                    <div className="hidden flex-col gap-3 sm:flex-row sm:items-center sm:justify-between md:flex">
+                                        <h2 className="flex items-center gap-2 text-xl font-bold text-zinc-900 dark:text-zinc-100">
+                                            <UserRoundMinus className="text-indigo-500" /> 결석 대응 현황
+                                        </h2>
+                                    </div>
+
+                                    <AbsenteeDashboard
+                                        reports={absenteeReports}
+                                        selectedAbsentees={selectedAbsentees}
+                                        allUserNames={allUserNames}
+                                        onToggleAbsentee={handleToggleAbsentee}
                                     />
                                 </section>
                             } />
@@ -913,7 +952,7 @@ const App: React.FC = () => {
                 <AuctionCalculatorModal isOpen={isCalcOpen} onClose={() => setIsCalcOpen(false)} />
 
                 <GatheringModal isOpen={isGatheringModalOpen} onClose={() => setIsGatheringModalOpen(false)} />
-                
+
                 {/* ✨ 최상단 Confirm Modal 마운트 */}
                 <ConfirmModal />
             </main>

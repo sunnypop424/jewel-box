@@ -124,6 +124,218 @@ interface RaidBucket {
   characters: Character[];
 }
 
+type FixedPresetMatcher = {
+  discordName: string;
+  jobCode: string;
+};
+
+type FixedPresetSlot = {
+  candidates: FixedPresetMatcher[];
+};
+
+type ResolvedFixedPresetRuns = {
+  presetRuns: Character[][];
+  remainingChars: Character[];
+  matchedIds: Set<string>;
+  assignmentMap: Map<string, number>;
+};
+
+const fixedSlot = (...candidates: FixedPresetMatcher[]): FixedPresetSlot => ({
+  candidates,
+});
+
+const FIXED_RAID_RUN_PRESETS: Partial<Record<RaidId, FixedPresetSlot[][]>> = {
+  HORIZON_STEP3: [
+    [
+      fixedSlot({ discordName: '흑마66', jobCode: '워로드' }),
+      fixedSlot({ discordName: '딘또썬', jobCode: '기상술사' }),
+      fixedSlot({ discordName: '말랭짱', jobCode: '블레이드' }),
+      fixedSlot({ discordName: '고추좋아해요', jobCode: '홀리나이트' }),
+    ],
+    [
+      fixedSlot(
+        { discordName: '지혜쨩', jobCode: '배틀마스터' },
+        { discordName: '지혜쨩', jobCode: '발키리' },
+      ),
+      fixedSlot({ discordName: 'Sora', jobCode: '브레이커' }),
+      fixedSlot({ discordName: '말랭짱', jobCode: '슬레이어' }),
+      fixedSlot({ discordName: '딘또썬', jobCode: '도화가' }),
+    ],
+  ],
+  SERKA_NIGHTMARE: [
+    [
+      fixedSlot({ discordName: '흑마66', jobCode: '워로드' }),
+      fixedSlot({ discordName: '딘또썬', jobCode: '기상술사' }),
+      fixedSlot({ discordName: '말랭짱', jobCode: '블레이드' }),
+      fixedSlot({ discordName: '고추좋아해요', jobCode: '홀리나이트' }),
+    ],
+    [
+      fixedSlot(
+        { discordName: '지혜쨩', jobCode: '배틀마스터' },
+        { discordName: '지혜쨩', jobCode: '발키리' },
+      ),
+      fixedSlot({ discordName: 'Sora', jobCode: '브레이커' }),
+      fixedSlot({ discordName: '말랭짱', jobCode: '슬레이어' }),
+      fixedSlot({ discordName: '딘또썬', jobCode: '도화가' }),
+    ],
+  ],
+};
+
+function matchesFixedPreset(ch: Character, matcher: FixedPresetMatcher): boolean {
+  return ch.discordName === matcher.discordName && ch.jobCode === matcher.jobCode;
+}
+
+function getFixedPresetCandidates(
+  pool: Character[],
+  slot: FixedPresetSlot,
+  usedIds: Set<string>,
+): Character[] {
+  return pool
+    .filter(
+      (ch) =>
+        !usedIds.has(ch.id) &&
+        slot.candidates.some((matcher) => matchesFixedPreset(ch, matcher)),
+    )
+    .sort((a, b) => {
+      if (a.combatPower !== b.combatPower) return b.combatPower - a.combatPower;
+      if (a.itemLevel !== b.itemLevel) return b.itemLevel - a.itemLevel;
+      return a.id.localeCompare(b.id);
+    });
+}
+
+function resolveFixedPresetRunsForRaid(
+  raidId: RaidId,
+  characters: Character[],
+): ResolvedFixedPresetRuns {
+  const presets = FIXED_RAID_RUN_PRESETS[raidId] ?? [];
+
+  if (presets.length === 0) {
+    return {
+      presetRuns: [],
+      remainingChars: [...characters],
+      matchedIds: new Set<string>(),
+      assignmentMap: new Map<string, number>(),
+    };
+  }
+
+  let remainingChars = [...characters];
+  const presetRuns: Character[][] = [];
+  const matchedIds = new Set<string>();
+  const assignmentMap = new Map<string, number>();
+
+  for (const presetRun of presets) {
+    const localUsedIds = new Set<string>();
+    const picked: Character[] = [];
+    let failed = false;
+
+    for (const slot of presetRun) {
+      const candidates = getFixedPresetCandidates(remainingChars, slot, localUsedIds);
+      const chosen = candidates[0];
+
+      if (!chosen) {
+        failed = true;
+        break;
+      }
+
+      picked.push(chosen);
+      localUsedIds.add(chosen.id);
+    }
+
+    if (failed) continue;
+
+    remainingChars = remainingChars.filter((ch) => !localUsedIds.has(ch.id));
+
+    const resolvedRunIndex = presetRuns.length + 1;
+    picked.forEach((ch) => {
+      matchedIds.add(ch.id);
+      assignmentMap.set(ch.id, resolvedRunIndex);
+    });
+
+    presetRuns.push(picked);
+  }
+
+  return {
+    presetRuns,
+    remainingChars,
+    matchedIds,
+    assignmentMap,
+  };
+}
+
+export function getFixedPresetAssignmentMap(
+  raidId: RaidId,
+  characters: Character[],
+): Record<string, number> {
+  const resolved = resolveFixedPresetRunsForRaid(
+    raidId,
+    characters.filter((c) => !c.isGuest),
+  );
+
+  const result: Record<string, number> = {};
+  resolved.assignmentMap.forEach((runIndex, charId) => {
+    result[charId] = runIndex;
+  });
+  return result;
+}
+
+function createRaidRunFromMembers(
+  raidId: RaidId,
+  members: Character[],
+  runIndex: number,
+): RaidRun {
+  const parties = splitIntoPartiesLossless(members, raidId);
+  const averageCombatPower =
+    members.length > 0
+      ? Math.round(
+          members.reduce((sum, c) => sum + c.combatPower, 0) / members.length,
+        )
+      : 0;
+
+  return {
+    raidId,
+    runIndex,
+    parties,
+    averageCombatPower,
+  };
+}
+
+function buildRunsWithFixedPresets(
+  raidId: RaidId,
+  characters: Character[],
+  balanceMode: BalanceMode,
+  random: () => number,
+  fillTwoSupports: boolean,
+): RaidRun[] {
+  const resolved = resolveFixedPresetRunsForRaid(raidId, characters);
+
+  if (resolved.presetRuns.length === 0) {
+    return distributeCharactersIntoRuns(
+      raidId,
+      characters,
+      balanceMode,
+      random,
+      fillTwoSupports,
+    );
+  }
+
+  const fixedRuns = resolved.presetRuns.map((members, idx) =>
+    createRaidRunFromMembers(raidId, members, idx + 1),
+  );
+
+  const flexibleRuns = distributeCharactersIntoRuns(
+    raidId,
+    resolved.remainingChars,
+    balanceMode,
+    random,
+    fillTwoSupports,
+  ).map((run, idx) => ({
+    ...run,
+    runIndex: fixedRuns.length + idx + 1,
+  }));
+
+  return [...fixedRuns, ...flexibleRuns];
+}
+
 function std(values: number[]): number {
   const arr = values.filter((v) => Number.isFinite(v));
   if (arr.length <= 1) return 0;
@@ -1524,7 +1736,13 @@ export function buildRaidSchedule(
     const poolWithGuests = [...pool, ...raidGuests];
 
     if (schedule[raidId] !== undefined) {
-      schedule[raidId] = distributeCharactersIntoRuns(raidId, poolWithGuests, balanceMode, seededRng, fillTwoSupports);
+      schedule[raidId] = buildRunsWithFixedPresets(
+        raidId,
+        poolWithGuests,
+        balanceMode,
+        seededRng,
+        fillTwoSupports,
+      );
     }
   });
 
@@ -1570,4 +1788,321 @@ export function buildRaidCandidatesMap(characters: Character[], exclusions: Raid
   });
 
   return map;
+}
+
+export interface HoldbackRecommendation {
+  discordName: string;
+  heldDps: Character[];
+  heldSup: Character[];
+}
+
+export interface AbsenteeActionReport {
+  raidId: RaidId;
+  absentChars: Character[];
+  recommendations: HoldbackRecommendation[];
+  shortageDps: number;
+  shortageSup: number;
+  freeDps: Character[];
+  freeSup: Character[];
+}
+
+function sortByHoldbackPriority(a: Character, b: Character): number {
+  if (a.combatPower !== b.combatPower) {
+    return a.combatPower - b.combatPower;
+  }
+  if (a.itemLevel !== b.itemLevel) {
+    return a.itemLevel - b.itemLevel;
+  }
+  return String(a.id).localeCompare(String(b.id));
+}
+
+function sortByDisplayPriority(a: Character, b: Character): number {
+  if (a.combatPower !== b.combatPower) {
+    return b.combatPower - a.combatPower;
+  }
+  if (a.itemLevel !== b.itemLevel) {
+    return b.itemLevel - a.itemLevel;
+  }
+  return a.discordName.localeCompare(b.discordName, 'ko');
+}
+
+function pickBalancedHoldbacks(
+  chars: Character[],
+  count: number,
+  maxPerUser: number,
+  userPickCount: Record<string, number>,
+): Character[] {
+  if (count <= 0 || maxPerUser <= 0 || chars.length === 0) return [];
+
+  const byUser = new Map<string, Character[]>();
+
+  for (const ch of chars) {
+    if (!byUser.has(ch.discordName)) {
+      byUser.set(ch.discordName, []);
+    }
+    byUser.get(ch.discordName)!.push(ch);
+  }
+
+  byUser.forEach((list) => {
+    list.sort(sortByHoldbackPriority);
+  });
+
+  const selected: Character[] = [];
+
+  while (selected.length < count) {
+    const candidateUsers = Array.from(byUser.keys())
+      .filter((userName) => {
+        const remains = byUser.get(userName)?.length ?? 0;
+        const picked = userPickCount[userName] || 0;
+        return remains > 0 && picked < maxPerUser;
+      })
+      .sort((userA, userB) => {
+        const pickedDiff =
+          (userPickCount[userA] || 0) - (userPickCount[userB] || 0);
+        if (pickedDiff !== 0) return pickedDiff;
+
+        const nextA = byUser.get(userA)?.[0];
+        const nextB = byUser.get(userB)?.[0];
+
+        if (nextA && nextB) {
+          const priorityDiff = sortByHoldbackPriority(nextA, nextB);
+          if (priorityDiff !== 0) return priorityDiff;
+        }
+
+        return userA.localeCompare(userB, 'ko');
+      });
+
+    if (candidateUsers.length === 0) break;
+
+    let progressed = false;
+
+    for (const userName of candidateUsers) {
+      if (selected.length >= count) break;
+
+      const picked = userPickCount[userName] || 0;
+      if (picked >= maxPerUser) continue;
+
+      const nextChar = byUser.get(userName)?.shift();
+      if (!nextChar) continue;
+
+      selected.push(nextChar);
+      userPickCount[userName] = picked + 1;
+      progressed = true;
+    }
+
+    if (!progressed) break;
+  }
+
+  return selected;
+}
+
+function buildRecommendations(
+  heldDps: Character[],
+  heldSup: Character[],
+): HoldbackRecommendation[] {
+  const recsMap = new Map<string, HoldbackRecommendation>();
+
+  const ensure = (discordName: string) => {
+    if (!recsMap.has(discordName)) {
+      recsMap.set(discordName, {
+        discordName,
+        heldDps: [],
+        heldSup: [],
+      });
+    }
+    return recsMap.get(discordName)!;
+  };
+
+  heldDps.forEach((char) => {
+    ensure(char.discordName).heldDps.push(char);
+  });
+
+  heldSup.forEach((char) => {
+    ensure(char.discordName).heldSup.push(char);
+  });
+
+  return Array.from(recsMap.values())
+    .map((rec) => ({
+      ...rec,
+      heldDps: [...rec.heldDps].sort(sortByDisplayPriority),
+      heldSup: [...rec.heldSup].sort(sortByDisplayPriority),
+    }))
+    .sort((a, b) => a.discordName.localeCompare(b.discordName, 'ko'));
+}
+
+export function calculateHoldbacksSpecific(
+  absentUserNames: string | string[],
+  allCharacters: Character[],
+  exclusions: RaidExclusionMap,
+): AbsenteeActionReport[] {
+  const absentNames = Array.isArray(absentUserNames)
+    ? Array.from(new Set(absentUserNames.filter(Boolean)))
+    : [absentUserNames].filter(Boolean);
+
+  if (absentNames.length === 0) return [];
+
+  const absentSet = new Set(absentNames);
+  const activeChars = allCharacters.filter(
+    (c) => c.isParticipating !== false && !c.isGuest,
+  );
+
+  const remainingByRaid: Partial<Record<RaidId, Character[]>> = {};
+
+  activeChars.forEach((ch) => {
+    const targets = getTargetRaidsForCharacter(ch);
+    targets.forEach((rId) => {
+      if (!(exclusions[rId] || []).includes(ch.id)) {
+        if (!remainingByRaid[rId]) remainingByRaid[rId] = [];
+        remainingByRaid[rId]!.push(ch);
+      }
+    });
+  });
+
+  const reportList: AbsenteeActionReport[] = [];
+
+  for (const [raidIdRaw, charsInRaid] of Object.entries(remainingByRaid)) {
+    const raidId = raidIdRaw as RaidId;
+
+    const absentChars = charsInRaid
+      .filter((c) => absentSet.has(c.discordName))
+      .sort(sortByDisplayPriority);
+
+    if (absentChars.length === 0) continue;
+
+    const resolvedPreset = resolveFixedPresetRunsForRaid(raidId, charsInRaid);
+
+    const heldDps: Character[] = [];
+    const heldSup: Character[] = [];
+    const heldIds = new Set<string>();
+    const handledAbsentIds = new Set<string>();
+
+    let shortageDps = 0;
+    let shortageSup = 0;
+
+    // 1) 고정 파티에 속한 결석자는 그 파티의 나머지 멤버를 무조건 대기 처리
+    if (resolvedPreset.presetRuns.length > 0) {
+      const affectedRunIndexes = new Set<number>();
+
+      absentChars.forEach((char) => {
+        const fixedRunIndex = resolvedPreset.assignmentMap.get(char.id);
+        if (!fixedRunIndex) return;
+
+        affectedRunIndexes.add(fixedRunIndex);
+        handledAbsentIds.add(char.id);
+
+        if (char.role === 'SUPPORT') shortageSup += 1;
+        else shortageDps += 1;
+      });
+
+      resolvedPreset.presetRuns.forEach((runMembers, idx) => {
+        const runIndex = idx + 1;
+        if (!affectedRunIndexes.has(runIndex)) return;
+
+        runMembers.forEach((char) => {
+          if (absentSet.has(char.discordName)) return;
+          if (heldIds.has(char.id)) return;
+
+          heldIds.add(char.id);
+          if (char.role === 'SUPPORT') heldSup.push(char);
+          else heldDps.push(char);
+        });
+      });
+    }
+
+    // 2) 고정 파티에 속하지 않은 결석 캐릭터는 기존 일반 규칙으로 계산
+    const genericAbsentChars = absentChars.filter(
+      (char) => !handledAbsentIds.has(char.id),
+    );
+
+    if (genericAbsentChars.length > 0) {
+      const is4Man = isFourPlayerRaid(raidId);
+      const absentDpsCount = genericAbsentChars.filter((c) => c.role === 'DPS').length;
+      const absentSupCount = genericAbsentChars.filter((c) => c.role === 'SUPPORT').length;
+
+      let requiredSup = 0;
+      let requiredDps = 0;
+
+      if (is4Man) {
+        requiredSup = absentDpsCount * 1;
+        requiredDps = absentDpsCount * 2 + absentSupCount * 3;
+      } else {
+        requiredSup = absentDpsCount * 2 + absentSupCount * 1;
+        requiredDps = absentDpsCount * 5 + absentSupCount * 6;
+      }
+
+      const userPickCount: Record<string, number> = {};
+      const limitPerUser = Math.max(1, genericAbsentChars.length);
+
+      // 고정 파티 멤버는 다른 결석 보정용 대기자로 다시 차출하지 않음
+      const genericPartnerPool = charsInRaid.filter(
+        (char) =>
+          !absentSet.has(char.discordName) &&
+          !heldIds.has(char.id) &&
+          !resolvedPreset.matchedIds.has(char.id),
+      );
+
+      const genericHeldSup = pickBalancedHoldbacks(
+        genericPartnerPool.filter((c) => c.role === 'SUPPORT'),
+        requiredSup,
+        limitPerUser,
+        userPickCount,
+      );
+
+      const genericHeldDps = pickBalancedHoldbacks(
+        genericPartnerPool.filter((c) => c.role === 'DPS'),
+        requiredDps,
+        limitPerUser,
+        userPickCount,
+      );
+
+      genericHeldSup.forEach((char) => {
+        if (heldIds.has(char.id)) return;
+        heldIds.add(char.id);
+        heldSup.push(char);
+      });
+
+      genericHeldDps.forEach((char) => {
+        if (heldIds.has(char.id)) return;
+        heldIds.add(char.id);
+        heldDps.push(char);
+      });
+
+      shortageSup += Math.max(0, requiredSup - genericHeldSup.length);
+      shortageDps += Math.max(0, requiredDps - genericHeldDps.length);
+    }
+
+    const freeDps = charsInRaid
+      .filter(
+        (char) =>
+          !absentSet.has(char.discordName) &&
+          !heldIds.has(char.id) &&
+          char.role === 'DPS',
+      )
+      .sort(sortByDisplayPriority);
+
+    const freeSup = charsInRaid
+      .filter(
+        (char) =>
+          !absentSet.has(char.discordName) &&
+          !heldIds.has(char.id) &&
+          char.role === 'SUPPORT',
+      )
+      .sort(sortByDisplayPriority);
+
+    reportList.push({
+      raidId,
+      absentChars,
+      recommendations: buildRecommendations(heldDps, heldSup),
+      shortageDps,
+      shortageSup,
+      freeDps,
+      freeSup,
+    });
+  }
+
+  return reportList.sort((a, b) => {
+    const aTop = Math.max(...a.absentChars.map((c) => c.itemLevel));
+    const bTop = Math.max(...b.absentChars.map((c) => c.itemLevel));
+    return bTop - aTop;
+  });
 }
