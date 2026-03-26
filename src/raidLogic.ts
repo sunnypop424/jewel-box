@@ -43,9 +43,9 @@ type RaidConfig = {
   maxParties: number;
 };
 
-function getRaidConfig(raidId: RaidId, fillTwoSupports: boolean): RaidConfig {
+function getRaidConfig(raidId: RaidId, _fillTwoSupports: boolean): RaidConfig {
   if (isFourPlayerRaid(raidId)) return { maxPerRun: 4, maxSupportsPerRun: 1, maxParties: 1 };
-  return { maxPerRun: 8, maxSupportsPerRun: fillTwoSupports ? 2 : 1, maxParties: 2 };
+  return { maxPerRun: 8, maxSupportsPerRun: 2, maxParties: 2 };
 }
 
 function getRunSizeCapBySupports(raidId: RaidId, supportCount: number): number {
@@ -79,10 +79,10 @@ function estimateRunCount(raidId: RaidId, characters: Character[], fillTwoSuppor
   let runsBySupport = 1;
   if (isFourPlayerRaid(raidId)) {
     runsBySupport = Math.max(1, supportCount || 1);
-  } else if (fillTwoSupports) {
-    runsBySupport = Math.max(1, Math.ceil(supportCount / 2));
   } else {
-    runsBySupport = 1;
+    // 8인 레이드는 항상 공격대당 서폿 최대 2명까지 허용한다.
+    // 서폿이 많으면 2명 단위로 런 수를 늘리고, 적으면 그냥 1명/0명으로 진행한다.
+    runsBySupport = Math.max(1, Math.ceil(supportCount / 2));
   }
 
   return Math.max(baseRunsBySize, maxCharsForOnePlayer || 1, runsBySupport);
@@ -126,7 +126,7 @@ interface RaidBucket {
 
 type FixedPresetMatcher = {
   discordName: string;
-  jobCode: string;
+  jobCode?: string;
 };
 
 type FixedPresetSlot = {
@@ -147,42 +147,38 @@ const fixedSlot = (...candidates: FixedPresetMatcher[]): FixedPresetSlot => ({
 const FIXED_RAID_RUN_PRESETS: Partial<Record<RaidId, FixedPresetSlot[][]>> = {
   HORIZON_STEP3: [
     [
-      fixedSlot({ discordName: '흑마66', jobCode: '워로드' }),
       fixedSlot({ discordName: '딘또썬', jobCode: '기상술사' }),
+      fixedSlot({ discordName: '흑마66', jobCode: '워로드' }),
       fixedSlot({ discordName: '말랭짱', jobCode: '블레이드' }),
       fixedSlot({ discordName: '고추좋아해요', jobCode: '홀리나이트' }),
     ],
     [
-      fixedSlot(
-        { discordName: '지혜쨩', jobCode: '배틀마스터' },
-        { discordName: '지혜쨩', jobCode: '발키리' },
-      ),
-      fixedSlot({ discordName: 'Sora', jobCode: '브레이커' }),
-      fixedSlot({ discordName: '말랭짱', jobCode: '슬레이어' }),
-      fixedSlot({ discordName: '딘또썬', jobCode: '도화가' }),
+      fixedSlot({ discordName: '말랭쓱' }),
+      fixedSlot({ discordName: '무통증' }),
+      fixedSlot({ discordName: '지혜쨩', jobCode: '배틀마스터' }),
+      fixedSlot({ discordName: '딘또화' }),
     ],
   ],
   SERKA_NIGHTMARE: [
     [
-      fixedSlot({ discordName: '흑마66', jobCode: '워로드' }),
       fixedSlot({ discordName: '딘또썬', jobCode: '기상술사' }),
+      fixedSlot({ discordName: '흑마66', jobCode: '워로드' }),
       fixedSlot({ discordName: '말랭짱', jobCode: '블레이드' }),
       fixedSlot({ discordName: '고추좋아해요', jobCode: '홀리나이트' }),
     ],
     [
-      fixedSlot(
-        { discordName: '지혜쨩', jobCode: '배틀마스터' },
-        { discordName: '지혜쨩', jobCode: '발키리' },
-      ),
-      fixedSlot({ discordName: 'Sora', jobCode: '브레이커' }),
-      fixedSlot({ discordName: '말랭짱', jobCode: '슬레이어' }),
-      fixedSlot({ discordName: '딘또썬', jobCode: '도화가' }),
+      fixedSlot({ discordName: '말랭쓱' }),
+      fixedSlot({ discordName: '무통증' }),
+      fixedSlot({ discordName: '지혜쨩', jobCode: '배틀마스터' }),
+      fixedSlot({ discordName: '딘또화' }),
     ],
   ],
 };
 
 function matchesFixedPreset(ch: Character, matcher: FixedPresetMatcher): boolean {
-  return ch.discordName === matcher.discordName && ch.jobCode === matcher.jobCode;
+  if (ch.discordName !== matcher.discordName) return false;
+  if (matcher.jobCode && ch.jobCode !== matcher.jobCode) return false;
+  return true;
 }
 
 function getFixedPresetCandidates(
@@ -521,11 +517,11 @@ function packSupportsToTwoPerRunIfPossible(
   runsMembers: Character[][],
   maxPerRun: number,
   maxSupportsPerRun: number,
-  fillTwoSupports: boolean,
+  _fillTwoSupports: boolean,
   concurrentRuns: number,
 ): Character[][] {
-  if (!fillTwoSupports) return runsMembers;
   if (isFourPlayerRaid(raidId)) return runsMembers;
+  if (maxSupportsPerRun < 2) return runsMembers;
 
   const runs = runsMembers.map((r) => [...r]);
   const supCount = (run: Character[]) => run.filter((m) => m.role === 'SUPPORT').length;
@@ -597,9 +593,10 @@ function maximizeRunsFrontloaded(
   runsMembers: Character[][],
   maxPerRun: number,
   maxSupportsPerRun: number,
-  fillTwoSupports: boolean,
+  _fillTwoSupports: boolean,
   concurrentRuns: number,
   lockIds: Set<string> = new Set(), // 🔒 추가됨
+  weakIds: Set<string> = new Set(),
 ): Character[][] {
   const runs = runsMembers.map((r) => [...r]);
 
@@ -607,8 +604,58 @@ function maximizeRunsFrontloaded(
   const buildPlayerSet = (run: Character[]) => new Set(run.map((m) => m.discordName));
   const runCap = (run: Character[]) => Math.min(maxPerRun, getRunSizeCapBySupports(raidId, supCount(run)));
   const donorValidAfterRemoval = (donor: Character[], removeId: string) => isRunValid(raidId, donor.filter((m) => m.id !== removeId), maxPerRun, maxSupportsPerRun);
+  const hasWeak = (run: Character[]) => run.some((m) => weakIds.has(m.id));
+  const getSortedSizeVector = (candidateRuns: Character[][]) =>
+    candidateRuns
+      .map((r) => r.length)
+      .filter((n) => n > 0)
+      .sort((a, b) => b - a);
+  const compareSizeVectorDesc = (a: number[], b: number[]) => {
+    const len = Math.max(a.length, b.length);
+    for (let i = 0; i < len; i++) {
+      const av = a[i] ?? 0;
+      const bv = b[i] ?? 0;
+      if (av === bv) continue;
+      return av > bv ? 1 : -1;
+    }
+    return 0;
+  };
+  const wouldStrandWeakInSmallerRun = (
+    donor: Character[],
+    candidate: Character,
+    targetRunSizeBeforeMove: number,
+  ) => {
+    if (weakIds.size === 0) return false;
+    if (weakIds.has(candidate.id)) return false;
 
-  if (fillTwoSupports && !isFourPlayerRaid(raidId)) {
+    const donorAfter = donor.filter((m) => m.id !== candidate.id);
+    if (!hasWeak(donorAfter)) return false;
+
+    return donorAfter.length <= targetRunSizeBeforeMove + 1;
+  };
+  const shouldAllowMove = (
+    fromIdx: number,
+    toIdx: number,
+    ch: Character,
+  ) => {
+    const currentVec = getSortedSizeVector(runs);
+    const nextRuns = runs.map((run, idx) => {
+      if (idx === fromIdx) return run.filter((m) => m.id !== ch.id);
+      if (idx === toIdx) return [...run, ch];
+      return [...run];
+    });
+    const nextVec = getSortedSizeVector(nextRuns);
+    const sizeCmp = compareSizeVectorDesc(nextVec, currentVec);
+
+    // ✅ 앞 공격대 인원수 압축이 더 좋아지면 weak 보호보다 우선 허용
+    if (sizeCmp > 0) return true;
+    if (sizeCmp < 0) return false;
+
+    // ✅ 인원 벡터가 동일할 때만 weak 보호 적용
+    return !wouldStrandWeakInSmallerRun(runs[fromIdx], ch, runs[toIdx].length);
+  };
+
+  if (!isFourPlayerRaid(raidId) && maxSupportsPerRun >= 2) {
     for (let i = 0; i < runs.length; i++) {
       while (supCount(runs[i]) < 2) {
         let moved = false;
@@ -622,6 +669,7 @@ function maximizeRunsFrontloaded(
 
           if (!canAddToRunLocalSearch(raidId, runs, i, sup, maxPerRun, maxSupportsPerRun, concurrentRuns)) continue;
           if (!donorValidAfterRemoval(donor, sup.id)) continue;
+          if (!shouldAllowMove(j, i, sup)) continue;
 
           donor.splice(supIdx, 1);
           runs[i].push(sup);
@@ -642,8 +690,11 @@ function maximizeRunsFrontloaded(
       for (let j = runs.length - 1; j > i; j--) {
         if (runs[j].length === 0) continue;
 
-        const wantSupport = fillTwoSupports && !isFourPlayerRaid(raidId) && supCount(runs[i]) < 2;
+        const wantSupport = !isFourPlayerRaid(raidId) && maxSupportsPerRun >= 2 && supCount(runs[i]) < 2;
         const candidates = [...runs[j]].sort((a, b) => {
+          const aWeak = weakIds.has(a.id) ? 1 : 0;
+          const bWeak = weakIds.has(b.id) ? 1 : 0;
+          if (aWeak !== bWeak) return bWeak - aWeak;
           if (wantSupport && a.role !== b.role) return a.role === 'SUPPORT' ? -1 : 1;
           return b.combatPower - a.combatPower || a.id.localeCompare(b.id);
         });
@@ -654,6 +705,7 @@ function maximizeRunsFrontloaded(
 
           if (!canAddToRunLocalSearch(raidId, runs, i, ch, maxPerRun, maxSupportsPerRun, concurrentRuns)) continue;
           if (!donorValidAfterRemoval(runs[j], ch.id)) continue;
+          if (!shouldAllowMove(j, i, ch)) continue;
 
           runs[j] = runs[j].filter((m) => m.id !== ch.id);
           runs[i].push(ch);
@@ -1049,7 +1101,7 @@ function groupCharactersByRaid(characters: Character[], exclusions: RaidExclusio
 // ==========================================
 // 🌟 런 구성 (외통수 방지 및 락 시스템 적용)
 // ==========================================
-function distributeCharactersIntoRuns(
+function distributeCharactersIntoRunsLegacy(
   raidId: RaidId,
   characters: Character[],
   balanceMode: BalanceMode,
@@ -1094,7 +1146,7 @@ function distributeCharactersIntoRuns(
       return b.combatPower - a.combatPower || a.id.localeCompare(b.id);
     });
 
-  const targetSupPerRun = is4Player ? 1 : (fillTwoSupports ? 2 : 1);
+  const targetSupPerRun = is4Player ? 1 : Math.min(2, maxSupportsPerRun);
 
   const placeIntoRun = (runIdx: number, ch: Character) => {
     runsMembers[runIdx].push(ch);
@@ -1267,7 +1319,7 @@ function distributeCharactersIntoRuns(
         const isGuestRun = runsMembers[i].some((m) => m.isGuest) ? 0 : 1;
         const metric = dim === 'overall' ? runsTotalPower[i] : runsDpsPower[i];
         const supCnt = runsMembers[i].filter((m) => m.role === 'SUPPORT').length;
-        const supBoost = fillTwoSupports && !is4Player ? supCnt : 0;
+        const supBoost = !is4Player && maxSupportsPerRun >= 2 ? supCnt : 0;
         const score: [number, number, number, number, number] = [isGuestRun, metric, -supBoost, runsMembers[i].length, i];
 
         if (
@@ -1400,21 +1452,578 @@ function distributeCharactersIntoRuns(
   return rebalanceSupportsGlobal(runs, concurrentRuns);
 }
 
+const RAID_LOGIC_POLICY = {
+  EIGHT_MAN_WEAK_PERCENT: 0.3,
+  EIGHT_MAN_WEAK_CAP_PER_RUN: 2,
+  EIGHT_MAN_MOVE_ITER_MULTIPLIER: 60,
+  EIGHT_MAN_SWAP_ITER_MULTIPLIER: 100,
+} as const;
+
+
+function compareScoreDesc(a: number[], b: number[]): number {
+  const len = Math.max(a.length, b.length);
+  for (let i = 0; i < len; i++) {
+    const av = a[i] ?? 0;
+    const bv = b[i] ?? 0;
+    if (av === bv) continue;
+    return av > bv ? 1 : -1;
+  }
+  return 0;
+}
+
+function sortRunsByMemberCountDesc(runs: RaidRun[]): RaidRun[] {
+  return runs
+    .slice()
+    .sort(
+      (a, b) =>
+        b.parties.flatMap((p) => p.members).length -
+        a.parties.flatMap((p) => p.members).length,
+    )
+    .map((run, idx) => ({
+      ...run,
+      runIndex: idx + 1,
+    }));
+}
+
+function getRunAverageCombatPower(members: Character[]): number {
+  if (members.length === 0) return 0;
+  return members.reduce((sum, c) => sum + c.combatPower, 0) / members.length;
+}
+
+function getProjectedRunAverageCombatPower(
+  members: Character[],
+  ch: Character,
+): number {
+  return (members.reduce((sum, c) => sum + c.combatPower, 0) + ch.combatPower) / (members.length + 1);
+}
+
+function placeCharacterIntoRun(
+  runsMembers: Character[][],
+  runsPlayerCounts: Array<Record<string, number>>,
+  runIndex: number,
+  ch: Character,
+) {
+  runsMembers[runIndex].push(ch);
+  runsPlayerCounts[runIndex][ch.discordName] =
+    (runsPlayerCounts[runIndex][ch.discordName] || 0) + 1;
+}
+
+function pickBestRunIndexByScore(
+  raidId: RaidId,
+  runsMembers: Character[][],
+  runsPlayerCounts: Array<Record<string, number>>,
+  ch: Character,
+  maxPerRun: number,
+  maxSupportsPerRun: number,
+  concurrentRuns: number,
+  scoreFn: (runMembers: Character[], runIndex: number) => number[],
+): number {
+  let bestIndex = -1;
+  let bestScore: number[] | null = null;
+
+  for (let i = 0; i < runsMembers.length; i++) {
+    if (
+      !canAddToRunGreedy(
+        raidId,
+        runsMembers,
+        i,
+        runsPlayerCounts[i],
+        ch,
+        maxPerRun,
+        maxSupportsPerRun,
+        concurrentRuns,
+      )
+    ) {
+      continue;
+    }
+
+    const score = scoreFn(runsMembers[i], i);
+    if (!bestScore || compareScoreDesc(score, bestScore) > 0) {
+      bestScore = score;
+      bestIndex = i;
+    }
+  }
+
+  return bestIndex;
+}
+
+function classifyEightManCharacters(
+  characters: Character[],
+  runCount: number,
+  perPlayerCount: Record<string, number>,
+) {
+  const sortedAsc = characters
+    .slice()
+    .sort((a, b) => a.combatPower - b.combatPower || a.id.localeCompare(b.id));
+
+  const weakCount = Math.min(
+    characters.length,
+    Math.max(1, Math.ceil(characters.length * RAID_LOGIC_POLICY.EIGHT_MAN_WEAK_PERCENT)),
+  );
+
+  const weak = sortedAsc.slice(0, weakCount);
+  const weakIds = new Set(weak.map((c) => c.id));
+
+  const anchorCandidateSort = (a: Character, b: Character) => {
+    if (a.isGuest !== b.isGuest) return a.isGuest ? -1 : 1;
+
+    const aBurden = Math.max(0, (perPlayerCount[a.discordName] || 1) - 1);
+    const bBurden = Math.max(0, (perPlayerCount[b.discordName] || 1) - 1);
+
+    if (aBurden !== bBurden) return aBurden - bBurden;
+    return b.combatPower - a.combatPower || a.id.localeCompare(b.id);
+  };
+
+  const preferredAnchorPool = characters
+    .filter((c) => c.role === 'DPS' && !weakIds.has(c.id))
+    .slice()
+    .sort(anchorCandidateSort);
+
+  const anchors: Character[] = [];
+  const anchorIds = new Set<string>();
+  const usedAnchorUsers = new Set<string>();
+
+  for (const ch of preferredAnchorPool) {
+    if (anchors.length >= runCount) break;
+    if (usedAnchorUsers.has(ch.discordName)) continue;
+    anchors.push(ch);
+    anchorIds.add(ch.id);
+    usedAnchorUsers.add(ch.discordName);
+  }
+
+  for (const ch of preferredAnchorPool) {
+    if (anchors.length >= runCount) break;
+    if (anchorIds.has(ch.id)) continue;
+    anchors.push(ch);
+    anchorIds.add(ch.id);
+  }
+
+  if (anchors.length < runCount) {
+    const fallbackPool = characters
+      .filter((c) => !weakIds.has(c.id) && !anchorIds.has(c.id))
+      .slice()
+      .sort((a, b) => {
+        if (a.role !== b.role) return a.role === 'DPS' ? -1 : 1;
+        return anchorCandidateSort(a, b);
+      });
+
+    for (const ch of fallbackPool) {
+      if (anchors.length >= runCount) break;
+      anchors.push(ch);
+      anchorIds.add(ch.id);
+    }
+  }
+
+  const middle = characters
+    .filter((c) => !weakIds.has(c.id) && !anchorIds.has(c.id))
+    .slice()
+    .sort((a, b) => {
+      if (a.isGuest !== b.isGuest) return a.isGuest ? -1 : 1;
+      return b.combatPower - a.combatPower || a.id.localeCompare(b.id);
+    });
+
+  return {
+    weak: weak.slice().sort((a, b) => a.combatPower - b.combatPower || a.id.localeCompare(b.id)),
+    anchors,
+    middle,
+    weakIds,
+  };
+}
+
+function optimizeEightManRunsForWeakPriority(
+  raidId: RaidId,
+  runsMembers: Character[][],
+  maxPerRun: number,
+  maxSupportsPerRun: number,
+  concurrentRuns: number,
+  weakIds: Set<string>,
+  lockIds: Set<string> = new Set(),
+): Character[][] {
+  const runs = runsMembers.map((r) => [...r]);
+  const runCount = runs.length;
+  if (runCount <= 1) return runs;
+
+  const lexCompareDesc = (a: number[], b: number[]) => {
+    const len = Math.max(a.length, b.length);
+    for (let i = 0; i < len; i++) {
+      const av = a[i] ?? 0;
+      const bv = b[i] ?? 0;
+      if (av === bv) continue;
+      return av > bv ? 1 : -1;
+    }
+    return 0;
+  };
+
+  const objective = (candidateRuns: Character[][]) => {
+    const weakRuns = candidateRuns
+      .map((run) => ({
+        size: run.length,
+        weakCount: run.filter((c) => weakIds.has(c.id)).length,
+        avg: getRunAverageCombatPower(run),
+      }))
+      .filter((x) => x.weakCount > 0);
+
+    const weakComfort = weakRuns.reduce(
+      (sum, x) => sum + x.weakCount * Math.min(x.size, maxPerRun),
+      0,
+    );
+    const fullWeakRuns = weakRuns.filter((x) => x.size >= maxPerRun).length;
+    const weakSizesSorted = weakRuns.map((x) => x.size).sort((a, b) => b - a);
+    const weakAvgFloor = weakRuns.length > 0 ? Math.min(...weakRuns.map((x) => x.avg)) : 0;
+    const weakAvgTotal = weakRuns.reduce((sum, x) => sum + x.avg, 0);
+    const weakOverflow = weakRuns.reduce(
+      (sum, x) => sum + Math.max(0, x.weakCount - RAID_LOGIC_POLICY.EIGHT_MAN_WEAK_CAP_PER_RUN),
+      0,
+    );
+    const allSizesSorted = candidateRuns.map((run) => run.length).sort((a, b) => b - a);
+
+    return {
+      weakComfort,
+      fullWeakRuns,
+      weakSizesSorted,
+      weakAvgFloor,
+      weakAvgTotal,
+      weakOverflow,
+      allSizesSorted,
+    };
+  };
+
+  const betterObj = (
+    a: ReturnType<typeof objective>,
+    b: ReturnType<typeof objective>,
+  ) => {
+    if (a.weakOverflow !== b.weakOverflow) return a.weakOverflow < b.weakOverflow;
+    if (a.weakComfort !== b.weakComfort) return a.weakComfort > b.weakComfort;
+    if (a.fullWeakRuns !== b.fullWeakRuns) return a.fullWeakRuns > b.fullWeakRuns;
+
+    const weakLex = lexCompareDesc(a.weakSizesSorted, b.weakSizesSorted);
+    if (weakLex !== 0) return weakLex > 0;
+
+    if (a.weakAvgFloor !== b.weakAvgFloor) return a.weakAvgFloor > b.weakAvgFloor;
+    if (a.weakAvgTotal !== b.weakAvgTotal) return a.weakAvgTotal > b.weakAvgTotal;
+
+    const allLex = lexCompareDesc(a.allSizesSorted, b.allSizesSorted);
+    if (allLex !== 0) return allLex > 0;
+
+    return false;
+  };
+
+  let curObj = objective(runs);
+
+  const maxMoveIterations = runs.flat().length * RAID_LOGIC_POLICY.EIGHT_MAN_MOVE_ITER_MULTIPLIER;
+  for (let iter = 0; iter < maxMoveIterations; iter++) {
+    let bestMove: { nextRuns: Character[][]; nextObj: ReturnType<typeof objective> } | null = null;
+
+    for (let from = 0; from < runCount; from++) {
+      if (!runs[from].length) continue;
+
+      for (let to = 0; to < runCount; to++) {
+        if (from === to) continue;
+
+        for (let ci = 0; ci < runs[from].length; ci++) {
+          const ch = runs[from][ci];
+          if (lockIds.has(ch.id)) continue;
+
+          if (!canAddToRunLocalSearch(raidId, runs, to, ch, maxPerRun, maxSupportsPerRun, concurrentRuns)) {
+            continue;
+          }
+
+          const nextRuns = runs.map((r) => r.slice());
+          const moved = nextRuns[from].splice(ci, 1)[0];
+          nextRuns[to].push(moved);
+
+          if (!isRunValid(raidId, nextRuns[from], maxPerRun, maxSupportsPerRun)) continue;
+          if (!isRunValid(raidId, nextRuns[to], maxPerRun, maxSupportsPerRun)) continue;
+
+          const nextObj = objective(nextRuns);
+          if (!betterObj(nextObj, curObj)) continue;
+
+          if (!bestMove || betterObj(nextObj, bestMove.nextObj)) {
+            bestMove = { nextRuns, nextObj };
+          }
+        }
+      }
+    }
+
+    if (!bestMove) break;
+    for (let i = 0; i < runCount; i++) runs[i] = bestMove.nextRuns[i];
+    curObj = bestMove.nextObj;
+  }
+
+  const maxSwapIterations = runs.flat().length * RAID_LOGIC_POLICY.EIGHT_MAN_SWAP_ITER_MULTIPLIER;
+  for (let iter = 0; iter < maxSwapIterations; iter++) {
+    let bestSwap: { nextRuns: Character[][]; nextObj: ReturnType<typeof objective> } | null = null;
+
+    for (let aIdx = 0; aIdx < runCount; aIdx++) {
+      for (let bIdx = aIdx + 1; bIdx < runCount; bIdx++) {
+        if (!runs[aIdx].length || !runs[bIdx].length) continue;
+
+        for (let ai = 0; ai < runs[aIdx].length; ai++) {
+          for (let bi = 0; bi < runs[bIdx].length; bi++) {
+            const A = runs[aIdx][ai];
+            const B = runs[bIdx][bi];
+            if (lockIds.has(A.id) || lockIds.has(B.id)) continue;
+
+            const nextRuns = runs.map((r) => r.slice());
+            nextRuns[aIdx].splice(ai, 1, B);
+            nextRuns[bIdx].splice(bi, 1, A);
+
+            if (!isRunValid(raidId, nextRuns[aIdx], maxPerRun, maxSupportsPerRun)) continue;
+            if (!isRunValid(raidId, nextRuns[bIdx], maxPerRun, maxSupportsPerRun)) continue;
+
+            const nextObj = objective(nextRuns);
+            if (!betterObj(nextObj, curObj)) continue;
+
+            if (!bestSwap || betterObj(nextObj, bestSwap.nextObj)) {
+              bestSwap = { nextRuns, nextObj };
+            }
+          }
+        }
+      }
+    }
+
+    if (!bestSwap) break;
+    for (let i = 0; i < runCount; i++) runs[i] = bestSwap.nextRuns[i];
+    curObj = bestSwap.nextObj;
+  }
+
+  return runs;
+}
+
+function distributeCharactersIntoRunsEightMan(
+  raidId: RaidId,
+  characters: Character[],
+  _balanceMode: BalanceMode,
+  _random: () => number,
+  fillTwoSupports: boolean,
+): RaidRun[] {
+  if (characters.length === 0) return [];
+
+  const cfg = getRaidConfig(raidId, fillTwoSupports);
+  const maxSupportsPerRun = cfg.maxSupportsPerRun;
+  const maxPerRun = getEffectiveMaxPerRun(raidId, characters, fillTwoSupports);
+  const lockIds = new Set<string>();
+  const runCount = estimateRunCount(raidId, characters, fillTwoSupports);
+  const uniqueUsersCount = new Set(characters.map((c) => c.discordName)).size;
+  const hasGuests = characters.some((c) => c.isGuest);
+  const concurrentRuns = hasGuests ? Math.ceil(uniqueUsersCount / maxPerRun) : 1;
+
+  const runsMembers: Character[][] = Array.from({ length: runCount }, () => []);
+  const runsPlayerCounts: Array<Record<string, number>> = Array.from(
+    { length: runCount },
+    () => ({}),
+  );
+
+  const perPlayerCount: Record<string, number> = {};
+  characters.forEach((ch) => {
+    perPlayerCount[ch.discordName] = (perPlayerCount[ch.discordName] || 0) + 1;
+  });
+
+  const sortedPool = characters
+    .slice()
+    .sort((a, b) => {
+      if (a.isGuest !== b.isGuest) return a.isGuest ? -1 : 1;
+      return b.combatPower - a.combatPower || a.id.localeCompare(b.id);
+    });
+
+  const { weak, anchors, middle, weakIds } = classifyEightManCharacters(
+    sortedPool,
+    runCount,
+    perPlayerCount,
+  );
+
+  const runAnchorCounts = Array(runCount).fill(0);
+  const runWeakCounts = Array(runCount).fill(0);
+
+  for (const anchor of anchors) {
+    const targetIdx = pickBestRunIndexByScore(
+      raidId,
+      runsMembers,
+      runsPlayerCounts,
+      anchor,
+      maxPerRun,
+      maxSupportsPerRun,
+      concurrentRuns,
+      (run, idx) => [
+        runAnchorCounts[idx] === 0 ? 1 : 0,
+        run.length === 0 ? 1 : 0,
+        -run.length,
+        getProjectedRunAverageCombatPower(run, anchor),
+        -idx,
+      ],
+    );
+
+    if (targetIdx === -1) continue;
+    placeCharacterIntoRun(runsMembers, runsPlayerCounts, targetIdx, anchor);
+    runAnchorCounts[targetIdx] += 1;
+  }
+
+  for (const ch of weak) {
+    const bestIndex = pickBestRunIndexByScore(
+      raidId,
+      runsMembers,
+      runsPlayerCounts,
+      ch,
+      maxPerRun,
+      maxSupportsPerRun,
+      concurrentRuns,
+      (run, idx) => [
+        runAnchorCounts[idx] > 0 ? 1 : 0,
+        runWeakCounts[idx] < RAID_LOGIC_POLICY.EIGHT_MAN_WEAK_CAP_PER_RUN ? 1 : 0,
+        Math.min(run.length, maxPerRun),
+        getProjectedRunAverageCombatPower(run, ch),
+        -runWeakCounts[idx],
+        -idx,
+      ],
+    );
+
+    if (bestIndex === -1) continue;
+    placeCharacterIntoRun(runsMembers, runsPlayerCounts, bestIndex, ch);
+    runWeakCounts[bestIndex] += 1;
+  }
+
+  for (const ch of middle) {
+    const bestIndex = pickBestRunIndexByScore(
+      raidId,
+      runsMembers,
+      runsPlayerCounts,
+      ch,
+      maxPerRun,
+      maxSupportsPerRun,
+      concurrentRuns,
+      (run, idx) => [
+        runWeakCounts[idx] > 0 && runWeakCounts[idx] <= RAID_LOGIC_POLICY.EIGHT_MAN_WEAK_CAP_PER_RUN ? 1 : 0,
+        Math.min(runWeakCounts[idx], RAID_LOGIC_POLICY.EIGHT_MAN_WEAK_CAP_PER_RUN),
+        Math.min(run.length, maxPerRun),
+        getProjectedRunAverageCombatPower(run, ch),
+        runAnchorCounts[idx] > 0 ? 1 : 0,
+        -idx,
+      ],
+    );
+
+    if (bestIndex === -1) continue;
+    placeCharacterIntoRun(runsMembers, runsPlayerCounts, bestIndex, ch);
+  }
+
+  let optimized = optimizeEightManRunsForWeakPriority(
+    raidId,
+    runsMembers,
+    maxPerRun,
+    maxSupportsPerRun,
+    concurrentRuns,
+    weakIds,
+    lockIds,
+  );
+
+  optimized = swapSameUserCharactersToFixDuplicates(
+    raidId,
+    optimized,
+    maxPerRun,
+    maxSupportsPerRun,
+    concurrentRuns,
+    lockIds,
+  );
+  optimized = packSupportsToTwoPerRunIfPossible(
+    raidId,
+    optimized,
+    maxPerRun,
+    maxSupportsPerRun,
+    fillTwoSupports,
+    concurrentRuns,
+  );
+  optimized = maximizeRunsFrontloaded(
+    raidId,
+    optimized,
+    maxPerRun,
+    maxSupportsPerRun,
+    fillTwoSupports,
+    concurrentRuns,
+    lockIds,
+    weakIds,
+  );
+  optimized = minimizeSameJobInRuns(
+    raidId,
+    optimized,
+    maxPerRun,
+    maxSupportsPerRun,
+    concurrentRuns,
+    lockIds,
+  );
+
+  const runs: RaidRun[] = [];
+  optimized.forEach((members, idx) => {
+    if (members.length === 0) return;
+    const parties = splitIntoPartiesLossless(members, raidId);
+    if (parties.length === 0) return;
+    const avgPower = members.reduce((sum, c) => sum + c.combatPower, 0) / members.length;
+    runs.push({
+      raidId,
+      runIndex: idx + 1,
+      parties,
+      averageCombatPower: Math.round(avgPower),
+    });
+  });
+
+  return sortRunsByMemberCountDesc(rebalanceSupportsGlobal(runs, concurrentRuns));
+}
+
+function distributeCharactersIntoRuns(
+  raidId: RaidId,
+  characters: Character[],
+  balanceMode: BalanceMode,
+  random: () => number,
+  fillTwoSupports: boolean,
+): RaidRun[] {
+  if (isFourPlayerRaid(raidId)) {
+    return distributeCharactersIntoRunsLegacy(
+      raidId,
+      characters,
+      balanceMode,
+      random,
+      fillTwoSupports,
+    );
+  }
+
+  return distributeCharactersIntoRunsEightMan(
+    raidId,
+    characters,
+    balanceMode,
+    random,
+    fillTwoSupports,
+  );
+}
+
 function splitIntoPartiesLossless(members: Character[], raidId: RaidId): RaidRunParty[] {
   const is4Player = isFourPlayerRaid(raidId);
-  const supports = [...members].filter((m) => m.role === 'SUPPORT').sort((a, b) => b.combatPower - a.combatPower || a.id.localeCompare(b.id));
-  const dps = [...members].filter((m) => m.role === 'DPS').sort((a, b) => b.combatPower - a.combatPower || a.id.localeCompare(b.id));
+  const supports = [...members]
+    .filter((m) => m.role === 'SUPPORT')
+    .sort((a, b) => b.combatPower - a.combatPower || a.id.localeCompare(b.id));
+  const dps = [...members]
+    .filter((m) => m.role === 'DPS')
+    .sort((a, b) => b.combatPower - a.combatPower || a.id.localeCompare(b.id));
 
   let partyCount = 1;
+
   if (!is4Player) {
-    const noSupportRun = supports.length === 0;
-    if (members.length > 4) partyCount = 2;
-    else if (members.length === 4 && noSupportRun) partyCount = 2;
-    else partyCount = 1;
+    // ✅ 8인 레이드는 아래 중 하나면 무조건 2파티
+    // 1) 전체 인원이 5명 이상
+    // 2) 서폿이 2명 이상
+    // 3) 4명인데 노서폿 런(2+2처럼 쪼개기 위해)
+    if (
+      members.length > 4 ||
+      supports.length >= 2 ||
+      (members.length === 4 && supports.length === 0)
+    ) {
+      partyCount = 2;
+    }
   }
+
   partyCount = Math.min(is4Player ? 1 : 2, partyCount);
 
-  const parties: FixedRaidRunParty[] = Array.from({ length: partyCount }, (_, idx) => ({ partyIndex: idx + 1, members: [] }));
+  const parties: FixedRaidRunParty[] = Array.from(
+    { length: partyCount },
+    (_, idx) => ({ partyIndex: idx + 1, members: [] }),
+  );
   const usedIds = new Set<string>();
 
   const maxSize = (party: FixedRaidRunParty) => {
@@ -1429,6 +2038,7 @@ function splitIntoPartiesLossless(members: Character[], raidId: RaidId): RaidRun
     return true;
   };
 
+  // ✅ 서폿은 파티별로 1명씩 먼저 분산
   for (let i = 0; i < parties.length; i++) {
     const sup = supports.find((s) => !usedIds.has(s.id));
     if (sup) addMember(parties[i], sup);
@@ -1437,27 +2047,51 @@ function splitIntoPartiesLossless(members: Character[], raidId: RaidId): RaidRun
   let placed = true;
   while (placed) {
     placed = false;
+
     for (let i = 0; i < parties.length; i++) {
       const p = parties[i];
       if (p.members.length >= maxSize(p)) continue;
-      const distinctDps = dps.find((d) => !usedIds.has(d.id) && !p.members.some((m) => m.role === 'DPS' && m.jobCode === d.jobCode));
-      if (distinctDps) { addMember(p, distinctDps); placed = true; }
-    }
-    if (!placed) break;
 
+      const distinctDps = dps.find(
+        (d) =>
+          !usedIds.has(d.id) &&
+          !p.members.some((m) => m.role === 'DPS' && m.jobCode === d.jobCode),
+      );
+
+      if (distinctDps) {
+        addMember(p, distinctDps);
+        placed = true;
+      }
+    }
+
+    if (!placed) break;
     placed = false;
+
     for (let i = parties.length - 1; i >= 0; i--) {
       const p = parties[i];
       if (p.members.length >= maxSize(p)) continue;
-      const distinctDps = dps.find((d) => !usedIds.has(d.id) && !p.members.some((m) => m.role === 'DPS' && m.jobCode === d.jobCode));
-      if (distinctDps) { addMember(p, distinctDps); placed = true; }
+
+      const distinctDps = dps.find(
+        (d) =>
+          !usedIds.has(d.id) &&
+          !p.members.some((m) => m.role === 'DPS' && m.jobCode === d.jobCode),
+      );
+
+      if (distinctDps) {
+        addMember(p, distinctDps);
+        placed = true;
+      }
     }
   }
 
   [...supports, ...dps].forEach((c) => {
-    if (!usedIds.has(c.id)) {
-      for (const p of parties) { if (addMember(p, c)) break; }
-    }
+    if (usedIds.has(c.id)) return;
+
+    const target = parties
+      .filter((p) => p.members.length < maxSize(p))
+      .sort((a, b) => a.members.length - b.members.length)[0];
+
+    if (target) addMember(target, c);
   });
 
   return parties.filter((p) => p.members.length > 0) as unknown as RaidRunParty[];
