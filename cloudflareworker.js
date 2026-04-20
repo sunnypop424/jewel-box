@@ -101,52 +101,46 @@ const corsHeaders = {
 // ===========================================================
 // 🌟 공대원 개인 일정(참여 불가일) 관련 공용 헬퍼
 // ===========================================================
-// 입력받은 날짜 문자열을 YYYY-MM-DD(KST) 형식으로 정규화합니다.
-// 허용 형식: 2026-04-20, 2026/4/20, 04-20, 4/20, '오늘', '내일'
+// 디스코드 커맨드용 날짜 정규화 — 오직 "MMDD" 4자리 숫자만 허용.
+//   - 예) "0420" → 올해의 04월 20일 (KST 기준)
+//   - 단, 입력한 MMDD 가 KST 오늘 MMDD 보다 과거면 "내년" 의 같은 날짜로 해석
+//        예) 오늘 4/20 이고 "0310" 입력 → 내년 3/10
+//   - 하이픈/슬래시/'오늘'/'내일' 등 그 외 모든 포맷은 거부(null)
+// 내부 저장 포맷은 기존과 호환되도록 "YYYY-MM-DD" 를 그대로 반환합니다.
 function normalizeScheduleDate(input) {
   if (!input) return null;
   const trimmed = String(input).trim();
 
-  // KST 기준 오늘
-  const nowKst = new Date(Date.now() + 9 * 60 * 60 * 1000);
-  const toKey = (d) => {
-    const y = d.getUTCFullYear();
-    const m = String(d.getUTCMonth() + 1).padStart(2, '0');
-    const day = String(d.getUTCDate()).padStart(2, '0');
-    return `${y}-${m}-${day}`;
-  };
+  // 4자리 숫자 외에는 전부 거절
+  if (!/^\d{4}$/.test(trimmed)) return null;
 
-  if (trimmed === '오늘') return toKey(nowKst);
-  if (trimmed === '내일') {
-    const t = new Date(nowKst);
-    t.setUTCDate(t.getUTCDate() + 1);
-    return toKey(t);
-  }
-
-  // 구분자 통일 ('/', '.', ' ' → '-')
-  const unified = trimmed.replace(/[.\/\s]+/g, '-');
-  const parts = unified.split('-').filter(Boolean);
-
-  let y, m, d;
-  if (parts.length === 3) {
-    [y, m, d] = parts;
-  } else if (parts.length === 2) {
-    y = nowKst.getUTCFullYear();
-    [m, d] = parts;
-  } else {
-    return null;
-  }
-
-  const yy = parseInt(y, 10);
-  const mm = parseInt(m, 10);
-  const dd = parseInt(d, 10);
-  if (!yy || !mm || !dd) return null;
+  const mm = parseInt(trimmed.slice(0, 2), 10);
+  const dd = parseInt(trimmed.slice(2), 10);
   if (mm < 1 || mm > 12 || dd < 1 || dd > 31) return null;
 
-  return `${String(yy).padStart(4, '0')}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`;
+  // KST 오늘 기준
+  const nowKst = new Date(Date.now() + 9 * 60 * 60 * 1000);
+  const todayY = nowKst.getUTCFullYear();
+  const todayMmdd = (nowKst.getUTCMonth() + 1) * 100 + nowKst.getUTCDate();
+  const inputMmdd = mm * 100 + dd;
+
+  // 오늘보다 과거 MMDD 이면 내년으로 해석
+  const y = inputMmdd < todayMmdd ? todayY + 1 : todayY;
+  return `${y}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`;
 }
 
 // 디스코드 일정 공유 채널로 알림 메시지 전송 (웹/디스코드 양쪽에서 공용으로 호출)
+// YYYY-MM-DD → "YYYY-MM-DD (요일)" 형태로 포맷 (요일은 한글 한 글자)
+function formatDateWithDow(dateKey) {
+  if (!dateKey || typeof dateKey !== 'string') return dateKey || '';
+  const parts = dateKey.split('-').map(Number);
+  if (parts.length !== 3 || parts.some(Number.isNaN)) return dateKey;
+  const [y, m, d] = parts;
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  const dow = ['일', '월', '화', '수', '목', '금', '토'][dt.getUTCDay()];
+  return `${dateKey} (${dow})`;
+}
+
 // 일정 공유 채널에 등록 메시지를 게시하고, 게시된 메시지의 ID 를 반환합니다.
 // (삭제 시 이 ID 로 메시지를 함께 지우는 방식이라 별도 "삭제 알림"은 쏘지 않습니다.)
 async function postScheduleCreateMessage(env, { discordName, date, reason }) {
@@ -1098,46 +1092,88 @@ export default {
         const getOpt = (n) => subOptions.find(o => o.name === n)?.value;
 
         // --- 1) /일정 등록 ---
+        // 옵션(모두 필수): 날짜(시작일), 종료일, 사유
+        // 시작일 === 종료일 이면 단일 날짜로 처리.
         if (subCommand.name === '등록') {
-          const rawDate = getOpt('날짜');
+          const rawStart = getOpt('시작일');
+          const rawEnd = getOpt('종료일');
           const reason = getOpt('사유') || '';
-          const dateKey = normalizeScheduleDate(rawDate);
+          const startKey = normalizeScheduleDate(rawStart);
+          const endKey = normalizeScheduleDate(rawEnd);
 
-          if (!dateKey) {
+          if (!startKey) {
             return new Response(JSON.stringify({
               type: 4,
-              data: { content: `[오류] 날짜 형식이 올바르지 않습니다. 예: 2026-04-20, 04/20, 오늘, 내일`, flags: 64 }
+              data: { content: `[오류] 시작일은 MMDD 4자리 숫자로 입력해 주세요. (예: 0420 → 올해 4월 20일)`, flags: 64 }
+            }), { headers: { 'Content-Type': 'application/json' } });
+          }
+          if (!endKey) {
+            return new Response(JSON.stringify({
+              type: 4,
+              data: { content: `[오류] 종료일은 MMDD 4자리 숫자로 입력해 주세요. (예: 0425) · 단일 날짜 등록은 시작일과 같은 값을 입력하세요.`, flags: 64 }
+            }), { headers: { 'Content-Type': 'application/json' } });
+          }
+          if (endKey < startKey) {
+            return new Response(JSON.stringify({
+              type: 4,
+              data: { content: `[오류] 종료일은 시작일보다 빠를 수 없습니다. (시작: ${startKey} / 종료: ${endKey})`, flags: 64 }
             }), { headers: { 'Content-Type': 'application/json' } });
           }
 
-          // 동일 유저/날짜 중복 시 수정 대신 안내 (수정 액션 제거)
+          // 범위 내 모든 날짜 나열 (YYYY-MM-DD 문자열 비교로 안전하게 순회)
+          const datesToRegister = [];
+          {
+            const [sy, sm, sd] = startKey.split('-').map(Number);
+            const [ey, em, ed] = endKey.split('-').map(Number);
+            const cur = new Date(Date.UTC(sy, sm - 1, sd));
+            const end = new Date(Date.UTC(ey, em - 1, ed));
+            while (cur <= end) {
+              const y = cur.getUTCFullYear();
+              const m = String(cur.getUTCMonth() + 1).padStart(2, '0');
+              const d = String(cur.getUTCDate()).padStart(2, '0');
+              datesToRegister.push(`${y}-${m}-${d}`);
+              cur.setUTCDate(cur.getUTCDate() + 1);
+            }
+          }
+
+          // 중복 체크: 범위 내 어느 날이라도 이미 등록되어 있으면 에러
           const all = await fetchPersonalSchedules(env);
-          const dup = all.find(s => (s.discordId === userId || s.discordName === discordUserName) && s.date === dateKey);
-          if (dup) {
+          const mine = all.filter(s => s.discordId === userId || s.discordName === discordUserName);
+          const dupDates = datesToRegister.filter(k => mine.some(s => s.date === k));
+          if (dupDates.length > 0) {
             return new Response(JSON.stringify({
               type: 4,
-              data: { content: `[안내] **${dateKey}** 에 이미 등록된 일정이 있습니다.\n먼저 \`/일정 삭제\` 후 다시 등록해 주세요.`, flags: 64 }
+              data: { content: `[안내] 다음 날짜에 이미 등록된 일정이 있습니다: **${dupDates.join(', ')}**\n먼저 \`/일정 삭제\` 후 다시 등록해 주세요.`, flags: 64 }
             }), { headers: { 'Content-Type': 'application/json' } });
           }
 
-          // 1) Discord 채널에 등록 메시지 먼저 게시 → messageId 확보
+          // 1) Discord 채널에 요약 메시지 1건 게시 → messageId 확보
+          //    날짜엔 한글 요일을 함께 노출 (예: "2026-04-20 (월)")
+          const isSingleDay = startKey === endKey;
+          const dateLabel = isSingleDay
+            ? formatDateWithDow(startKey)
+            : `${formatDateWithDow(startKey)} ~ ${formatDateWithDow(endKey)} (${datesToRegister.length}일)`;
           const post = await postScheduleCreateMessage(env, {
             discordName: discordUserName,
-            date: dateKey,
+            date: dateLabel,
             reason,
           });
 
-          // 2) Firestore 에 messageId 포함해서 저장
-          const ok = await createPersonalSchedule(env, {
-            discordName: discordUserName,
-            discordId: userId,
-            date: dateKey,
-            reason,
-            source: 'discord',
-            discordMessageId: post.messageId || undefined,
-          });
+          // 2) Firestore 에 날짜별 문서 생성 (모두 같은 messageId 공유)
+          let createdCount = 0;
+          for (const key of datesToRegister) {
+            const ok = await createPersonalSchedule(env, {
+              discordName: discordUserName,
+              discordId: userId,
+              date: key,
+              reason,
+              source: 'discord',
+              discordMessageId: post.messageId || undefined,
+            });
+            if (ok) createdCount += 1;
+          }
 
-          if (!ok) {
+          if (createdCount === 0) {
             return new Response(JSON.stringify({
               type: 4,
               data: { content: `[오류] 데이터베이스 저장에 실패했습니다.`, flags: 64 }
@@ -1146,7 +1182,12 @@ export default {
 
           return new Response(JSON.stringify({
             type: 4,
-            data: { content: `**${discordUserName}**님의 **${dateKey}** 일정이 등록되었습니다.\n- 사유: ${reason || '(미입력)'}`, flags: 64 }
+            data: {
+              content: isSingleDay
+                ? `**${discordUserName}**님의 **${formatDateWithDow(startKey)}** 일정이 등록되었습니다.\n- 사유: ${reason || '(미입력)'}`
+                : `**${discordUserName}**님의 **${formatDateWithDow(startKey)} ~ ${formatDateWithDow(endKey)}** (${createdCount}일) 기간 일정이 등록되었습니다.\n- 사유: ${reason || '(미입력)'}`,
+              flags: 64,
+            }
           }), { headers: { 'Content-Type': 'application/json' } });
         }
 
@@ -1180,7 +1221,7 @@ export default {
           const future = filtered.filter(s => s.date >= todayKst);
           const list = (future.length > 0 ? future : filtered).slice(0, 20);
 
-          const lines = list.map(s => `- **${s.date}** — ${s.reason || '(사유 미입력)'}`).join('\n');
+          const lines = list.map(s => `- **${formatDateWithDow(s.date)}** — ${s.reason || '(사유 미입력)'}`).join('\n');
           const resultText =
             `**[${label}]님의 등록된 일정 (${list.length}건)**\n` +
             `━━━━━━━━━━━━━━━━━━━━━━\n${lines}`;
@@ -1198,7 +1239,7 @@ export default {
           if (!dateKey) {
             return new Response(JSON.stringify({
               type: 4,
-              data: { content: `[오류] 날짜 형식이 올바르지 않습니다. 예: 2026-04-20`, flags: 64 }
+              data: { content: `[오류] 날짜는 MMDD 4자리 숫자로 입력해 주세요. (예: 0420)`, flags: 64 }
             }), { headers: { 'Content-Type': 'application/json' } });
           }
 
@@ -1228,7 +1269,7 @@ export default {
 
           return new Response(JSON.stringify({
             type: 4,
-            data: { content: `**${discordUserName}**님의 **${dateKey}** 일정이 삭제되었습니다.`, flags: 64 }
+            data: { content: `**${discordUserName}**님의 **${formatDateWithDow(dateKey)}** 일정이 삭제되었습니다.`, flags: 64 }
           }), { headers: { 'Content-Type': 'application/json' } });
         }
 
@@ -1482,6 +1523,50 @@ export default {
       }
     } catch (err) {
       console.error('오래된 모집글 삭제 중 오류 발생:', err);
+    }
+
+    // ========================================================
+    // 🌟 만료된 참여 불가 일정(personalSchedules) 자동 정리
+    //   - 기준: KST 오늘 날짜보다 과거면 만료
+    //   - 예) 2026-04-20 까지 등록된 일정은 KST 4/21 00시 이후 크론이 돌 때 삭제됨
+    //   - 기간 등록분은 같은 messageId 를 공유하므로, 해당 messageId 에 연결된
+    //     모든 doc 이 과거가 되었을 때만 Discord 메시지까지 삭제 (중간 삭제는 보존)
+    // ========================================================
+    try {
+      const nowUtc = new Date();
+      const kstTime = new Date(nowUtc.getTime() + 9 * 60 * 60 * 1000);
+      const todayKey = kstTime.toISOString().split('T')[0]; // YYYY-MM-DD (KST)
+
+      const all = await fetchPersonalSchedules(env);
+      if (all.length === 0) return;
+
+      // messageId 별 만료 여부 계산
+      const byMessage = new Map(); // messageId → { total, expired }
+      for (const s of all) {
+        if (!s.discordMessageId) continue;
+        const stat = byMessage.get(s.discordMessageId) || { total: 0, expired: 0 };
+        stat.total += 1;
+        if (s.date < todayKey) stat.expired += 1;
+        byMessage.set(s.discordMessageId, stat);
+      }
+
+      // 1) 만료된 Firestore 문서 삭제
+      const expiredDocs = all.filter((s) => s.date < todayKey);
+      for (const doc of expiredDocs) {
+        await deletePersonalSchedule(env, doc.id);
+        // 짧게 쉬어 Firestore Rate Limit 여유 확보
+        await new Promise((r) => setTimeout(r, 150));
+      }
+
+      // 2) 모든 날짜가 만료된 Discord 메시지 삭제 (기간 등록 중간 삭제는 건너뜀)
+      for (const [messageId, stat] of byMessage.entries()) {
+        if (stat.total === stat.expired && messageId) {
+          await deleteScheduleMessageById(env, messageId);
+          await new Promise((r) => setTimeout(r, 500));
+        }
+      }
+    } catch (err) {
+      console.error('만료된 참여 불가 일정 정리 중 오류 발생:', err);
     }
   }
 }

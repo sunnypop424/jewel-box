@@ -28,12 +28,18 @@ const commands = [
       {
         type: 1, // SUB_COMMAND
         name: '등록',
-        description: '본인의 일정을 등록합니다. (같은 날짜면 사유 업데이트)',
+        description: '참여 불가 일정을 등록합니다. 단일 날짜는 시작일/종료일에 같은 값을 입력하세요.',
         options: [
           {
             type: 3,
-            name: '날짜',
-            description: 'YYYY-MM-DD / MM-DD / 오늘 / 내일',
+            name: '시작일',
+            description: 'MMDD 4자리 숫자 (예: 0420 → 올해 4월 20일)',
+            required: true,
+          },
+          {
+            type: 3,
+            name: '종료일',
+            description: 'MMDD 4자리 숫자 (단일 날짜면 시작일과 동일하게)',
             required: true,
           },
           {
@@ -66,7 +72,7 @@ const commands = [
           {
             type: 3,
             name: '날짜',
-            description: 'YYYY-MM-DD / MM-DD',
+            description: 'MMDD 4자리 숫자 (예: 0420 → 올해 4월 20일)',
             required: true,
           },
         ],

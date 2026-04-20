@@ -44,6 +44,16 @@ function enumerateDates(start: Date, end: Date): string[] {
   return result;
 }
 
+// "YYYY-MM-DD" → "YYYY-MM-DD (요일)" (디스코드 알림 메시지용)
+function formatDateWithDow(dateKey: string): string {
+  const parts = dateKey.split('-').map(Number);
+  if (parts.length !== 3 || parts.some(Number.isNaN)) return dateKey;
+  const [y, m, d] = parts;
+  const dt = new Date(y, m - 1, d);
+  const dow = ['일', '월', '화', '수', '목', '금', '토'][dt.getDay()];
+  return `${dateKey} (${dow})`;
+}
+
 // 본인 식별값 로컬 저장 키 (같은 브라우저에서는 다시 선택할 필요 없음)
 const IDENTITY_KEY = 'schedule_identity_v1';
 
@@ -180,9 +190,10 @@ export const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ currentUser,
       }
 
       // 1) Discord 채널에 등록 메시지 1건 게시 → messageId 확보
+      //    날짜엔 한글 요일을 함께 노출 (예: "2026-04-20 (월)")
       const dateLabel = datesToProcess.length === 1
-        ? datesToProcess[0]
-        : `${datesToProcess[0]} ~ ${datesToProcess[datesToProcess.length - 1]} (${datesToProcess.length}일)`;
+        ? formatDateWithDow(datesToProcess[0])
+        : `${formatDateWithDow(datesToProcess[0])} ~ ${formatDateWithDow(datesToProcess[datesToProcess.length - 1])} (${datesToProcess.length}일)`;
       const messageId = await postScheduleCreateMessage({
         discordName: identity,
         date: dateLabel,
