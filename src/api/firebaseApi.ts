@@ -1,4 +1,4 @@
-import { collection, doc, getDocs, getDoc, setDoc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
+import { collection, doc, getDocs, getDoc, setDoc, updateDoc, addDoc, deleteDoc, query, where, orderBy, arrayUnion, arrayRemove } from 'firebase/firestore';
 import { db } from '../firebase';
 import type { Character, RaidSettingsMap, RaidSwap, RaidId, RaidExclusionMap } from '../types';
 
@@ -7,6 +7,9 @@ const SETTINGS_DOC_REF = doc(db, 'raidData', 'settings');
 const SWAPS_DOC_REF = doc(db, 'raidData', 'swaps');
 const EXCLUSION_DOC_REF = doc(db, 'raidData', 'exclusions');
 const GOLD_DOC_REF = doc(db, 'raidData', 'accumulatedGold');
+// 공대원 개인 일정 컬렉션 (참여 불가일)
+// 각 문서 = 하나의 일정. 구조: { discordName, discordId?, date(YYYY-MM-DD), reason, createdAt, updatedAt, source }
+const SCHEDULES_COLLECTION = collection(db, 'personalSchedules');
 
 export type AccumulatedGoldMap = Record<string, { general: number; bound: number }>;
 
@@ -124,4 +127,57 @@ export async function resetAccumulatedGold(discordName: string, offsetGeneral: n
   const newData = { ...current, [discordName]: { general: -offsetGeneral, bound: -offsetBound } };
   await setDoc(GOLD_DOC_REF, newData);
   return newData;
+}
+
+// --- 공대원 개인 일정 (참여 불가일) API ---
+export interface PersonalSchedule {
+  id: string;
+  discordName: string;
+  discordId?: string;
+  date: string;      // YYYY-MM-DD (KST 기준)
+  reason: string;
+  createdAt?: string;
+  updatedAt?: string;
+  source?: 'web' | 'discord';
+  // 등록 시 디스코드 채널에 전송한 메시지 ID. 삭제 시 해당 메시지를 함께 지우는 데 사용.
+  discordMessageId?: string;
+}
+
+export type NewPersonalSchedule = Omit<PersonalSchedule, 'id' | 'createdAt' | 'updatedAt'>;
+
+// 전체 일정 조회 (웹 캘린더에서 월 단위 렌더링 시 사용)
+export async function fetchPersonalSchedules(): Promise<PersonalSchedule[]> {
+  const snap = await getDocs(query(SCHEDULES_COLLECTION, orderBy('date', 'asc')));
+  return snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<PersonalSchedule, 'id'>) }));
+}
+
+// 특정 유저의 일정만 조회 (본인 관리 패널에서 활용 가능)
+export async function fetchPersonalSchedulesByUser(discordName: string): Promise<PersonalSchedule[]> {
+  const q = query(SCHEDULES_COLLECTION, where('discordName', '==', discordName));
+  const snap = await getDocs(q);
+  return snap.docs
+    .map((d) => ({ id: d.id, ...(d.data() as Omit<PersonalSchedule, 'id'>) }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+// 일정 등록: 중복 방지(같은 유저/같은 날짜)는 서버 사이드에서 처리하지 않고
+// 호출 측(웹/디스코드)에서 각자 확인 후 addPersonalSchedule 또는 updatePersonalSchedule 호출
+export async function addPersonalSchedule(data: NewPersonalSchedule): Promise<PersonalSchedule> {
+  const now = new Date().toISOString();
+  const payload = { ...data, createdAt: now, updatedAt: now, source: data.source || 'web' };
+  const docRef = await addDoc(SCHEDULES_COLLECTION, payload);
+  return { id: docRef.id, ...payload };
+}
+
+// 일정 수정 (사유/날짜 등)
+export async function updatePersonalSchedule(
+  id: string,
+  patch: Partial<Omit<PersonalSchedule, 'id' | 'createdAt' | 'discordName' | 'discordId'>>
+): Promise<void> {
+  await updateDoc(doc(SCHEDULES_COLLECTION, id), { ...patch, updatedAt: new Date().toISOString() });
+}
+
+// 일정 삭제
+export async function deletePersonalSchedule(id: string): Promise<void> {
+  await deleteDoc(doc(SCHEDULES_COLLECTION, id));
 }

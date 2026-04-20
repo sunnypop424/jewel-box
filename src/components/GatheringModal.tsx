@@ -68,12 +68,12 @@ export const GatheringModal: React.FC<GatheringModalProps> = ({ isOpen, onClose 
           <div className="grid gap-4 sm:grid-cols-2 mt-2">
             <div className="space-y-3 rounded-xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
               <label className="flex items-center gap-1.5 text-xs font-bold text-zinc-500"><Calendar size={14} /> 날짜</label>
-              <input type="date" required value={targetDate} onChange={(e) => setTargetDate(e.target.value)} disabled={isSubmitting} className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm font-medium text-zinc-700 transition-all focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200" />
+              <input type="date" required value={targetDate} onChange={(e) => setTargetDate(e.target.value)} onClick={(e) => e.currentTarget.showPicker?.()} disabled={isSubmitting} className="w-full cursor-pointer rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm font-medium text-zinc-700 transition-all focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200" />
             </div>
             
             <div className="space-y-3 rounded-xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
               <label className="flex items-center gap-1.5 text-xs font-bold text-zinc-500"><Clock size={14} /> 시간</label>
-              <input type="time" required value={targetTime} onChange={(e) => setTargetTime(e.target.value)} disabled={isSubmitting} className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm font-medium text-zinc-700 transition-all focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200" />
+              <input type="time" required value={targetTime} onChange={(e) => setTargetTime(e.target.value)} onClick={(e) => e.currentTarget.showPicker?.()} disabled={isSubmitting} className="w-full cursor-pointer rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm font-medium text-zinc-700 transition-all focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200" />
             </div>
           </div>
 

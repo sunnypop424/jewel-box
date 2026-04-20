@@ -8,6 +8,7 @@ import { RaidScheduleView } from './components/RaidScheduleView';
 import { RaidSequenceView } from './components/RaidSequenceView';
 import { UserRaidProgressPanel, RAID_ORDER_FOR_PROGRESS, getExpectedRaids } from './components/UserRaidProgressPanel';
 import { AbsenteeDashboard } from './components/AbsenteeDashboard';
+import { ScheduleCalendar } from './components/ScheduleCalendar';
 import { fetchCharacters, saveCharacters, fetchRaidSettings, setRaidSetting, fetchSwaps, addSwap, resetSwaps, fetchRaidExclusions, toggleCharacterOnRaid, excludeCharactersOnRaid, resetRaidExclusions, fetchAccumulatedGold, updateAccumulatedGoldMulti, resetAccumulatedGold, type AccumulatedGoldMap } from './api/firebaseApi';
 import { syncCharactersWithLostArkAPI, fetchProfile } from './api/lostArkApi';
 import { Modal } from './components/Modal';
@@ -16,7 +17,7 @@ import { RouletteGame } from './components/RouletteGame';
 import { PinballGame } from './components/PinballGame';
 import { AuctionCalculatorModal } from './components/AuctionCalculatorModal';
 import { GatheringModal } from './components/GatheringModal';
-import { Swords, Sun, Moon, UserCog, LayoutDashboard, ClipboardList, ChartGantt, Menu, X, Users, ChevronDown, Orbit, Megaphone, UserRoundMinus } from 'lucide-react';
+import { Swords, Sun, Moon, UserCog, LayoutDashboard, ClipboardList, ChartGantt, Menu, X, Users, ChevronDown, Orbit, Megaphone, UserRoundMinus, CalendarDays } from 'lucide-react';
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 
 // ✨ Hook 추가
@@ -532,6 +533,9 @@ const App: React.FC = () => {
         if (location.pathname === '/absentee') {
             return { title: '결석 대응 현황', Icon: UserRoundMinus };
         }
+        if (location.pathname === '/calendar') {
+            return { title: '참여 불가 캘린더', Icon: CalendarDays };
+        }
         return { title: '개인별 진행 현황', Icon: LayoutDashboard };
     }, [location.pathname]);
 
@@ -611,6 +615,10 @@ const App: React.FC = () => {
 
                         <button onClick={() => handleNavClick('/absentee')} className={navButtonClass(isActive('/absentee'))}>
                             <UserRoundMinus size={18} /> 결석 대응 현황
+                        </button>
+
+                        <button onClick={() => handleNavClick('/calendar')} className={navButtonClass(isActive('/calendar'))}>
+                            <CalendarDays size={18} /> 참여 불가 캘린더
                         </button>
 
                         <div className="my-3 h-px bg-zinc-100 dark:bg-zinc-800" />
@@ -795,7 +803,7 @@ const App: React.FC = () => {
                         <Routes>
                             <Route path="/" element={
                                 <section className="flex flex-col gap-6">
-                                    <div className="hidden flex-col justify-between gap-3 sm:flex-row sm:items-center md:flex">
+                                    <div className="hidden flex-col justify-between gap-3 sm:flex-row sm:items-center md:flex md:h-[38px]">
                                         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
                                             <h2 className="flex items-center gap-2 text-xl font-bold text-zinc-900 dark:text-zinc-100">
                                                 <LayoutDashboard className="text-indigo-500" />
@@ -838,7 +846,7 @@ const App: React.FC = () => {
 
                             <Route path="/schedule" element={
                                 <section className="flex flex-col gap-6">
-                                    <div className="hidden flex-col gap-3 sm:flex-row sm:items-center sm:justify-between md:flex">
+                                    <div className="hidden flex-col gap-3 sm:flex-row sm:items-center sm:justify-between md:flex md:h-[38px]">
                                         <h2 className="flex items-center gap-2 text-xl font-bold text-zinc-900 dark:text-zinc-100">
                                             <ClipboardList className="text-indigo-500" /> 레이드 배정 결과
                                         </h2>
@@ -879,7 +887,7 @@ const App: React.FC = () => {
 
                             <Route path="/sequence" element={
                                 <section className="flex flex-col gap-6">
-                                    <div className="hidden flex-col gap-3 sm:flex-row sm:items-center sm:justify-between md:flex">
+                                    <div className="hidden flex-col gap-3 sm:flex-row sm:items-center sm:justify-between md:flex md:h-[38px]">
                                         <h2 className="flex items-center gap-2 text-xl font-bold text-zinc-900 dark:text-zinc-100">
                                             <ChartGantt className="text-indigo-500" /> 레이드 진행 순서
                                         </h2>
@@ -902,7 +910,7 @@ const App: React.FC = () => {
 
                             <Route path="/absentee" element={
                                 <section className="flex flex-col gap-6">
-                                    <div className="hidden flex-col gap-3 sm:flex-row sm:items-center sm:justify-between md:flex">
+                                    <div className="hidden flex-col gap-3 sm:flex-row sm:items-center sm:justify-between md:flex md:h-[38px]">
                                         <h2 className="flex items-center gap-2 text-xl font-bold text-zinc-900 dark:text-zinc-100">
                                             <UserRoundMinus className="text-indigo-500" /> 결석 대응 현황
                                         </h2>
@@ -913,6 +921,21 @@ const App: React.FC = () => {
                                         selectedAbsentees={selectedAbsentees}
                                         allUserNames={allUserNames}
                                         onToggleAbsentee={handleToggleAbsentee}
+                                    />
+                                </section>
+                            } />
+
+                            <Route path="/calendar" element={
+                                <section className="flex flex-col gap-6">
+                                    <div className="hidden flex-col gap-3 sm:flex-row sm:items-center sm:justify-between md:flex md:h-[38px]">
+                                        <h2 className="flex items-center gap-2 text-xl font-bold text-zinc-900 dark:text-zinc-100">
+                                            <CalendarDays className="text-indigo-500" /> 참여 불가 캘린더
+                                        </h2>
+                                    </div>
+
+                                    <ScheduleCalendar
+                                        currentUser={localSquad.discordName}
+                                        allUserNames={allUserNames}
                                     />
                                 </section>
                             } />

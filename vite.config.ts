@@ -34,4 +34,8 @@ export default defineConfig({
   ],
   // repo 이름에 맞게 '/jewel-box/' 수정
   base: '/jewel-box/',
+  server: {
+    port: 5177,
+    strictPort: true, // 5177 이 이미 사용 중이면 다른 포트로 넘어가지 않고 실패
+  },
 });
