@@ -289,7 +289,21 @@ function getTargetRaidsForCharacter(ch) {
   for (const raid of RAIDS) {
     if (!isWithinAvailability(raid, now)) continue;
     if (raid.clearScope === 'roster') continue;
+
+    const singleId = (ch.singleRaids || []).find(
+      r => getRaidFamily(r) === raid.family && r.endsWith('_SINGLE')
+    );
+    if (singleId) {
+      const singleDiff = raid.difficulties.find(d => d.tier === 'SINGLE');
+      if (singleDiff && il >= singleDiff.minItemLevel) {
+        if (raid.family === 'HORIZON') horizon.push(singleId);
+        else normal.push(singleId);
+      }
+      continue;
+    }
+
     const qualified = raid.difficulties.filter((d) => {
+      if (d.tier === 'SINGLE') return false;
       if (il < d.minItemLevel) return false;
       if (d.requiresFlag && !ch[d.requiresFlag]) return false;
       return true;
@@ -330,6 +344,7 @@ function getRaidFamily(raidId) {
   return raidId.slice(0, raidId.indexOf('_'));
 }
 
+
 // 귀속 골드 무시 여부. 웹앱 App.tsx computeIgnoreBoundGold 와 동일.
 function computeIgnoreBound(ch, userChars) {
   if (ch.receiveBoundGold !== undefined) return !ch.receiveBoundGold;
@@ -368,7 +383,24 @@ function computeCharLedgerView(ch, clears, userChars, rosterRaidState) {
   for (const raid of RAIDS) {
     if (!isWithinAvailability(raid, now)) continue;
     if (raid.clearScope === 'roster') continue;
+
+    const singleId = (ch.singleRaids || []).find(
+      r => getRaidFamily(r) === raid.family && r.endsWith('_SINGLE')
+    );
+    if (singleId) {
+      const singleDiff = raid.difficulties.find(d => d.tier === 'SINGLE');
+      if (singleDiff && il >= singleDiff.minItemLevel) {
+        const fam = getRaidFamily(singleId);
+        if (!charCandByFamily.has(fam)) {
+          const meta = RAID_META[singleId];
+          charCandByFamily.set(fam, { id: singleId, general: meta.generalGold, bound: meta.boundGold, isCleared: false });
+        }
+      }
+      continue;
+    }
+
     const q = raid.difficulties.filter(d => {
+      if (d.tier === 'SINGLE') return false;
       if (il < d.minItemLevel) return false;
       if (d.requiresFlag && !ch[d.requiresFlag]) return false;
       return true;

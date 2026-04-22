@@ -35,6 +35,7 @@ export type DifficultyTier =
   | 'NORMAL'
   | 'HARD'
   | 'NIGHTMARE'
+  | 'SINGLE'
   | 'STEP1'
   | 'STEP2'
   | 'STEP3';
@@ -43,10 +44,13 @@ export type DifficultyTier =
 // 내부 조회는 family/tier 로 분해해서 수행.
 export type RaidId =
   | 'ACT1_HARD'
+  | 'ACT1_SINGLE'
   | 'ACT2_NORMAL'
   | 'ACT2_HARD'
+  | 'ACT2_SINGLE'
   | 'ACT3_NORMAL'
   | 'ACT3_HARD'
+  | 'ACT3_SINGLE'
   | 'ACT4_NORMAL'
   | 'ACT4_HARD'
   | 'FINAL_NORMAL'
@@ -72,6 +76,7 @@ export type RequiresFlag = 'serkaNightmare';
 export interface EligibilityContext {
   itemLevel: number;
   serkaNightmare?: boolean;
+  singleRaids?: RaidId[];
 }
 
 // -----------------------------------------------------------------------------
@@ -196,6 +201,7 @@ export const RAIDS: RaidDefinition[] = [
     difficulties: [
       { tier: 'NORMAL', label: '노말', minItemLevel: 1680, generalGold: 10500, boundGold: 10500, colorClass: 'bg-sky-400' },
       { tier: 'HARD', label: '하드', minItemLevel: 1700, generalGold: 13500, boundGold: 13500, colorClass: 'bg-orange-400' },
+      { tier: 'SINGLE', label: '싱글', minItemLevel: 1680, generalGold: 10500, boundGold: 10500, colorClass: 'bg-violet-400' },
     ],
   },
   {
@@ -210,6 +216,7 @@ export const RAIDS: RaidDefinition[] = [
     difficulties: [
       { tier: 'NORMAL', label: '노말', minItemLevel: 1670, generalGold: 8250, boundGold: 8250, colorClass: 'bg-sky-400' },
       { tier: 'HARD', label: '하드', minItemLevel: 1690, generalGold: 11500, boundGold: 11500, colorClass: 'bg-amber-600' },
+      { tier: 'SINGLE', label: '싱글', minItemLevel: 1670, generalGold: 8250, boundGold: 8250, colorClass: 'bg-violet-400' },
     ],
   },
   {
@@ -223,6 +230,7 @@ export const RAIDS: RaidDefinition[] = [
     partySize: 8,
     difficulties: [
       { tier: 'HARD', label: '하드', minItemLevel: 1680, generalGold: 9000, boundGold: 9000, colorClass: 'bg-amber-500' },
+      { tier: 'SINGLE', label: '싱글', minItemLevel: 1660, generalGold: 5750, boundGold: 5750, colorClass: 'bg-violet-400' },
     ],
   },
 ];
@@ -422,7 +430,21 @@ export function getEligibleRaids(
     // 원정대 스코프 레이드는 여기서 제외 — getRosterRaidsForChar 가 별도 처리.
     if (raid.clearScope === 'roster') continue;
 
+    // 싱글 선택 시: auto-selection 대신 SINGLE 난이도 사용.
+    const singleId = (ch.singleRaids || []).find(
+      (r) => getRaidFamily(r) === raid.family && r.endsWith('_SINGLE'),
+    ) as RaidId | undefined;
+    if (singleId) {
+      const singleDiff = raid.difficulties.find((d) => d.tier === 'SINGLE');
+      if (singleDiff && il >= singleDiff.minItemLevel) {
+        if (raid.family === 'HORIZON') horizon.push({ raidId: singleId, order: raid.order });
+        else normal.push({ raidId: singleId, order: raid.order });
+      }
+      continue;
+    }
+
     const qualified = raid.difficulties.filter((d) => {
+      if (d.tier === 'SINGLE') return false;
       if (il < d.minItemLevel) return false;
       if (d.requiresFlag && !ch[d.requiresFlag]) return false;
       return true;
@@ -453,7 +475,18 @@ export function getAllQualifiedRaids(ch: EligibilityContext, now: Date = new Dat
   for (const raid of RAIDS) {
     if (!isWithinAvailability(raid, now)) continue;
     if (raid.clearScope === 'roster') continue;
+
+    const singleId = (ch.singleRaids || []).find(
+      (r) => getRaidFamily(r) === raid.family && r.endsWith('_SINGLE'),
+    ) as RaidId | undefined;
+    if (singleId) {
+      const singleDiff = raid.difficulties.find((d) => d.tier === 'SINGLE');
+      if (singleDiff && il >= singleDiff.minItemLevel) result.push(singleId);
+      continue;
+    }
+
     const qualified = raid.difficulties.filter((d) => {
+      if (d.tier === 'SINGLE') return false;
       if (il < d.minItemLevel) return false;
       if (d.requiresFlag && !ch[d.requiresFlag]) return false;
       return true;
@@ -551,6 +584,7 @@ export interface TopRaidsContext {
   serkaNightmare?: boolean;
   receiveBoundGold?: boolean;
   goldOption?: string;
+  singleRaids?: RaidId[];
 }
 
 // 원장 엔트리 최소 형태 (types.ts ClearEntry 와 필드만 맞추면 됨).
@@ -635,21 +669,21 @@ export function getCharTopRaidIds(
 }
 
 // -----------------------------------------------------------------------------
-// 싱글모드 판정
+// 싱글모드 헬퍼
 // -----------------------------------------------------------------------------
-// 현재 ACT2/ACT3 의 싱글모드는 비활성이지만 향후 다른 레이드용 인프라는 유지.
 
-export function hasSingleModeForFamily(family: RaidFamily): boolean {
-  const def = RAID_BY_FAMILY[family];
-  if (!def) return false;
-  return def.difficulties.some((d) => d.singleModeAvailable === true);
-}
-
-export function isSingleForRaid(raidId: RaidId, singleRaids: RaidId[] | undefined): boolean {
-  if (!singleRaids || singleRaids.length === 0) return false;
-  const family = getRaidFamily(raidId);
-  if (!hasSingleModeForFamily(family)) return false;
-  return singleRaids.some((r) => getRaidFamily(r) === family);
+// itemLevel 기준으로 SINGLE 난이도에 자격이 되는 raidId 목록 반환 (CharacterFormList 용).
+export function getSingleModeRaidIds(itemLevel: number, now: Date = new Date()): RaidId[] {
+  const result: RaidId[] = [];
+  for (const raid of RAIDS) {
+    if (!isWithinAvailability(raid, now)) continue;
+    for (const diff of raid.difficulties) {
+      if (diff.tier !== 'SINGLE') continue;
+      if (itemLevel < diff.minItemLevel) continue;
+      result.push(encodeRaidId(raid.family, diff.tier));
+    }
+  }
+  return result;
 }
 
 // -----------------------------------------------------------------------------

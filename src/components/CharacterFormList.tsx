@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import type { Character, Role, GoldOption, RaidId, WeeklyClears, RosterRaidState } from '../types';
 import { JOB_OPTIONS, ROLE_OPTIONS } from '../constants';
-import { hasSingleModeForFamily } from '../data/raids';
+import { getSingleModeRaidIds, getEligibleRaids, getRaidFamily } from '../data/raids';
+import { RAID_META } from '../constants';
 import { RosterRaidsSection } from './RosterRaidsSection';
 import { Trash2, Plus, Save, User, Shield, Swords, Loader2, Download, ChevronDown, GripVertical, Search, Users, Info, Hash } from 'lucide-react';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
@@ -48,11 +49,13 @@ function SortableCharacterRow({ row, index, handleChangeRow, handleRemoveRow, is
         handleChangeRow(index, 'singleRaids', next);
     };
 
-    // 싱글모드 UI 는 레지스트리에 싱글모드가 활성화된 family 가 있을 때만 노출.
-    // 2026-04-22 패치로 ACT2/ACT3 싱글모드는 일반과 동일해져 플래그 내림.
-    const isAct2Act3Participant = typeof row.itemLevel === 'number' && row.itemLevel >= 1680 && row.itemLevel < 1710;
-    const canDoAct2Single = isAct2Act3Participant && hasSingleModeForFamily('ACT2');
-    const canDoAct3Single = isAct2Act3Participant && hasSingleModeForFamily('ACT3');
+    // 싱글 체크박스: 실제로 top3 에 들어가는 family 에만 표시 (아이템레벨 자격만 보면 고렙도 저레벨 싱글이 뜸).
+    const eligibleSingleRaidIds = (() => {
+        if (typeof row.itemLevel !== 'number') return [];
+        const ctx = { itemLevel: row.itemLevel, serkaNightmare: row.serkaNightmare };
+        const top3Families = new Set(getEligibleRaids(ctx).map(getRaidFamily));
+        return getSingleModeRaidIds(row.itemLevel).filter(id => top3Families.has(getRaidFamily(id)));
+    })();
 
     return (
         <div ref={setNodeRef} style={style} className={`group relative flex flex-col gap-3 p-4 pt-10 sm:grid sm:grid-cols-12 sm:items-center sm:gap-3 sm:py-3 sm:pr-3 sm:pl-6 bg-white dark:bg-transparent ${isDragging ? 'shadow-xl ring-2 ring-indigo-500 rounded-xl' : ''}`}>
@@ -112,32 +115,26 @@ function SortableCharacterRow({ row, index, handleChangeRow, handleRemoveRow, is
                     )}
                     <label className="inline-flex select-none items-center gap-1 rounded-md border border-zinc-200 bg-white px-1.5 py-1 text-[11px] font-semibold text-zinc-600 shadow-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 hover:border-indigo-300 dark:hover:border-indigo-500 transition-colors cursor-pointer">
                         <input type="checkbox" checked={row.receiveBoundGold} onChange={(e) => handleChangeRow(index, 'receiveBoundGold', e.target.checked)} disabled={isSaving} className="h-3 w-3 shrink-0 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500 disabled:opacity-50 cursor-pointer" />
-                        <span className="whitespace-nowrap">귀속</span>
+                        <span className="whitespace-nowrap">귀속 포함</span>
                     </label>
                     {typeof row.itemLevel === 'number' && row.itemLevel >= 1740 && (
                         <label className="inline-flex select-none items-center gap-1 rounded-md border border-zinc-200 bg-white px-1.5 py-1 text-[11px] font-semibold text-zinc-600 shadow-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 hover:border-indigo-300 dark:hover:border-indigo-500 transition-colors cursor-pointer">
                             <input type="checkbox" checked={row.serkaNightmare} onChange={(e) => handleChangeRow(index, 'serkaNightmare', e.target.checked)} disabled={isSaving} className="h-3 w-3 shrink-0 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer" />
-                            <span className="whitespace-nowrap">나메</span>
+                            <span className="whitespace-nowrap">나메 참여</span>
                         </label>
                     )}
                     {row.jobCode === '발키리' && (
                         <label className="inline-flex select-none items-center gap-1 rounded-md border border-zinc-200 bg-white px-1.5 py-1 text-[11px] font-semibold text-zinc-600 shadow-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 hover:border-indigo-300 dark:hover:border-indigo-500 transition-colors cursor-pointer">
                             <input type="checkbox" checked={row.valkyCanSupport} onChange={(e) => handleChangeRow(index, 'valkyCanSupport', e.target.checked)} disabled={isSaving} className="h-3 w-3 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer" />
-                            <span className="whitespace-nowrap">서폿</span>
+                            <span className="whitespace-nowrap">서폿 가능</span>
                         </label>
                     )}
-                    {canDoAct2Single && (
-                        <label className="inline-flex select-none items-center gap-1 rounded-md border border-indigo-200 bg-indigo-50 px-1.5 py-1 text-[11px] font-semibold text-indigo-700 shadow-sm dark:border-indigo-900/50 dark:bg-indigo-900/20 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-colors cursor-pointer">
-                            <input type="checkbox" checked={row.singleRaids.includes('ACT2_NORMAL')} onChange={() => toggleSingle('ACT2_NORMAL')} disabled={isSaving} className="h-3 w-3 rounded border-indigo-300 text-indigo-600 focus:ring-indigo-500 dark:border-indigo-600 cursor-pointer" />
-                            <span className="whitespace-nowrap">싱글2막</span>
+                    {eligibleSingleRaidIds.map((raidId) => (
+                        <label key={raidId} className="inline-flex select-none items-center gap-1 rounded-md border border-indigo-200 bg-indigo-50 px-1.5 py-1 text-[11px] font-semibold text-indigo-700 shadow-sm dark:border-indigo-900/50 dark:bg-indigo-900/20 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-colors cursor-pointer">
+                            <input type="checkbox" checked={row.singleRaids.includes(raidId)} onChange={() => toggleSingle(raidId)} disabled={isSaving} className="h-3 w-3 rounded border-indigo-300 text-indigo-600 focus:ring-indigo-500 dark:border-indigo-600 cursor-pointer" />
+                            <span className="whitespace-nowrap">{RAID_META[raidId].label}</span>
                         </label>
-                    )}
-                    {canDoAct3Single && (
-                        <label className="inline-flex select-none items-center gap-1 rounded-md border border-indigo-200 bg-indigo-50 px-1.5 py-1 text-[11px] font-semibold text-indigo-700 shadow-sm dark:border-indigo-900/50 dark:bg-indigo-900/20 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-colors cursor-pointer">
-                            <input type="checkbox" checked={row.singleRaids.includes('ACT3_NORMAL')} onChange={() => toggleSingle('ACT3_NORMAL')} disabled={isSaving} className="h-3 w-3 rounded border-indigo-300 text-indigo-600 focus:ring-indigo-500 dark:border-indigo-600 cursor-pointer" />
-                            <span className="whitespace-nowrap">싱글3막</span>
-                        </label>
-                    )}
+                    ))}
                 </div>
             </div>
 
