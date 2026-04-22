@@ -58,7 +58,7 @@ function SortableCharacterRow({ row, index, handleChangeRow, handleRemoveRow, is
     })();
 
     return (
-        <div ref={setNodeRef} style={style} className={`group relative flex flex-col gap-3 p-4 pt-10 sm:grid sm:grid-cols-12 sm:items-center sm:gap-3 sm:py-3 sm:pr-3 sm:pl-6 bg-white dark:bg-transparent ${isDragging ? 'shadow-xl ring-2 ring-indigo-500 rounded-xl' : ''}`}>
+        <div ref={setNodeRef} style={style} className={`group relative flex flex-col gap-3 p-4 pt-10 sm:grid sm:grid-cols-24 sm:items-center sm:gap-3 sm:py-3 sm:pr-3 sm:pl-6 bg-white dark:bg-transparent ${isDragging ? 'shadow-xl ring-2 ring-indigo-500 rounded-xl' : ''}`}>
             <div {...attributes} {...listeners} className="absolute left-1 top-1/2 -translate-y-1/2 cursor-grab text-zinc-300 hover:text-zinc-500 opacity-0 group-hover:opacity-100 transition-opacity touch-none hidden sm:flex items-center justify-center">
                 <GripVertical size={18} />
             </div>
@@ -66,7 +66,7 @@ function SortableCharacterRow({ row, index, handleChangeRow, handleRemoveRow, is
                 <GripVertical size={18} />
             </div>
 
-            <div className="sm:col-span-2 relative">
+            <div className="sm:col-span-4 relative">
                 {row.lostArkName && (
                     <div className="absolute right-0.5 top-0.5 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">연동: {row.lostArkName}</div>
                 )}
@@ -76,7 +76,7 @@ function SortableCharacterRow({ row, index, handleChangeRow, handleRemoveRow, is
                 </select>
             </div>
 
-            <div className="sm:col-span-2">
+            <div className="sm:col-span-4">
                 <div className="flex items-center gap-2">
                     <div className="relative flex-1">
                         <div className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-400">
@@ -89,15 +89,15 @@ function SortableCharacterRow({ row, index, handleChangeRow, handleRemoveRow, is
                 </div>
             </div>
 
-            <div className="flex gap-2 sm:contents">
-                <div className="flex-1 sm:col-span-2">
+            <div className="flex flex-wrap gap-2 sm:contents">
+                <div className="flex-1 sm:col-span-3">
                     <input type="number" className="w-full rounded-lg border border-zinc-200 bg-white px-2 py-2 text-sm font-medium dark:border-zinc-700 dark:bg-zinc-900" value={row.itemLevel} onChange={(e) => handleChangeRow(index, 'itemLevel', e.target.value)} placeholder="Lv" disabled={isSaving} />
                 </div>
-                <div className="flex-1 sm:col-span-2">
+                <div className="flex-1 sm:col-span-3">
                     <input type="number" className="w-full rounded-lg border border-zinc-200 bg-white px-2 py-2 text-sm font-medium dark:border-zinc-700 dark:bg-zinc-900" value={row.combatPower} onChange={(e) => handleChangeRow(index, 'combatPower', e.target.value)} placeholder="CP" disabled={isSaving} />
                 </div>
-                
-                <div className="flex flex-wrap items-center justify-start sm:justify-center gap-1.5 sm:col-span-3">
+
+                <div className="w-full flex flex-wrap items-center justify-start gap-1.5 sm:w-auto sm:justify-center sm:col-span-8">
                     {availableRosters.length > 1 && (
                         <select
                             value={row.rosterId}
@@ -113,32 +113,43 @@ function SortableCharacterRow({ row, index, handleChangeRow, handleRemoveRow, is
                             ))}
                         </select>
                     )}
-                    <label className="inline-flex select-none items-center gap-1 rounded-md border border-zinc-200 bg-white px-1.5 py-1 text-[11px] font-semibold text-zinc-600 shadow-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 hover:border-indigo-300 dark:hover:border-indigo-500 transition-colors cursor-pointer">
-                        <input type="checkbox" checked={row.receiveBoundGold} onChange={(e) => handleChangeRow(index, 'receiveBoundGold', e.target.checked)} disabled={isSaving} className="h-3 w-3 shrink-0 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500 disabled:opacity-50 cursor-pointer" />
+                    {/* 골드 그룹 (회색) */}
+                    <label className="inline-flex select-none items-center gap-1 rounded-md border border-zinc-200 bg-white px-1.5 py-1 text-[11px] font-semibold text-zinc-600 shadow-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 hover:border-zinc-400 dark:hover:border-zinc-500 transition-colors cursor-pointer">
+                        <input type="checkbox" checked={row.receiveBoundGold} onChange={(e) => handleChangeRow(index, 'receiveBoundGold', e.target.checked)} disabled={isSaving} className="h-3 w-3 shrink-0 rounded border-zinc-300 text-zinc-600 focus:ring-zinc-500 disabled:opacity-50 cursor-pointer" />
                         <span className="whitespace-nowrap">귀속 포함</span>
                     </label>
+
+                    {/* 캐릭 특성 그룹 (앰버) */}
+                    {(typeof row.itemLevel === 'number' && row.itemLevel >= 1740) || row.jobCode === '발키리' ? (
+                        <span className="mx-0.5 h-4 w-px bg-zinc-200 dark:bg-zinc-700" aria-hidden="true" />
+                    ) : null}
                     {typeof row.itemLevel === 'number' && row.itemLevel >= 1740 && (
-                        <label className="inline-flex select-none items-center gap-1 rounded-md border border-zinc-200 bg-white px-1.5 py-1 text-[11px] font-semibold text-zinc-600 shadow-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 hover:border-indigo-300 dark:hover:border-indigo-500 transition-colors cursor-pointer">
-                            <input type="checkbox" checked={row.serkaNightmare} onChange={(e) => handleChangeRow(index, 'serkaNightmare', e.target.checked)} disabled={isSaving} className="h-3 w-3 shrink-0 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer" />
+                        <label className="inline-flex select-none items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-1.5 py-1 text-[11px] font-semibold text-amber-700 shadow-sm dark:border-amber-900/50 dark:bg-amber-900/20 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors cursor-pointer">
+                            <input type="checkbox" checked={row.serkaNightmare} onChange={(e) => handleChangeRow(index, 'serkaNightmare', e.target.checked)} disabled={isSaving} className="h-3 w-3 shrink-0 rounded border-amber-300 text-amber-600 focus:ring-amber-500 dark:border-amber-600 cursor-pointer" />
                             <span className="whitespace-nowrap">나메 참여</span>
                         </label>
                     )}
                     {row.jobCode === '발키리' && (
-                        <label className="inline-flex select-none items-center gap-1 rounded-md border border-zinc-200 bg-white px-1.5 py-1 text-[11px] font-semibold text-zinc-600 shadow-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 hover:border-indigo-300 dark:hover:border-indigo-500 transition-colors cursor-pointer">
-                            <input type="checkbox" checked={row.valkyCanSupport} onChange={(e) => handleChangeRow(index, 'valkyCanSupport', e.target.checked)} disabled={isSaving} className="h-3 w-3 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer" />
+                        <label className="inline-flex select-none items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-1.5 py-1 text-[11px] font-semibold text-amber-700 shadow-sm dark:border-amber-900/50 dark:bg-amber-900/20 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors cursor-pointer">
+                            <input type="checkbox" checked={row.valkyCanSupport} onChange={(e) => handleChangeRow(index, 'valkyCanSupport', e.target.checked)} disabled={isSaving} className="h-3 w-3 rounded border-amber-300 text-amber-600 focus:ring-amber-500 dark:border-amber-600 cursor-pointer" />
                             <span className="whitespace-nowrap">서폿 가능</span>
                         </label>
                     )}
+
+                    {/* 싱글 난이도 그룹 (바이올렛) */}
+                    {eligibleSingleRaidIds.length > 0 && (
+                        <span className="mx-0.5 h-4 w-px bg-zinc-200 dark:bg-zinc-700" aria-hidden="true" />
+                    )}
                     {eligibleSingleRaidIds.map((raidId) => (
-                        <label key={raidId} className="inline-flex select-none items-center gap-1 rounded-md border border-indigo-200 bg-indigo-50 px-1.5 py-1 text-[11px] font-semibold text-indigo-700 shadow-sm dark:border-indigo-900/50 dark:bg-indigo-900/20 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-colors cursor-pointer">
-                            <input type="checkbox" checked={row.singleRaids.includes(raidId)} onChange={() => toggleSingle(raidId)} disabled={isSaving} className="h-3 w-3 rounded border-indigo-300 text-indigo-600 focus:ring-indigo-500 dark:border-indigo-600 cursor-pointer" />
+                        <label key={raidId} className="inline-flex select-none items-center gap-1 rounded-md border border-violet-200 bg-violet-50 px-1.5 py-1 text-[11px] font-semibold text-violet-700 shadow-sm dark:border-violet-900/50 dark:bg-violet-900/20 dark:text-violet-300 hover:bg-violet-100 dark:hover:bg-violet-900/40 transition-colors cursor-pointer">
+                            <input type="checkbox" checked={row.singleRaids.includes(raidId)} onChange={() => toggleSingle(raidId)} disabled={isSaving} className="h-3 w-3 rounded border-violet-300 text-violet-600 focus:ring-violet-500 dark:border-violet-600 cursor-pointer" />
                             <span className="whitespace-nowrap">{RAID_META[raidId].label}</span>
                         </label>
                     ))}
                 </div>
             </div>
 
-            <div className="flex justify-end sm:col-span-1 sm:justify-center">
+            <div className="flex justify-end sm:col-span-2 sm:justify-center">
                 <button type="button" className="group rounded-lg p-2 text-zinc-400 transition-colors hover:bg-rose-50 hover:text-rose-500 disabled:opacity-30 dark:hover:bg-rose-900/30" onClick={() => handleRemoveRow(index)} disabled={isSaving}>
                     <Trash2 size={16} />
                 </button>
@@ -578,12 +589,12 @@ export const CharacterFormList: React.FC<Props> = ({
             <div className="grid gap-5 sm:grid-cols-2">
                 <div className="space-y-2">
                     <label className="text-sm font-bold text-zinc-900 dark:text-zinc-100">디스코드 닉네임</label>
-                    <div className="flex flex-col gap-2 sm:flex-row">
+                    <div className="flex gap-2">
                         <div className="relative flex-1">
                             <User size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400" />
                             <input className="w-full rounded-xl border border-zinc-200 bg-zinc-50 py-3 pl-10 pr-4 text-sm text-zinc-900 shadow-sm transition-all focus:border-indigo-500 focus:bg-white dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100" value={localDiscord} onChange={(e) => setLocalDiscord(e.target.value)} onKeyDown={(e) => handlePressEnter(e, handleFetchFromCloud)} placeholder="Nickname" disabled={isSaving} />
                         </div>
-                        <button type="button" onClick={handleFetchFromCloud} disabled={isSaving} className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-zinc-200 bg-white px-4 py-3 text-sm font-bold text-zinc-700 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 sm:w-auto sm:py-0">
+                        <button type="button" onClick={handleFetchFromCloud} disabled={isSaving} className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border border-zinc-200 bg-white px-4 text-sm font-bold text-zinc-700 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
                             {isFetching ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
                         </button>
                     </div>
@@ -623,7 +634,7 @@ export const CharacterFormList: React.FC<Props> = ({
                 <div className="flex flex-col md:grid gap-4 md:grid-cols-2">
                     <div className="w-full space-y-3 rounded-xl border border-zinc-200 bg-white p-4 dark:bg-zinc-900 dark:border-zinc-700 shadow-sm">
                         <label className="text-xs font-bold text-zinc-500 flex items-center gap-1.5"><Info size={14}/> 1680+ 원정대 가져오기</label>
-                        <div className="flex flex-col gap-2 sm:flex-row">
+                        <div className="flex gap-2">
                             <input value={searchRosterName} onChange={(e) => setSearchRosterName(e.target.value)} onKeyDown={(e) => handlePressEnter(e, handleSearchRoster)} placeholder="대표 캐릭터명" className="flex-1 rounded-lg border px-3 py-2 text-sm dark:bg-zinc-800 dark:border-zinc-600 dark:text-white" />
                             <button onClick={handleSearchRoster} disabled={isSearchingRoster} className="flex items-center gap-1 rounded-lg bg-indigo-100 px-3 py-2 text-sm font-bold text-indigo-700 hover:bg-indigo-200 dark:bg-indigo-900/50 dark:text-indigo-300 disabled:opacity-50">
                                 {isSearchingRoster ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />} 검색
@@ -674,7 +685,7 @@ export const CharacterFormList: React.FC<Props> = ({
                     </div>
                     <div className="w-full space-y-3 rounded-xl border border-zinc-200 bg-white p-4 dark:bg-zinc-900 dark:border-zinc-700 shadow-sm">
                         <label className="text-xs font-bold text-zinc-500 flex items-center gap-1.5"><Plus size={14}/> 개별 캐릭터 추가</label>
-                        <div className="flex flex-col gap-2 sm:flex-row">
+                        <div className="flex gap-2">
                             <input value={searchSingleName} onChange={(e) => setSearchSingleName(e.target.value)} onKeyDown={(e) => handlePressEnter(e, handleAddSingle)} placeholder="캐릭터 닉네임" className="flex-1 rounded-lg border px-3 py-2 text-sm dark:bg-zinc-800 dark:border-zinc-600 dark:text-white" />
                             <button onClick={handleAddSingle} disabled={isSearchingSingle} className="flex items-center gap-1 rounded-lg bg-indigo-100 px-3 py-2 text-sm font-bold text-indigo-700 hover:bg-indigo-200 dark:bg-indigo-900/50 dark:text-indigo-300 disabled:opacity-50">
                                 {isSearchingSingle ? <Loader2 size={16} className="animate-spin" /> : <Plus size={18} />} 추가
@@ -736,13 +747,13 @@ export const CharacterFormList: React.FC<Props> = ({
                 </div>
 
                 <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900/50">
-                    <div className="hidden grid-cols-12 gap-3 sm:gap-4 border-b border-zinc-100 bg-zinc-50/50 px-3 py-2 sm:pl-10 text-xs font-bold text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 sm:grid">
-                        <div className="col-span-2">직업</div>
-                        <div className="col-span-2">역할</div>
-                        <div className="col-span-2">아이템 레벨</div>
-                        <div className="col-span-2">전투력</div>
-                        <div className="col-span-3 text-center">추가 설정</div>
-                        <div className="col-span-1 text-center">삭제</div>
+                    <div className="hidden grid-cols-24 gap-3 sm:gap-4 border-b border-zinc-100 bg-zinc-50/50 px-3 py-2 sm:pl-10 text-xs font-bold text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 sm:grid">
+                        <div className="col-span-4">직업</div>
+                        <div className="col-span-4">역할</div>
+                        <div className="col-span-3">레벨</div>
+                        <div className="col-span-3">전투력</div>
+                        <div className="col-span-8 text-center">추가 설정</div>
+                        <div className="col-span-2 text-center">삭제</div>
                     </div>
 
                     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>

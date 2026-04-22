@@ -91,9 +91,9 @@ export function RosterRaidsSection({
                         return (
                             <div
                                 key={`${roster.rosterId}-${raid.family}`}
-                                className="flex flex-wrap items-center gap-3 rounded-xl border border-pink-100 bg-white px-4 py-3 text-sm shadow-sm dark:border-pink-900/40 dark:bg-zinc-900"
+                                className="flex flex-col gap-2 rounded-xl border border-pink-100 bg-white px-4 py-3 text-sm shadow-sm dark:border-pink-900/40 dark:bg-zinc-900 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3"
                             >
-                                <div className="flex min-w-[140px] flex-col">
+                                <div className="flex flex-col sm:min-w-[140px]">
                                     <span className="text-[13px] font-bold text-zinc-900 dark:text-zinc-100">{raid.label}</span>
                                     <span className="text-[11px] text-zinc-500 dark:text-zinc-400">{roster.label}</span>
                                 </div>
@@ -101,8 +101,8 @@ export function RosterRaidsSection({
                                 {qualifiedChars.length === 0 ? (
                                     <span className="text-[12px] text-zinc-400 italic">자격 가능 캐릭 없음</span>
                                 ) : (
-                                    <>
-                                        <div className="relative">
+                                    <div className="flex w-full gap-2 sm:contents">
+                                        <div className="relative flex-1 sm:flex-none">
                                             <select
                                                 disabled={isCleared}
                                                 value={selection?.selectedCharId || defaultSuggest?.charId || ''}
@@ -122,7 +122,7 @@ export function RosterRaidsSection({
                                                         : validTiers.reduce((hi, d) => d.minItemLevel > hi.minItemLevel ? d : hi).tier;
                                                     onSetRosterRep?.(roster.rosterId, raid.family, { selectedCharId: charId, difficulty: tier });
                                                 }}
-                                                className="appearance-none rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 pr-9 text-sm font-medium text-zinc-700 focus:border-indigo-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 disabled:opacity-50"
+                                                className="w-full appearance-none rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 pr-9 text-sm font-medium text-zinc-700 focus:border-indigo-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 disabled:opacity-50 sm:w-auto"
                                             >
                                                 <option value="">대표 선택</option>
                                                 {qualifiedChars.map(ch => (
@@ -135,7 +135,7 @@ export function RosterRaidsSection({
                                         </div>
 
                                         {repChar && (
-                                            <div className="relative">
+                                            <div className="relative flex-1 sm:flex-none">
                                                 <select
                                                     disabled={isCleared}
                                                     value={displayDifficulty || ''}
@@ -144,7 +144,7 @@ export function RosterRaidsSection({
                                                         if (!tier) return;
                                                         onSetRosterRep?.(roster.rosterId, raid.family, { selectedCharId: repChar.id, difficulty: tier });
                                                     }}
-                                                    className="appearance-none rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 pr-9 text-sm font-medium text-zinc-700 focus:border-indigo-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 disabled:opacity-50"
+                                                    className="w-full appearance-none rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 pr-9 text-sm font-medium text-zinc-700 focus:border-indigo-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 disabled:opacity-50 sm:w-auto"
                                                 >
                                                     <option value="">난이도</option>
                                                     {availableDifficultiesForRep.map(d => (
@@ -154,7 +154,7 @@ export function RosterRaidsSection({
                                                 <ChevronDown size={14} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400" />
                                             </div>
                                         )}
-                                    </>
+                                    </div>
                                 )}
                             </div>
                         );
