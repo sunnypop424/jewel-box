@@ -1,21 +1,25 @@
 import { useState, useMemo } from 'react';
-import { User, Shield, Swords, Coins, RefreshCw } from 'lucide-react';
+import { User, Shield, Swords, Coins, RefreshCw, UserCog } from 'lucide-react';
 import { RAID_META } from '../constants';
-import type { Character, RaidId, RaidExclusionMap, RaidSchedule } from '../types';
+import {
+    RAID_ORDER_FOR_PROGRESS,
+    getEligibleRaids,
+    getAllQualifiedRaids,
+    getRaidFamily,
+    getRosterRaidsForChar,
+    isRosterScopeRaid,
+} from '../data/raids';
+import type { Character, RaidId, RaidSchedule, WeeklyClears, ClearEntry, RosterRaidState } from '../types';
 
 // ✨ Hook 및 Toast 추가
 import { useConfirm } from '../hooks/useConfirm';
-import { toast } from 'sonner'; 
+import { toast } from 'sonner';
 
 type RaidProgressState = 'DONE' | 'ASSIGNED' | 'UNASSIGNED';
 
-export const RAID_ORDER_FOR_PROGRESS: RaidId[] = [
-    'ACT1_HARD', 'ACT2_NORMAL', 'ACT3_NORMAL',
-    'ACT2_HARD', 'ACT3_HARD',
-    'ACT4_NORMAL', 'FINAL_NORMAL', 'SERKA_NORMAL',
-    'ACT4_HARD', 'FINAL_HARD', 'SERKA_HARD', 'SERKA_NIGHTMARE',
-    'HORIZON_STEP1', 'HORIZON_STEP2', 'HORIZON_STEP3'
-];
+// 기존 호출부 호환을 위해 레지스트리 함수/상수를 재수출.
+export { RAID_ORDER_FOR_PROGRESS };
+export const getExpectedRaids = getEligibleRaids;
 
 function buildAssignedIndex(schedule: RaidSchedule | null) {
     const assignedByRaid: Partial<Record<RaidId, Set<string>>> = {};
@@ -31,43 +35,14 @@ function buildAssignedIndex(schedule: RaidSchedule | null) {
     return assignedByRaid;
 }
 
-export function getExpectedRaids(ch: Character): RaidId[] {
-    const il = ch.itemLevel;
-    const raids: RaidId[] = [];
-
-    if (il >= 1750) raids.push('HORIZON_STEP3');
-    else if (il >= 1720) raids.push('HORIZON_STEP2');
-    else if (il >= 1700) raids.push('HORIZON_STEP1');
-
-    if (il >= 1740 && ch.serkaNightmare) raids.push('SERKA_NIGHTMARE');
-    else if (il >= 1730) raids.push('SERKA_HARD');
-    else if (il >= 1710) raids.push('SERKA_NORMAL');
-
-    if (il >= 1730) raids.push('FINAL_HARD');
-    else if (il >= 1710) raids.push('FINAL_NORMAL');
-
-    if (il >= 1720) raids.push('ACT4_HARD');
-    else if (il >= 1700) raids.push('ACT4_NORMAL');
-
-    if (il < 1710) {
-        if (il >= 1700) raids.push('ACT3_HARD');
-        else if (il >= 1680) raids.push('ACT3_NORMAL');
-        if (il >= 1690) raids.push('ACT2_HARD');
-        else if (il >= 1670) raids.push('ACT2_NORMAL');
-        if (il >= 1680) raids.push('ACT1_HARD');
-    }
-
-    const horizon = raids.filter(r => r.startsWith('HORIZON_'));
-    const normal = raids.filter(r => !r.startsWith('HORIZON_'));
-    return [...horizon, ...normal.slice(0, 3)];
-}
-
 interface UserRaidProgressPanelProps {
     characters: Character[];
     raidCandidates?: Partial<Record<RaidId, Character[]>>;
-    exclusions?: RaidExclusionMap;
+    clears?: WeeklyClears;
+    rosterRaidState?: RosterRaidState;
     schedule: RaidSchedule | null;
     accumulatedGold?: Record<string, { general: number; bound: number }>;
+    onEditRoster?: (discordName: string) => void;  // 카드에서 해당 유저 원정대 관리 열기.
     onMarkRaidComplete?: (raidId: RaidId, charId: string, isDone: boolean) => void;
     onRefreshCharacter?: (char: Character) => Promise<void>;
     onRefreshUser?: (discordName: string, chars: Character[]) => Promise<void>;
@@ -76,9 +51,11 @@ interface UserRaidProgressPanelProps {
 
 export function UserRaidProgressPanel({
     characters,
-    exclusions,
+    clears,
+    rosterRaidState,
     schedule,
     accumulatedGold,
+    onEditRoster,
     onMarkRaidComplete,
     onRefreshCharacter,
     onRefreshUser,
@@ -108,7 +85,7 @@ export function UserRaidProgressPanel({
     }, [characters]);
 
     const getState = (raidId: RaidId, charId: string): RaidProgressState => {
-        const done = (exclusions?.[raidId] ?? []).includes(charId);
+        const done = Boolean(clears?.[charId]?.[raidId]);
         if (done) return 'DONE';
         const assignedSet = assignedByRaid[raidId];
         if (assignedSet?.has(charId)) return 'ASSIGNED';
@@ -121,13 +98,14 @@ export function UserRaidProgressPanel({
                 {users.map(({ discordName, chars }) => {
                     const mainChar = chars.reduce((max, curr) => curr.itemLevel > max.itemLevel ? curr : max, chars[0]);
 
+                    // 이 유저가 2개 이상의 원정대를 운영하는지 (캐릭 배지 노출 여부)
+                    const distinctRosterIds = new Set(chars.map(c => c.rosterId || c.discordName));
+                    const hasMultipleRosters = distinctRosterIds.size > 1;
+
                     let userTotalGeneral = 0; let userTotalBound = 0;
                     let userCollectedGeneral = 0; let userCollectedBound = 0;
 
                     const charDataList = chars.map((c) => {
-                        const expectedIds = getExpectedRaids(c);
-                        const raidsForChar = RAID_ORDER_FOR_PROGRESS.filter(id => expectedIds.includes(id));
-
                         const isSup = c.role === 'SUPPORT';
                         const isMain = c.id === mainChar.id;
 
@@ -140,58 +118,80 @@ export function UserRaidProgressPanel({
                             else if (option === 'MAIN_ALL_ALT_GENERAL' && !isMain) ignoreBoundGold = true;
                         }
 
-                        const raidYields = raidsForChar.map(id => {
+                        // Ledger 기반: family 당 1개 후보. 클리어된 엔트리가 있으면 ledger 스냅샷 우선,
+                        // 없으면 현재 meta 에서 해당 family 의 자격 최고 tier 사용.
+                        // 원정대 레이드(카제로스 등)는 3회 골드 제한에 포함되지 않으므로 별도 집계.
+                        const ledgerEntries: ClearEntry[] = Object.values(clears?.[c.id] || {}).filter(Boolean) as ClearEntry[];
+
+                        type Cand = { id: RaidId; general: number; bound: number; isCleared: boolean };
+                        const charCandByFamily = new Map<string, Cand>();
+                        const rosterCandByFamily = new Map<string, Cand>();
+
+                        // 1) 클리어된 엔트리: clearScope 에 따라 버킷 분류.
+                        for (const e of ledgerEntries) {
+                            const fam = getRaidFamily(e.raidId);
+                            const target = isRosterScopeRaid(e.raidId) ? rosterCandByFamily : charCandByFamily;
+                            target.set(fam, { id: e.raidId, general: e.generalGold, bound: e.boundGold, isCleared: true });
+                        }
+
+                        // 2) 자격 가능 레이드 — scope 별로 이미 분리됨.
+                        const charQualified = getAllQualifiedRaids(c);
+                        for (const id of charQualified) {
+                            const fam = getRaidFamily(id);
+                            if (charCandByFamily.has(fam)) continue;
                             const meta = RAID_META[id];
+                            charCandByFamily.set(fam, { id, general: meta.generalGold, bound: meta.boundGold, isCleared: false });
+                        }
+                        const rosterQualified = getRosterRaidsForChar(c, rosterRaidState);
+                        for (const id of rosterQualified) {
+                            const fam = getRaidFamily(id);
+                            if (rosterCandByFamily.has(fam)) continue;
+                            const meta = RAID_META[id];
+                            rosterCandByFamily.set(fam, { id, general: meta.generalGold, bound: meta.boundGold, isCleared: false });
+                        }
 
-                            const isAct2Single = id.startsWith('ACT2_') && c.singleRaids?.includes('ACT2_NORMAL');
-                            const isAct3Single = id.startsWith('ACT3_') && c.singleRaids?.includes('ACT3_NORMAL');
-                            const isSingle = isAct2Single || isAct3Single;
+                        // 3) 캐릭 스코프 top3 + 원정대 스코프 전부.
+                        // split 레이드(일반+귀속 동시 지급)는 receiveBoundGold 무관하게 항상 귀속 포함.
+                        // ignoreBoundGold 는 순수 귀속만인 레이드(지평의 성당 등)에만 적용.
+                        const toYield = (cand: Cand) => {
+                            const isSplit = cand.general > 0 && cand.bound > 0;
+                            return { ...cand, effective: cand.general + (isSplit || !ignoreBoundGold ? cand.bound : 0) };
+                        };
 
-                            let effectiveGold = meta.gold;
-                            if (isSingle) {
-                                const normalMeta = id.startsWith('ACT2_') ? RAID_META['ACT2_NORMAL'] : RAID_META['ACT3_NORMAL'];
-                                effectiveGold = (normalMeta.gold / 2) + (ignoreBoundGold ? 0 : normalMeta.gold / 2);
-                            } else if (ignoreBoundGold && meta.goldType === 'BOUND') {
-                                effectiveGold = -1;
+                        const charTop3Yields = Array.from(charCandByFamily.values())
+                            .map(toYield).filter(y => y.effective > 0)
+                            .sort((a, b) => b.effective - a.effective).slice(0, 3);
+
+                        const rosterYields = Array.from(rosterCandByFamily.values())
+                            .map(toYield).filter(y => y.effective > 0);
+
+                        const activeYields = [...charTop3Yields, ...rosterYields];
+                        const activeIds = new Set(activeYields.map(y => y.id));
+
+                        const raidsForChar = RAID_ORDER_FOR_PROGRESS.filter(id => activeIds.has(id));
+
+                        // 이 캐릭의 주간 골드 — 전체 합(최대) 과 클리어된 것만 합(획득).
+                        let charTotalGeneral = 0, charTotalBound = 0;
+                        let charCollectedGeneral = 0, charCollectedBound = 0;
+                        for (const y of activeYields) {
+                            const isSplit = y.general > 0 && y.bound > 0;
+                            charTotalGeneral += y.general;
+                            if (!ignoreBoundGold || isSplit) charTotalBound += y.bound;
+                            if (y.isCleared) {
+                                charCollectedGeneral += y.general;
+                                if (!ignoreBoundGold || isSplit) charCollectedBound += y.bound;
                             }
-                            return { id, ...meta, effectiveGold, isSingle };
-                        }).sort((a, b) => b.effectiveGold - a.effectiveGold);
-
-                        const top3Yields = raidYields.filter(y => y.effectiveGold > 0).slice(0, 3);
-                        const top3Ids = new Set(top3Yields.map(y => y.id));
-
-                        let charTotalGeneral = 0; let charTotalBound = 0;
-                        let charCollectedGeneral = 0; let charCollectedBound = 0;
-
-                        top3Yields.forEach(y => {
-                            const isDone = getState(y.id, c.id) === 'DONE';
-                            let g = 0; let b = 0;
-
-                            if (y.isSingle) {
-                                const normalMeta = y.id.startsWith('ACT2_') ? RAID_META['ACT2_NORMAL'] : RAID_META['ACT3_NORMAL'];
-                                g = normalMeta.gold / 2;
-                                b = normalMeta.gold / 2;
-                            } else {
-                                if (y.goldType === 'GENERAL') g = y.gold;
-                                else b = y.gold;
-                            }
-
-                            charTotalGeneral += g;
-                            charTotalBound += b;
-                            userTotalGeneral += g;
-                            userTotalBound += b;
-
-                            if (isDone) {
-                                charCollectedGeneral += g;
-                                charCollectedBound += b;
-                                userCollectedGeneral += g;
-                                userCollectedBound += b;
-                            }
-                        });
+                        }
+                        userTotalGeneral += charTotalGeneral;
+                        userTotalBound += charTotalBound;
+                        userCollectedGeneral += charCollectedGeneral;
+                        userCollectedBound += charCollectedBound;
 
                         return {
-                            c, isSup, isMain, raidsForChar, top3Ids,
-                            charTotalGeneral, charTotalBound, charCollectedGeneral, charCollectedBound
+                            c, isSup, isMain, raidsForChar, activeIds,
+                            charTotalGeneral, charTotalBound, charCollectedGeneral, charCollectedBound,
+                            raidYieldById: new Map(activeYields.map(y => [y.id, y])),
+                            ignoreBoundGold,
                         };
                     });
 
@@ -218,6 +218,15 @@ export function UserRaidProgressPanel({
                                         <div className="flex flex-col gap-1">
                                             <div className="flex items-center gap-2">
                                                 <span className="text-lg font-bold text-zinc-900 dark:text-zinc-100">{discordName}</span>
+                                                {onEditRoster && (
+                                                    <button
+                                                        onClick={() => onEditRoster(discordName)}
+                                                        className="p-1 rounded text-zinc-400 hover:bg-indigo-50 hover:text-indigo-600 dark:hover:bg-indigo-900/30 dark:hover:text-indigo-400 transition-colors"
+                                                        title={`${discordName}님의 원정대 관리`}
+                                                    >
+                                                        <UserCog size={15} />
+                                                    </button>
+                                                )}
                                                 {onRefreshUser && (
                                                     <button
                                                         onClick={async () => {
@@ -297,7 +306,7 @@ export function UserRaidProgressPanel({
                             </div>
 
                             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
-                                {charDataList.map(({ c, isSup, isMain, raidsForChar, top3Ids, charTotalGeneral, charTotalBound, charCollectedGeneral, charCollectedBound }) => {
+                                {charDataList.map(({ c, isSup, isMain, raidsForChar, activeIds, charTotalGeneral, charTotalBound, charCollectedGeneral, charCollectedBound, raidYieldById, ignoreBoundGold }) => {
                                     const isExcluded = c.isParticipating === false;
 
                                     return (
@@ -312,10 +321,13 @@ export function UserRaidProgressPanel({
                                                             {isSup ? <Shield size={18} /> : <Swords size={18} />}
                                                         </div>
                                                         <div className='flex flex-col'>
-                                                            <div className="flex items-center gap-1.5">
+                                                            <div className="flex items-center gap-1.5 flex-wrap">
                                                                 <span className="text-[15px] font-bold text-zinc-800 dark:text-zinc-100">{c.jobCode}</span>
                                                                 {isMain && <span className="rounded bg-indigo-100 px-1.5 py-0.5 text-[9px] font-bold text-indigo-600 dark:bg-indigo-900/50 dark:text-indigo-400">본캐</span>}
                                                                 {isExcluded && <span className="rounded bg-zinc-200 px-1.5 py-0.5 text-[9px] font-bold text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">배정 제외</span>}
+                                                                {hasMultipleRosters && c.rosterLabel && (
+                                                                    <span className="rounded bg-violet-100 px-1.5 py-0.5 text-[9px] font-bold text-violet-700 dark:bg-violet-900/40 dark:text-violet-300">{c.rosterLabel}</span>
+                                                                )}
                                                             </div>
                                                             {c.lostArkName && (
                                                                 <span className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400 truncate">
@@ -389,14 +401,24 @@ export function UserRaidProgressPanel({
                                                     raidsForChar.map((raidId) => {
                                                         const state = getState(raidId, c.id);
                                                         const meta = RAID_META[raidId];
-                                                        const isTop3 = top3Ids.has(raidId);
+                                                        const isTop3 = activeIds.has(raidId);
                                                         const isDone = state === 'DONE';
+                                                        const raidLabel = meta.label;
 
-                                                        const isAct2Single = raidId.startsWith('ACT2_') && c.singleRaids?.includes('ACT2_NORMAL');
-                                                        const isAct3Single = raidId.startsWith('ACT3_') && c.singleRaids?.includes('ACT3_NORMAL');
-                                                        const isSingle = isAct2Single || isAct3Single;
+                                                        // 클리어된 것은 ledger 스냅샷, 아닌 것은 현재 meta 골드.
+                                                        const yieldData = raidYieldById.get(raidId);
+                                                        const displayGeneral = yieldData?.general ?? meta.generalGold;
+                                                        const rawBound = yieldData?.bound ?? meta.boundGold;
+                                                        const isSplitRaid = displayGeneral > 0 && rawBound > 0;
+                                                        const displayBound = (isSplitRaid || !ignoreBoundGold) ? rawBound : 0;
 
-                                                        const raidLabel = isSingle ? (raidId.startsWith('ACT2_') ? '2막 노말' : '3막 노말') : meta.label;
+                                                        // 분할 골드 레이드는 "일반 + 귀속", 단일은 "일반" 또는 "귀속 X".
+                                                        const goldText =
+                                                            displayGeneral > 0 && displayBound > 0
+                                                                ? `${displayGeneral.toLocaleString()}G + 귀속 ${displayBound.toLocaleString()}G`
+                                                                : displayGeneral > 0
+                                                                    ? `${displayGeneral.toLocaleString()}G`
+                                                                    : `귀속 ${displayBound.toLocaleString()}G`;
 
                                                         return (
                                                             <label
@@ -424,16 +446,12 @@ export function UserRaidProgressPanel({
                                                                     />
                                                                     <span className={`text-xs font-bold transition-colors ${isDone ? 'text-zinc-400 line-through dark:text-zinc-600' : 'text-zinc-700 dark:text-zinc-200'}`}>
                                                                         {raidLabel}
-                                                                        {isSingle && <span className="ml-1 text-blue-400">(싱글)</span>}
                                                                     </span>
                                                                 </div>
 
                                                                 <div className="flex items-center gap-1">
                                                                     <span className={`text-[11px] font-bold ${isTop3 ? (isDone ? 'text-zinc-400 dark:text-zinc-500' : 'text-amber-600 dark:text-amber-400') : 'text-zinc-500 dark:text-zinc-500 opacity-50 line-through'}`}>
-                                                                        {isSingle
-                                                                            ? `${((raidId.startsWith('ACT2_') ? RAID_META['ACT2_NORMAL'].gold : RAID_META['ACT3_NORMAL'].gold) / 2).toLocaleString()}G + 귀속 ${((raidId.startsWith('ACT2_') ? RAID_META['ACT2_NORMAL'].gold : RAID_META['ACT3_NORMAL'].gold) / 2).toLocaleString()}G`
-                                                                            : `${meta.goldType === 'GENERAL' ? '' : '귀속 '}${meta.gold.toLocaleString()}G`
-                                                                        }
+                                                                        {goldText}
                                                                     </span>
                                                                     {!isTop3 && (
                                                                         <span className="text-[10px] text-rose-400 dark:text-rose-500 font-bold leading-none">
@@ -459,3 +477,4 @@ export function UserRaidProgressPanel({
         </div>
     );
 }
+

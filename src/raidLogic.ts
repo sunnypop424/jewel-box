@@ -7,7 +7,18 @@ import type {
   RaidExclusionMap,
   RaidSettingsMap,
   RaidSwap,
+  WeeklyClears,
+  RosterRaidState,
 } from './types';
+import {
+  getEligibleRaids,
+  isFourPlayerRaid as isFourPlayerRaidFromRegistry,
+  getRaidPartyConfig,
+  getRunSizeCapBySupports as getRunSizeCapBySupportsFromRegistry,
+  ALL_RAID_IDS,
+  getRaidFamily,
+  getCharTopRaidIds,
+} from './data/raids';
 
 // ==============================
 // 🔧 타입 보정
@@ -33,9 +44,9 @@ function isSpeedMode(mode: BalanceMode): boolean {
   return mode === 'speed';
 }
 
-function isFourPlayerRaid(raidId: RaidId): boolean {
-  return raidId.startsWith('SERKA_') || raidId.startsWith('HORIZON_');
-}
+// 인원 배치 구성은 전적으로 RAIDS[*].partySize 에서 파생.
+// (요구사항 #2: 하드코딩된 family prefix 판정 금지, 메타데이터 단일 소스)
+const isFourPlayerRaid = isFourPlayerRaidFromRegistry;
 
 type RaidConfig = {
   maxPerRun: number;
@@ -44,16 +55,10 @@ type RaidConfig = {
 };
 
 function getRaidConfig(raidId: RaidId, _fillTwoSupports: boolean): RaidConfig {
-  if (isFourPlayerRaid(raidId)) return { maxPerRun: 4, maxSupportsPerRun: 1, maxParties: 1 };
-  return { maxPerRun: 8, maxSupportsPerRun: 2, maxParties: 2 };
+  return getRaidPartyConfig(raidId);
 }
 
-function getRunSizeCapBySupports(raidId: RaidId, supportCount: number): number {
-  if (isFourPlayerRaid(raidId)) return supportCount > 0 ? 4 : 3;
-  if (supportCount <= 0) return 6;
-  if (supportCount === 1) return 7;
-  return 8;
-}
+const getRunSizeCapBySupports = getRunSizeCapBySupportsFromRegistry;
 
 function getEffectiveMaxPerRun(raidId: RaidId, characters: Character[], fillTwoSupports: boolean): number {
   const cfg = getRaidConfig(raidId, fillTwoSupports);
@@ -88,249 +93,14 @@ function estimateRunCount(raidId: RaidId, characters: Character[], fillTwoSuppor
   return Math.max(baseRunsBySize, maxCharsForOnePlayer || 1, runsBySupport);
 }
 
-function getTargetRaidsForCharacter(ch: Character): RaidId[] {
-  const il = ch.itemLevel;
-  const raids: RaidId[] = [];
-
-  if (il >= 1750) raids.push('HORIZON_STEP3');
-  else if (il >= 1720) raids.push('HORIZON_STEP2');
-  else if (il >= 1700) raids.push('HORIZON_STEP1');
-
-  if (il >= 1740 && ch.serkaNightmare === true) raids.push('SERKA_NIGHTMARE');
-  else if (il >= 1730) raids.push('SERKA_HARD');
-  else if (il >= 1710) raids.push('SERKA_NORMAL');
-
-  if (il >= 1730) raids.push('FINAL_HARD');
-  else if (il >= 1710) raids.push('FINAL_NORMAL');
-
-  if (il >= 1720) raids.push('ACT4_HARD');
-  else if (il >= 1700) raids.push('ACT4_NORMAL');
-
-  if (il < 1710) {
-    if (il >= 1700) raids.push('ACT3_HARD');
-    else if (il >= 1680) raids.push('ACT3_NORMAL');
-    if (il >= 1690) raids.push('ACT2_HARD');
-    else if (il >= 1670) raids.push('ACT2_NORMAL');
-    if (il >= 1680) raids.push('ACT1_HARD');
-  }
-
-  const horizonRaids = raids.filter((r) => r.startsWith('HORIZON_'));
-  const normalRaids = raids.filter((r) => !r.startsWith('HORIZON_'));
-  return [...horizonRaids, ...normalRaids.slice(0, 3)];
-}
+// 레지스트리의 getEligibleRaids 로 대체 (기존 호출부 호환용 별칭).
+const getTargetRaidsForCharacter = getEligibleRaids;
 
 interface RaidBucket {
   raidId: RaidId;
   characters: Character[];
 }
 
-type FixedPresetMatcher = {
-  discordName: string;
-  jobCode?: string;
-};
-
-type FixedPresetSlot = {
-  candidates: FixedPresetMatcher[];
-};
-
-type ResolvedFixedPresetRuns = {
-  presetRuns: Character[][];
-  remainingChars: Character[];
-  matchedIds: Set<string>;
-  assignmentMap: Map<string, number>;
-};
-
-const fixedSlot = (...candidates: FixedPresetMatcher[]): FixedPresetSlot => ({
-  candidates,
-});
-
-const FIXED_RAID_RUN_PRESETS: Partial<Record<RaidId, FixedPresetSlot[][]>> = {
-  HORIZON_STEP3: [
-    [
-      fixedSlot({ discordName: '딘또썬', jobCode: '기상술사' }),
-      fixedSlot({ discordName: '흑마66', jobCode: '워로드' }),
-      fixedSlot({ discordName: '말랭짱', jobCode: '블레이드' }),
-      fixedSlot({ discordName: '고추좋아해요', jobCode: '홀리나이트' }),
-    ],
-    [
-      fixedSlot({ discordName: '말랭쓱' }),
-      fixedSlot({ discordName: '무통증' }),
-      fixedSlot({ discordName: '지혜쨩', jobCode: '배틀마스터' }),
-      fixedSlot({ discordName: '딘또화' }),
-    ],
-  ],
-  SERKA_NIGHTMARE: [
-    [
-      fixedSlot({ discordName: '딘또썬', jobCode: '기상술사' }),
-      fixedSlot({ discordName: '흑마66', jobCode: '워로드' }),
-      fixedSlot({ discordName: '말랭짱', jobCode: '블레이드' }),
-      fixedSlot({ discordName: '고추좋아해요', jobCode: '홀리나이트' }),
-    ],
-    [
-      fixedSlot({ discordName: '말랭쓱' }),
-      fixedSlot({ discordName: '무통증' }),
-      fixedSlot({ discordName: '지혜쨩', jobCode: '배틀마스터' }),
-      fixedSlot({ discordName: '딘또화' }),
-    ],
-  ],
-};
-
-function matchesFixedPreset(ch: Character, matcher: FixedPresetMatcher): boolean {
-  if (ch.discordName !== matcher.discordName) return false;
-  if (matcher.jobCode && ch.jobCode !== matcher.jobCode) return false;
-  return true;
-}
-
-function getFixedPresetCandidates(
-  pool: Character[],
-  slot: FixedPresetSlot,
-  usedIds: Set<string>,
-): Character[] {
-  return pool
-    .filter(
-      (ch) =>
-        !usedIds.has(ch.id) &&
-        slot.candidates.some((matcher) => matchesFixedPreset(ch, matcher)),
-    )
-    .sort((a, b) => {
-      if (a.combatPower !== b.combatPower) return b.combatPower - a.combatPower;
-      if (a.itemLevel !== b.itemLevel) return b.itemLevel - a.itemLevel;
-      return a.id.localeCompare(b.id);
-    });
-}
-
-function resolveFixedPresetRunsForRaid(
-  raidId: RaidId,
-  characters: Character[],
-): ResolvedFixedPresetRuns {
-  const presets = FIXED_RAID_RUN_PRESETS[raidId] ?? [];
-
-  if (presets.length === 0) {
-    return {
-      presetRuns: [],
-      remainingChars: [...characters],
-      matchedIds: new Set<string>(),
-      assignmentMap: new Map<string, number>(),
-    };
-  }
-
-  let remainingChars = [...characters];
-  const presetRuns: Character[][] = [];
-  const matchedIds = new Set<string>();
-  const assignmentMap = new Map<string, number>();
-
-  for (const presetRun of presets) {
-    const localUsedIds = new Set<string>();
-    const picked: Character[] = [];
-    let failed = false;
-
-    for (const slot of presetRun) {
-      const candidates = getFixedPresetCandidates(remainingChars, slot, localUsedIds);
-      const chosen = candidates[0];
-
-      if (!chosen) {
-        failed = true;
-        break;
-      }
-
-      picked.push(chosen);
-      localUsedIds.add(chosen.id);
-    }
-
-    if (failed) continue;
-
-    remainingChars = remainingChars.filter((ch) => !localUsedIds.has(ch.id));
-
-    const resolvedRunIndex = presetRuns.length + 1;
-    picked.forEach((ch) => {
-      matchedIds.add(ch.id);
-      assignmentMap.set(ch.id, resolvedRunIndex);
-    });
-
-    presetRuns.push(picked);
-  }
-
-  return {
-    presetRuns,
-    remainingChars,
-    matchedIds,
-    assignmentMap,
-  };
-}
-
-export function getFixedPresetAssignmentMap(
-  raidId: RaidId,
-  characters: Character[],
-): Record<string, number> {
-  const resolved = resolveFixedPresetRunsForRaid(
-    raidId,
-    characters.filter((c) => !c.isGuest),
-  );
-
-  const result: Record<string, number> = {};
-  resolved.assignmentMap.forEach((runIndex, charId) => {
-    result[charId] = runIndex;
-  });
-  return result;
-}
-
-function createRaidRunFromMembers(
-  raidId: RaidId,
-  members: Character[],
-  runIndex: number,
-): RaidRun {
-  const parties = splitIntoPartiesLossless(members, raidId);
-  const averageCombatPower =
-    members.length > 0
-      ? Math.round(
-          members.reduce((sum, c) => sum + c.combatPower, 0) / members.length,
-        )
-      : 0;
-
-  return {
-    raidId,
-    runIndex,
-    parties,
-    averageCombatPower,
-  };
-}
-
-function buildRunsWithFixedPresets(
-  raidId: RaidId,
-  characters: Character[],
-  balanceMode: BalanceMode,
-  random: () => number,
-  fillTwoSupports: boolean,
-): RaidRun[] {
-  const resolved = resolveFixedPresetRunsForRaid(raidId, characters);
-
-  if (resolved.presetRuns.length === 0) {
-    return distributeCharactersIntoRuns(
-      raidId,
-      characters,
-      balanceMode,
-      random,
-      fillTwoSupports,
-    );
-  }
-
-  const fixedRuns = resolved.presetRuns.map((members, idx) =>
-    createRaidRunFromMembers(raidId, members, idx + 1),
-  );
-
-  const flexibleRuns = distributeCharactersIntoRuns(
-    raidId,
-    resolved.remainingChars,
-    balanceMode,
-    random,
-    fillTwoSupports,
-  ).map((run, idx) => ({
-    ...run,
-    runIndex: fixedRuns.length + idx + 1,
-  }));
-
-  return [...fixedRuns, ...flexibleRuns];
-}
 
 function std(values: number[]): number {
   const arr = values.filter((v) => Number.isFinite(v));
@@ -815,7 +585,11 @@ function optimizeCombatPowerBySwapOnly(
     const char1 = runs[r1][c1Idx];
     const char2 = runs[r2][c2Idx];
 
-    if (lockIds.has(char1.id) || lockIds.has(char2.id)) continue;
+    const eitherLocked = lockIds.has(char1.id) || lockIds.has(char2.id);
+    if (eitherLocked) {
+      const samePersonSwap = isFourPlayerRaid(raidId) && char1.discordName === char2.discordName;
+      if (!samePersonSwap) continue;
+    }
     if (char1.role !== char2.role) continue;
 
     const canSwap = (targetRunIdx: number, cFrom: Character, cTo: Character) => {
@@ -911,6 +685,23 @@ function compactRunsFrontloadedForSpeed(
       if (!moved) break;
     }
   }
+  return runs;
+}
+
+function applyPostProcessing(
+  raidId: RaidId,
+  runsMembers: Character[][],
+  maxPerRun: number,
+  maxSupportsPerRun: number,
+  fillTwoSupports: boolean,
+  concurrentRuns: number,
+  lockIds: Set<string>,
+  weakIds: Set<string> = new Set(),
+): Character[][] {
+  let runs = swapSameUserCharactersToFixDuplicates(raidId, runsMembers, maxPerRun, maxSupportsPerRun, concurrentRuns, lockIds);
+  runs = packSupportsToTwoPerRunIfPossible(raidId, runs, maxPerRun, maxSupportsPerRun, fillTwoSupports, concurrentRuns);
+  runs = maximizeRunsFrontloaded(raidId, runs, maxPerRun, maxSupportsPerRun, fillTwoSupports, concurrentRuns, lockIds, weakIds);
+  runs = minimizeSameJobInRuns(raidId, runs, maxPerRun, maxSupportsPerRun, concurrentRuns, lockIds);
   return runs;
 }
 
@@ -1076,15 +867,30 @@ function swapSameUserCharactersToFixDuplicates(raidId: RaidId, runsMembers: Char
   return runs;
 }
 
-function groupCharactersByRaid(characters: Character[], exclusions: RaidExclusionMap = {}): RaidBucket[] {
-  const map: Record<RaidId, Character[]> = {
-    ACT1_HARD: [], ACT2_NORMAL: [], ACT3_NORMAL: [], ACT2_HARD: [], ACT3_HARD: [],
-    ACT4_NORMAL: [], ACT4_HARD: [], SERKA_NORMAL: [], SERKA_HARD: [], SERKA_NIGHTMARE: [],
-    FINAL_NORMAL: [], FINAL_HARD: [], HORIZON_STEP1: [], HORIZON_STEP2: [], HORIZON_STEP3: [],
-  };
+function groupCharactersByRaid(
+  characters: Character[],
+  exclusions: RaidExclusionMap = {},
+  clears?: WeeklyClears,
+  rosterRaidState?: RosterRaidState,
+): RaidBucket[] {
+  const map = Object.fromEntries(
+    ALL_RAID_IDS.map((id) => [id, [] as Character[]])
+  ) as Record<RaidId, Character[]>;
+
+  // discordName 별로 userChars 그룹핑 (top3 계산 시 ignoreBound 판정용).
+  const charsByDiscord = new Map<string, Character[]>();
+  characters.forEach((c) => {
+    const list = charsByDiscord.get(c.discordName) || [];
+    list.push(c);
+    charsByDiscord.set(c.discordName, list);
+  });
 
   characters.forEach((ch) => {
-    const targetRaids = getTargetRaidsForCharacter(ch);
+    // 이 캐릭의 주간 top3 레이드만 스케줄 후보에 포함.
+    const userChars = charsByDiscord.get(ch.discordName) || [];
+    const targetRaids = clears || rosterRaidState
+      ? getCharTopRaidIds(ch, userChars, clears, rosterRaidState)
+      : getTargetRaidsForCharacter(ch);
     targetRaids.forEach((raidId) => {
       const excludedList = exclusions[raidId];
       if (excludedList && excludedList.includes(ch.id)) return;
@@ -1388,12 +1194,10 @@ function distributeCharactersIntoRunsLegacy(
     optimized = compactRunsFrontloadedForSpeed(raidId, optimized, maxPerRun, maxSupportsPerRun, concurrentRuns, lockIds);
   } else {
     optimized = optimizeRunsByStdDev(raidId, stage1, maxPerRun, maxSupportsPerRun, dim, random, concurrentRuns, lockIds);
+    optimized = optimizeCombatPowerBySwapOnly(raidId, optimized, maxSupportsPerRun, maxPerRun, dim, random, concurrentRuns, lockIds);
   }
 
-  optimized = minimizeSameJobInRuns(raidId, optimized, maxPerRun, maxSupportsPerRun, concurrentRuns, lockIds);
-  optimized = swapSameUserCharactersToFixDuplicates(raidId, optimized, maxPerRun, maxSupportsPerRun, concurrentRuns, lockIds);
-  optimized = packSupportsToTwoPerRunIfPossible(raidId, optimized, maxPerRun, maxSupportsPerRun, fillTwoSupports, concurrentRuns);
-  optimized = maximizeRunsFrontloaded(raidId, optimized, maxPerRun, maxSupportsPerRun, fillTwoSupports, concurrentRuns, lockIds);
+  optimized = applyPostProcessing(raidId, optimized, maxPerRun, maxSupportsPerRun, fillTwoSupports, concurrentRuns, lockIds);
 
   const arrangedRuns: Character[][] = [];
   const remainingRuns = [...optimized];
@@ -1455,8 +1259,8 @@ function distributeCharactersIntoRunsLegacy(
 const RAID_LOGIC_POLICY = {
   EIGHT_MAN_WEAK_PERCENT: 0.3,
   EIGHT_MAN_WEAK_CAP_PER_RUN: 2,
-  EIGHT_MAN_MOVE_ITER_MULTIPLIER: 60,
-  EIGHT_MAN_SWAP_ITER_MULTIPLIER: 100,
+  EIGHT_MAN_MOVE_ITER_MULTIPLIER: 300,
+  EIGHT_MAN_SWAP_ITER_MULTIPLIER: 500,
 } as const;
 
 
@@ -1638,6 +1442,7 @@ function optimizeEightManRunsForWeakPriority(
   concurrentRuns: number,
   weakIds: Set<string>,
   lockIds: Set<string> = new Set(),
+  random: () => number = Math.random,
 ): Character[][] {
   const runs = runsMembers.map((r) => [...r]);
   const runCount = runs.length;
@@ -1708,83 +1513,77 @@ function optimizeEightManRunsForWeakPriority(
     return false;
   };
 
+  const charToRun: Record<string, number> = {};
+  runs.forEach((run, ri) => run.forEach((c) => (charToRun[c.id] = ri)));
+  const allChars: Character[] = runs.flat();
+
   let curObj = objective(runs);
 
-  const maxMoveIterations = runs.flat().length * RAID_LOGIC_POLICY.EIGHT_MAN_MOVE_ITER_MULTIPLIER;
+  const maxMoveIterations = allChars.length * RAID_LOGIC_POLICY.EIGHT_MAN_MOVE_ITER_MULTIPLIER;
   for (let iter = 0; iter < maxMoveIterations; iter++) {
-    let bestMove: { nextRuns: Character[][]; nextObj: ReturnType<typeof objective> } | null = null;
+    const ch = allChars[Math.floor(random() * allChars.length)];
+    if (lockIds.has(ch.id)) continue;
 
-    for (let from = 0; from < runCount; from++) {
-      if (!runs[from].length) continue;
+    const from = charToRun[ch.id];
+    if (from === undefined) continue;
 
-      for (let to = 0; to < runCount; to++) {
-        if (from === to) continue;
+    const to = Math.floor(random() * runCount);
+    if (to === from) continue;
 
-        for (let ci = 0; ci < runs[from].length; ci++) {
-          const ch = runs[from][ci];
-          if (lockIds.has(ch.id)) continue;
+    if (!canAddToRunLocalSearch(raidId, runs, to, ch, maxPerRun, maxSupportsPerRun, concurrentRuns)) continue;
 
-          if (!canAddToRunLocalSearch(raidId, runs, to, ch, maxPerRun, maxSupportsPerRun, concurrentRuns)) {
-            continue;
-          }
+    const ci = runs[from].findIndex((c) => c.id === ch.id);
+    if (ci === -1) continue;
 
-          const nextRuns = runs.map((r) => r.slice());
-          const moved = nextRuns[from].splice(ci, 1)[0];
-          nextRuns[to].push(moved);
+    runs[from].splice(ci, 1);
+    runs[to].push(ch);
 
-          if (!isRunValid(raidId, nextRuns[from], maxPerRun, maxSupportsPerRun)) continue;
-          if (!isRunValid(raidId, nextRuns[to], maxPerRun, maxSupportsPerRun)) continue;
-
-          const nextObj = objective(nextRuns);
-          if (!betterObj(nextObj, curObj)) continue;
-
-          if (!bestMove || betterObj(nextObj, bestMove.nextObj)) {
-            bestMove = { nextRuns, nextObj };
-          }
-        }
-      }
+    if (!isRunValid(raidId, runs[from], maxPerRun, maxSupportsPerRun) || !isRunValid(raidId, runs[to], maxPerRun, maxSupportsPerRun)) {
+      runs[to].pop();
+      runs[from].splice(ci, 0, ch);
+      continue;
     }
 
-    if (!bestMove) break;
-    for (let i = 0; i < runCount; i++) runs[i] = bestMove.nextRuns[i];
-    curObj = bestMove.nextObj;
+    const nextObj = objective(runs);
+    if (betterObj(nextObj, curObj)) {
+      charToRun[ch.id] = to;
+      curObj = nextObj;
+    } else {
+      runs[to].pop();
+      runs[from].splice(ci, 0, ch);
+    }
   }
 
-  const maxSwapIterations = runs.flat().length * RAID_LOGIC_POLICY.EIGHT_MAN_SWAP_ITER_MULTIPLIER;
+  const maxSwapIterations = allChars.length * RAID_LOGIC_POLICY.EIGHT_MAN_SWAP_ITER_MULTIPLIER;
   for (let iter = 0; iter < maxSwapIterations; iter++) {
-    let bestSwap: { nextRuns: Character[][]; nextObj: ReturnType<typeof objective> } | null = null;
+    const aIdx = Math.floor(random() * runCount);
+    const bIdx = Math.floor(random() * runCount);
+    if (aIdx === bIdx || !runs[aIdx].length || !runs[bIdx].length) continue;
 
-    for (let aIdx = 0; aIdx < runCount; aIdx++) {
-      for (let bIdx = aIdx + 1; bIdx < runCount; bIdx++) {
-        if (!runs[aIdx].length || !runs[bIdx].length) continue;
+    const ai = Math.floor(random() * runs[aIdx].length);
+    const bi = Math.floor(random() * runs[bIdx].length);
+    const A = runs[aIdx][ai];
+    const B = runs[bIdx][bi];
+    if (lockIds.has(A.id) || lockIds.has(B.id)) continue;
 
-        for (let ai = 0; ai < runs[aIdx].length; ai++) {
-          for (let bi = 0; bi < runs[bIdx].length; bi++) {
-            const A = runs[aIdx][ai];
-            const B = runs[bIdx][bi];
-            if (lockIds.has(A.id) || lockIds.has(B.id)) continue;
+    runs[aIdx].splice(ai, 1, B);
+    runs[bIdx].splice(bi, 1, A);
 
-            const nextRuns = runs.map((r) => r.slice());
-            nextRuns[aIdx].splice(ai, 1, B);
-            nextRuns[bIdx].splice(bi, 1, A);
-
-            if (!isRunValid(raidId, nextRuns[aIdx], maxPerRun, maxSupportsPerRun)) continue;
-            if (!isRunValid(raidId, nextRuns[bIdx], maxPerRun, maxSupportsPerRun)) continue;
-
-            const nextObj = objective(nextRuns);
-            if (!betterObj(nextObj, curObj)) continue;
-
-            if (!bestSwap || betterObj(nextObj, bestSwap.nextObj)) {
-              bestSwap = { nextRuns, nextObj };
-            }
-          }
-        }
-      }
+    if (!isRunValid(raidId, runs[aIdx], maxPerRun, maxSupportsPerRun) || !isRunValid(raidId, runs[bIdx], maxPerRun, maxSupportsPerRun)) {
+      runs[aIdx].splice(ai, 1, A);
+      runs[bIdx].splice(bi, 1, B);
+      continue;
     }
 
-    if (!bestSwap) break;
-    for (let i = 0; i < runCount; i++) runs[i] = bestSwap.nextRuns[i];
-    curObj = bestSwap.nextObj;
+    const nextObj = objective(runs);
+    if (betterObj(nextObj, curObj)) {
+      charToRun[A.id] = bIdx;
+      charToRun[B.id] = aIdx;
+      curObj = nextObj;
+    } else {
+      runs[aIdx].splice(ai, 1, A);
+      runs[bIdx].splice(bi, 1, B);
+    }
   }
 
   return runs;
@@ -1794,7 +1593,7 @@ function distributeCharactersIntoRunsEightMan(
   raidId: RaidId,
   characters: Character[],
   _balanceMode: BalanceMode,
-  _random: () => number,
+  random: () => number,
   fillTwoSupports: boolean,
 ): RaidRun[] {
   if (characters.length === 0) return [];
@@ -1913,42 +1712,10 @@ function distributeCharactersIntoRunsEightMan(
     concurrentRuns,
     weakIds,
     lockIds,
+    random,
   );
 
-  optimized = swapSameUserCharactersToFixDuplicates(
-    raidId,
-    optimized,
-    maxPerRun,
-    maxSupportsPerRun,
-    concurrentRuns,
-    lockIds,
-  );
-  optimized = packSupportsToTwoPerRunIfPossible(
-    raidId,
-    optimized,
-    maxPerRun,
-    maxSupportsPerRun,
-    fillTwoSupports,
-    concurrentRuns,
-  );
-  optimized = maximizeRunsFrontloaded(
-    raidId,
-    optimized,
-    maxPerRun,
-    maxSupportsPerRun,
-    fillTwoSupports,
-    concurrentRuns,
-    lockIds,
-    weakIds,
-  );
-  optimized = minimizeSameJobInRuns(
-    raidId,
-    optimized,
-    maxPerRun,
-    maxSupportsPerRun,
-    concurrentRuns,
-    lockIds,
-  );
+  optimized = applyPostProcessing(raidId, optimized, maxPerRun, maxSupportsPerRun, fillTwoSupports, concurrentRuns, lockIds, weakIds);
 
   const runs: RaidRun[] = [];
   optimized.forEach((members, idx) => {
@@ -2175,11 +1942,9 @@ function rebalanceSupportsGlobal(runs: RaidRun[], concurrentRuns: number): RaidR
 }
 
 function cloneSchedule(schedule: RaidSchedule): RaidSchedule {
-  const result: RaidSchedule = {
-    ACT1_HARD: [], ACT2_NORMAL: [], ACT3_NORMAL: [], ACT2_HARD: [], ACT3_HARD: [],
-    ACT4_NORMAL: [], ACT4_HARD: [], SERKA_NORMAL: [], SERKA_HARD: [], SERKA_NIGHTMARE: [],
-    FINAL_NORMAL: [], FINAL_HARD: [], HORIZON_STEP1: [], HORIZON_STEP2: [], HORIZON_STEP3: [],
-  };
+  const result = Object.fromEntries(
+    ALL_RAID_IDS.map((id) => [id, [] as RaidRun[]])
+  ) as RaidSchedule;
 
   (Object.keys(result) as RaidId[]).forEach((raidId) => {
     const runs = schedule[raidId] ?? [];
@@ -2249,7 +2014,7 @@ function applySwaps(schedule: RaidSchedule, swaps: RaidSwap[], allCharacters: Ch
 
 function enforceSerkaDpsCapOnSchedule(schedule: RaidSchedule): RaidSchedule {
   const next = cloneSchedule(schedule);
-  const raidIds: RaidId[] = ['SERKA_NORMAL', 'SERKA_HARD', 'SERKA_NIGHTMARE'];
+  const raidIds = ALL_RAID_IDS.filter((id) => getRaidFamily(id) === 'SERKA');
 
   const recomputeAvg = (run: RaidRun): RaidRun => {
     const members = (run.parties as unknown as FixedRaidRunParty[]).flatMap((p) => p.members);
@@ -2348,21 +2113,23 @@ export function buildRaidSchedule(
   raidSettings: RaidSettingsMap = {},
   swaps: RaidSwap[] = [],
   guests: Partial<Record<RaidId, Character[]>> = {},
+  clears?: WeeklyClears,
+  rosterRaidState?: RosterRaidState,
 ): RaidSchedule {
   const activeCharacters = characters.filter((c) => c.isParticipating !== false);
   const filtered = activeCharacters.filter((c) => c.itemLevel >= 1700);
-  const buckets = groupCharactersByRaid(filtered, exclusions);
+  const buckets = groupCharactersByRaid(filtered, exclusions, clears, rosterRaidState);
   const SEED = 123456789;
   const seededRng = createSeededRandom(SEED);
 
-  const schedule: RaidSchedule = {
-    ACT1_HARD: [], ACT2_NORMAL: [], ACT3_NORMAL: [], ACT2_HARD: [], ACT3_HARD: [],
-    ACT4_NORMAL: [], ACT4_HARD: [], SERKA_NORMAL: [], SERKA_HARD: [], SERKA_NIGHTMARE: [],
-    FINAL_NORMAL: [], FINAL_HARD: [], HORIZON_STEP1: [], HORIZON_STEP2: [], HORIZON_STEP3: [],
-  };
+  const schedule = Object.fromEntries(
+    ALL_RAID_IDS.map((id) => [id, [] as RaidRun[]])
+  ) as RaidSchedule;
 
   buckets.forEach(({ raidId, characters }) => {
-    if (raidId === 'ACT1_HARD' || raidId === 'ACT2_NORMAL' || raidId === 'ACT2_HARD' || raidId === 'ACT3_NORMAL' || raidId === 'ACT3_HARD') return;
+    // 배치 대상에서 제외: ACT1/ACT2/ACT3 (고티어 캐릭은 배정 대상 아님)
+    const family = getRaidFamily(raidId);
+    if (family === 'ACT1' || family === 'ACT2' || family === 'ACT3') return;
     const fillTwoSupports = Boolean(raidSettings?.[raidId]);
 
     const pool = fillTwoSupports ? promoteValkyToSupportIfNeeded(raidId, characters, fillTwoSupports) : characters;
@@ -2370,7 +2137,7 @@ export function buildRaidSchedule(
     const poolWithGuests = [...pool, ...raidGuests];
 
     if (schedule[raidId] !== undefined) {
-      schedule[raidId] = buildRunsWithFixedPresets(
+      schedule[raidId] = distributeCharactersIntoRuns(
         raidId,
         poolWithGuests,
         balanceMode,
@@ -2386,17 +2153,32 @@ export function buildRaidSchedule(
   return enforceSerkaDpsCapOnSchedule(scheduleWithExclusions);
 }
 
-export function buildRaidCandidatesMap(characters: Character[], exclusions: RaidExclusionMap = {}, raidSettings: RaidSettingsMap = {}): Record<RaidId, Character[]> {
+export function buildRaidCandidatesMap(
+  characters: Character[],
+  exclusions: RaidExclusionMap = {},
+  raidSettings: RaidSettingsMap = {},
+  clears?: WeeklyClears,
+  rosterRaidState?: RosterRaidState,
+): Record<RaidId, Character[]> {
   const activeCharacters = characters.filter((c) => c.isParticipating !== false);
   const filtered = activeCharacters.filter((c) => c.itemLevel >= 1680);
-  const map: Record<RaidId, Character[]> = {
-    ACT1_HARD: [], ACT2_NORMAL: [], ACT3_NORMAL: [], ACT2_HARD: [], ACT3_HARD: [],
-    ACT4_NORMAL: [], ACT4_HARD: [], SERKA_NORMAL: [], SERKA_HARD: [], SERKA_NIGHTMARE: [],
-    FINAL_NORMAL: [], FINAL_HARD: [], HORIZON_STEP1: [], HORIZON_STEP2: [], HORIZON_STEP3: [],
-  };
+  const map = Object.fromEntries(
+    ALL_RAID_IDS.map((id) => [id, [] as Character[]])
+  ) as Record<RaidId, Character[]>;
+
+  // discordName 별 groupping (top3 계산용).
+  const charsByDiscord = new Map<string, Character[]>();
+  filtered.forEach((c) => {
+    const list = charsByDiscord.get(c.discordName) || [];
+    list.push(c);
+    charsByDiscord.set(c.discordName, list);
+  });
 
   filtered.forEach((ch) => {
-    const targetRaids = getTargetRaidsForCharacter(ch);
+    const userChars = charsByDiscord.get(ch.discordName) || [];
+    const targetRaids = clears || rosterRaidState
+      ? getCharTopRaidIds(ch, userChars, clears, rosterRaidState)
+      : getTargetRaidsForCharacter(ch);
     targetRaids.forEach((raidId) => { if (map[raidId]) map[raidId].push(ch); });
   });
 
@@ -2436,8 +2218,8 @@ export interface AbsenteeActionReport {
   recommendations: HoldbackRecommendation[];
   shortageDps: number;
   shortageSup: number;
-  freeDps: Character[];
-  freeSup: Character[];
+  freeRuns: RaidRun[];         // 결석자 없는 온전한 공대 — 그대로 진행 가능
+  extraFreeChars: Character[]; // 스케줄 미배정이지만 해당 레이드 자격 있는 예비 인력
 }
 
 
@@ -2490,6 +2272,8 @@ export function calculateHoldbacksSpecific(
   absentUserNames: string | string[],
   schedule: RaidSchedule, // 🌟 핵심: 전체 캐릭터 풀이 아닌 '생성된 스케줄'을 주입받습니다!
   allCharacters: Character[],
+  clears?: WeeklyClears,
+  rosterRaidState?: RosterRaidState,
 ): AbsenteeActionReport[] {
   const absentNames = Array.isArray(absentUserNames)
     ? Array.from(new Set(absentUserNames.filter(Boolean)))
@@ -2499,6 +2283,14 @@ export function calculateHoldbacksSpecific(
 
   const absentSet = new Set(absentNames);
   const reportList: AbsenteeActionReport[] = [];
+
+  // top3 계산 시 ignoreBound 판정용: discordName 별 userChars 그룹핑.
+  const charsByDiscord = new Map<string, Character[]>();
+  allCharacters.forEach((c) => {
+    const list = charsByDiscord.get(c.discordName) || [];
+    list.push(c);
+    charsByDiscord.set(c.discordName, list);
+  });
 
   for (const [raidIdRaw, runs] of Object.entries(schedule)) {
     const raidId = raidIdRaw as RaidId;
@@ -2512,20 +2304,15 @@ export function calculateHoldbacksSpecific(
     let shortageDps = 0;
     let shortageSup = 0;
 
-    // 전체 스케줄 된 캐릭터 중, 결석자와 엮이지 않은 온전한 런의 멤버들 (잉여 인력풀)
-    const freeDps: Character[] = [];
-    const freeSup: Character[] = [];
+    const freeRuns: RaidRun[] = [];
 
     // 1. 완성된 스케줄(runs)을 순회하면서 결석자가 포함된 Run을 찾습니다.
     runs.forEach((run) => {
-      // 해당 런(공대)의 모든 멤버
       const runMembers = run.parties.flatMap((p) => p.members);
-      
-      // 이 런에 결석자가 포함되어 있는지 확인
       const runAbsentees = runMembers.filter((m) => absentSet.has(m.discordName));
 
       if (runAbsentees.length > 0) {
-        // 🚨 이 런은 결석자로 인해 터졌습니다!
+        // 🚨 이 런은 결석자로 인해 터졌습니다.
         runAbsentees.forEach((char) => {
           if (!absentCharsInRaid.some((c) => c.id === char.id)) {
             absentCharsInRaid.push(char);
@@ -2534,37 +2321,33 @@ export function calculateHoldbacksSpecific(
           else shortageDps++;
         });
 
-        // 결석자가 아닌 나머지 "불쌍한 파티원들"을 대기자(Holdback)로 지정합니다.
         const innocentBystanders = runMembers.filter((m) => !absentSet.has(m.discordName));
-        
         innocentBystanders.forEach((char) => {
-          if (heldIds.has(char.id)) return; // 중복 방지
+          if (heldIds.has(char.id)) return;
           heldIds.add(char.id);
-
           if (char.role === 'SUPPORT') heldSup.push(char);
           else heldDps.push(char);
         });
       } else {
-        // ✅ 결석자가 없는 안전한 런의 멤버들은 혹시 모를 땜빵용(Free)으로 분류
-        // (단, 실제로 UI에서 freeDps/freeSup를 어떻게 쓰느냐에 따라 로직 조정 가능)
-        runMembers.forEach((char) => {
-          if (char.role === 'SUPPORT') freeSup.push(char);
-          else freeDps.push(char);
-        });
+        // ✅ 결석자 없는 온전한 공대 — 파티 구성 그대로 보존.
+        freeRuns.push(run);
       }
     });
 
     if (absentCharsInRaid.length === 0) continue;
 
-    // 스케줄에 아예 포함되지 못했던 남은 캐릭터들도 Free(예비군) 풀에 추가
+    // 스케줄 미배정이지만 해당 레이드 자격 있는 예비 인력.
     const scheduledIds = new Set(
       runs.flatMap((r) => r.parties.flatMap((p) => p.members.map((m) => m.id)))
     );
+    const extraFreeChars: Character[] = [];
     allCharacters.forEach((char) => {
-      const targets = getTargetRaidsForCharacter(char);
+      const userChars = charsByDiscord.get(char.discordName) || [];
+      const targets = clears || rosterRaidState
+        ? getCharTopRaidIds(char, userChars, clears, rosterRaidState)
+        : getTargetRaidsForCharacter(char);
       if (targets.includes(raidId) && !scheduledIds.has(char.id) && !absentSet.has(char.discordName) && char.isParticipating !== false && !char.isGuest) {
-        if (char.role === 'SUPPORT') freeSup.push(char);
-        else freeDps.push(char);
+        extraFreeChars.push(char);
       }
     });
 
@@ -2574,8 +2357,8 @@ export function calculateHoldbacksSpecific(
       recommendations: buildRecommendations(heldDps, heldSup),
       shortageDps,
       shortageSup,
-      freeDps: Array.from(new Set(freeDps)).sort(sortByDisplayPriority),
-      freeSup: Array.from(new Set(freeSup)).sort(sortByDisplayPriority),
+      freeRuns,
+      extraFreeChars: extraFreeChars.sort(sortByDisplayPriority),
     });
   }
 

@@ -30,6 +30,14 @@
   transition: background-color 0.15s;
 }
 
+/* 이전 / 다음 달 화살표 글리프만 크게 (버튼 크기는 유지). */
+.sc-calendar .react-calendar__navigation__prev-button,
+.sc-calendar .react-calendar__navigation__next-button {
+  font-size: 1.5rem !important;
+  line-height: 1 !important;
+  font-weight: 900 !important;
+}
+
 .sc-calendar .react-calendar__navigation__label {
   flex-grow: 1;
   font-size: 1rem !important;
@@ -95,7 +103,7 @@
 }
 
 .sc-calendar .react-calendar__tile {
-  min-height: 92px;
+  min-height: 128px;
   padding: 0.375rem 0.375rem 0.25rem;
   border-right: 1px solid rgb(228 228 231);
   border-bottom: 1px solid rgb(228 228 231);
@@ -303,6 +311,12 @@
     height: 32px;
     font-size: 0.8125rem;
   }
+  .sc-calendar .react-calendar__navigation__prev-button,
+  .sc-calendar .react-calendar__navigation__next-button {
+    font-size: 1.5rem !important;
+    font-weight: 900 !important;
+    line-height: 1 !important;
+  }
 
   .sc-calendar .react-calendar__month-view__weekdays__weekday {
     padding: 0.5rem 0.125rem;
@@ -310,7 +324,7 @@
   }
 
   .sc-calendar .react-calendar__tile {
-    min-height: 64px;
+    min-height: 88px;
     padding: 0.25rem 0.125rem 0.125rem;
     font-size: 0.75rem;
   }

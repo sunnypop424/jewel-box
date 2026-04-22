@@ -1,6 +1,7 @@
 import React from 'react';
 import { Shield, Swords, X } from 'lucide-react';
 import type { Character, RaidId } from '../types';
+import { getEligibleRaids, getRaidFamily } from '../data/raids';
 
 interface SwapModalProps {
   isOpen: boolean;
@@ -10,40 +11,14 @@ interface SwapModalProps {
   onConfirm: (targetCharId: string) => void;
 }
 
-/**
- * 캐릭터가 특정 레이드에 실제로 배정될 대상인지 확인하는 함수입니다.
- * raidLogic.ts의 getTargetRaidsForCharacter 로직을 그대로 따라갑니다.
- */
+// 캐릭터가 특정 레이드 난이도의 대상인지 판정 — 레지스트리 getEligibleRaids 기준.
+// 기존 Phase 1 동작 호환을 위해 SwapModal 은 SERKA/FINAL/ACT4/HORIZON 패밀리에만 적용.
 function isCharacterTargetForRaid(char: Character, targetRaidId: RaidId): boolean {
-  const il = char.itemLevel;
-
-  // 1. 지평의 성당
-  if (targetRaidId.startsWith('HORIZON_')) {
-    if (il >= 1750) return targetRaidId === 'HORIZON_STEP3';
-    if (il >= 1720) return targetRaidId === 'HORIZON_STEP2';
-    if (il >= 1700) return targetRaidId === 'HORIZON_STEP1';
+  const family = getRaidFamily(targetRaidId);
+  if (family !== 'SERKA' && family !== 'FINAL' && family !== 'ACT4' && family !== 'HORIZON') {
+    return false;
   }
-
-  // 1. 세르카 (Serka) - 1740+ & 나메체크 시 나메, 그 외 1730+ 하드, 1710+ 노말
-  if (targetRaidId.startsWith('SERKA_')) {
-    if (il >= 1740 && char.serkaNightmare) return targetRaidId === 'SERKA_NIGHTMARE';
-    if (il >= 1730) return targetRaidId === 'SERKA_HARD';
-    if (il >= 1710) return targetRaidId === 'SERKA_NORMAL';
-  }
-
-  // 2. 종막 (Final) - 1730+ 하드, 1710+ 노말
-  if (targetRaidId.startsWith('FINAL_')) {
-    if (il >= 1730) return targetRaidId === 'FINAL_HARD';
-    if (il >= 1710) return targetRaidId === 'FINAL_NORMAL';
-  }
-
-  // 3. 4막 (Act 4) - 1720+ 하드, 1700+ 노말
-  if (targetRaidId.startsWith('ACT4_')) {
-    if (il >= 1720) return targetRaidId === 'ACT4_HARD';
-    if (il >= 1700) return targetRaidId === 'ACT4_NORMAL';
-  }
-
-  return false;
+  return getEligibleRaids(char).includes(targetRaidId);
 }
 
 export const SwapModal: React.FC<SwapModalProps> = ({
@@ -81,7 +56,7 @@ export const SwapModal: React.FC<SwapModalProps> = ({
             ({target.char.discordName}) 캐릭터와 교체할 캐릭터를 선택해 주세요.
             <br />
             <span className="text-[11px] text-indigo-500 font-medium">
-              * 레이드 배정 기준에 따라 이 레이드를 가는 캐릭터만 표시됩니다.
+              * 같은 원정대의 다른 캐릭터 중 이 레이드 배정 기준에 해당하는 캐릭터만 표시됩니다.
             </span>
           </p>
 

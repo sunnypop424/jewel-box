@@ -1,14 +1,14 @@
 import React, { useMemo, useState } from 'react';
 import type { Character, RaidSchedule, RaidRun, RaidId, RaidExclusionMap, RaidSettingsMap } from '../types';
 import { RAID_META } from '../constants';
-import { Shield, Swords, Users, User, ChevronDown, CircleDashed, CheckCircle2, ArrowLeftRight, Check, UserCheck, UserX, Filter, Trash } from 'lucide-react';
+import { Shield, Swords, Users, User, ChevronDown, CircleDashed, CheckCircle2, ArrowLeftRight, RotateCcw, Check, UserCheck, UserX, Filter, Trash } from 'lucide-react';
+import { getDifficultyStyle } from '../utils/difficultyStyle';
 import { SwapModal } from './SwapModal';
 
 // ✨ Hook 추가
 import { toast } from 'sonner';
 import { useConfirm } from '../hooks/useConfirm';
-
-type BalanceMode = 'overall' | 'role' | 'speed';
+import type { BalanceMode } from '../raidLogic';
 
 interface Props {
   schedule: RaidSchedule | null;
@@ -31,30 +31,6 @@ interface Props {
   onRemoveGuest?: (raidId: RaidId, guestId: string) => void;
 }
 
-function getDifficultyStyle(diff: string) {
-  if (diff === 'NORMAL') {
-    return {
-      btn: 'bg-sky-50 border-sky-200 text-sky-700 dark:bg-sky-950/30 dark:border-sky-900 dark:text-sky-200 shadow-sm',
-      dot: 'bg-sky-500',
-    };
-  }
-  if (diff === 'HARD') {
-    return {
-      btn: 'bg-rose-50 border-rose-200 text-rose-700 dark:bg-rose-950/30 dark:border-rose-900 dark:text-rose-200 shadow-sm',
-      dot: 'bg-rose-500',
-    };
-  }
-  if (diff === 'STEP1' || diff === 'STEP2' || diff === 'STEP3') {
-    return {
-      btn: 'bg-orange-50 border-orange-200 text-orange-700 dark:bg-orange-950/30 dark:border-orange-900 dark:text-orange-200 shadow-sm',
-      dot: 'bg-orange-500',
-    };
-  }
-  return {
-    btn: 'bg-violet-50 border-violet-200 text-violet-700 dark:bg-violet-950/30 dark:border-violet-900 dark:text-violet-200 shadow-sm',
-    dot: 'bg-violet-500',
-  };
-}
 
 export const RaidScheduleView: React.FC<Props> = ({
   schedule,
@@ -155,8 +131,17 @@ export const RaidScheduleView: React.FC<Props> = ({
     return palette[idx % palette.length];
   };
 
-  const toggleRaid = (raidId: string) => {
-    setRaidOpenState((prev) => ({ ...prev, [raidId]: !(prev[raidId] ?? false) }));
+  const toggleRaid = (raidId: string, allRaidIds: string[]) => {
+    setRaidOpenState((prev) => {
+      const isCurrentlyOpen = prev[raidId] ?? (raidId === allRaidIds[0]);
+      if (isCurrentlyOpen) {
+        return { ...prev, [raidId]: false };
+      }
+      const next: Record<string, boolean> = {};
+      allRaidIds.forEach((id) => { next[id] = false; });
+      next[raidId] = true;
+      return next;
+    });
   };
 
   const toggleRun = (raidId: string, runIndex: number) => {
@@ -164,7 +149,6 @@ export const RaidScheduleView: React.FC<Props> = ({
     setRunOpenState((prev) => ({ ...prev, [key]: !(prev[key] ?? true) }));
   };
 
-  // ✨ 불필요한 confirm 창 완전 삭제
   const handleExcludeClick = async (
     raidId: RaidId,
     characterId: string,
@@ -174,6 +158,10 @@ export const RaidScheduleView: React.FC<Props> = ({
     if (isSwapping) {
       toast.error('캐릭터 변경을 반영하고 있습니다. 잠시 후 다시 시도해 주세요.');
       return;
+    }
+    if (!isCurrentlyExcluded) {
+      const ok = await confirm('이 캐릭터를 완료 처리하시겠습니까?');
+      if (!ok) return;
     }
     await onExcludeCharacter(raidId, characterId, isCurrentlyExcluded);
   };
@@ -215,9 +203,11 @@ export const RaidScheduleView: React.FC<Props> = ({
       block: 'start',
     });
 
-    setRaidOpenState((prev) => {
-      if (prev[raidId]) return prev;
-      return { ...prev, [raidId]: true };
+    setRaidOpenState(() => {
+      const next: Record<string, boolean> = {};
+      raidIds.forEach((id) => { next[String(id)] = false; });
+      next[raidId] = true;
+      return next;
     });
   };
 
@@ -275,7 +265,7 @@ export const RaidScheduleView: React.FC<Props> = ({
                   onClick={() => scrollToRaid(raidId as RaidId)}
                   className={`flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-bold transition-all border select-none ${diffStyle.btn}`}
                 >
-                  <div className={`h-2 w-2 rounded-full ${diffStyle.dot}`} />
+                  <div className={`h-2 w-2 rounded-full ${diffStyle.dotColor}`} />
                   {meta.label}
                 </button>
               );
@@ -289,7 +279,7 @@ export const RaidScheduleView: React.FC<Props> = ({
         if (!runs || runs.length === 0) return null;
 
         const meta = RAID_META[raidId];
-        const isRaidOpen = raidOpenState[raidId] ?? false;
+        const isRaidOpen = raidOpenState[raidId] ?? (raidId === raidIds[0]);
         const excludedIdsForRaid = exclusions?.[raidId] ?? [];
 
         const candidatesForThisRaid = raidCandidates?.[raidId] ?? candidatesFallback[raidId] ?? [];
@@ -305,37 +295,10 @@ export const RaidScheduleView: React.FC<Props> = ({
         });
 
         const diff = meta.difficulty;
-
-        let containerBorder = '';
-        let headerClass = '';
-        let titleColor = '';
-        let dotColor = '';
-
-        if (diff === 'NORMAL') {
-          containerBorder = 'border-sky-200 dark:border-sky-800';
-          headerClass =
-            'text-sky-900 border-sky-200 bg-sky-50/50 hover:bg-sky-100 dark:text-sky-100 dark:border-sky-800 dark:bg-sky-900/20 dark:hover:bg-sky-900/40';
-          titleColor = 'text-sky-900 dark:text-sky-100';
-          dotColor = 'text-sky-500';
-        } else if (diff === 'HARD') {
-          containerBorder = 'border-rose-200 dark:border-rose-800';
-          headerClass =
-            'text-rose-900 border-rose-200 bg-rose-50/50 hover:bg-rose-100 dark:text-rose-100 dark:border-rose-800 dark:bg-rose-900/20 dark:hover:bg-rose-900/40';
-          titleColor = 'text-rose-900 dark:text-rose-100';
-          dotColor = 'text-rose-500';
-        } else if (diff === 'STEP1' || diff === 'STEP2' || diff === 'STEP3') {
-          containerBorder = 'border-orange-200 dark:border-orange-800';
-          headerClass =
-            'text-orange-900 border-orange-200 bg-orange-50/50 hover:bg-orange-100 dark:text-orange-100 dark:border-orange-800 dark:bg-orange-900/20 dark:hover:bg-orange-900/40';
-          titleColor = 'text-orange-900 dark:text-orange-100';
-          dotColor = 'text-orange-500';
-        } else {
-          containerBorder = 'border-violet-200 dark:border-violet-800';
-          headerClass =
-            'text-violet-900 border-violet-200 bg-violet-50/50 hover:bg-violet-100 dark:text-violet-100 dark:border-violet-800 dark:bg-violet-900/20 dark:hover:bg-violet-900/40';
-          titleColor = 'text-violet-900 dark:text-violet-100';
-          dotColor = 'text-violet-500';
-        }
+        const diffStyle = getDifficultyStyle(diff);
+        const { containerBorder, titleColor } = diffStyle;
+        const dotColor = diffStyle.dotTextColor;
+        const headerClass = `${diffStyle.headerClass} ${diffStyle.headerHoverClass}`;
 
         return (
           <div
@@ -344,7 +307,7 @@ export const RaidScheduleView: React.FC<Props> = ({
             className={`scroll-mt-36 overflow-hidden rounded-2xl border shadow-sm dark:bg-zinc-900 ${containerBorder}`}
           >
             <div
-              onClick={() => toggleRaid(raidId as string)}
+              onClick={() => toggleRaid(raidId as string, raidIds as string[])}
               className={`flex w-full flex-col items-start gap-3 border-b px-4 py-4 text-left transition-colors cursor-pointer select-none sm:flex-row sm:items-center sm:justify-between sm:px-5 ${headerClass} ${
                 isRaidOpen
                   ? 'border-b-zinc-100 dark:border-b-zinc-800'
@@ -400,6 +363,7 @@ export const RaidScheduleView: React.FC<Props> = ({
                     className="mr-2 flex items-center"
                   >
                     <label
+                      title="랏 서포터 모드: 서포터 부족 시 딜러 발키리를 서포터 자리에 배정합니다"
                       className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-xs font-semibold cursor-pointer transition-colors ${
                         raidSettings?.[raidId]
                           ? 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300'
@@ -448,7 +412,7 @@ export const RaidScheduleView: React.FC<Props> = ({
                   getUserCardClass={getUserCardClass}
                   userColorMap={userColorMap}
                 />
-                <div className="grid gap-4 p-4 sm:p-6 lg:grid-cols-3 lg:gap-6">
+                <div className="grid gap-4 p-4 sm:p-6 md:grid-cols-2 lg:grid-cols-3 lg:gap-6">
                   {runs.map((run: RaidRun) => {
                     const runKey = `${raidId}-${run.runIndex}`;
                     const isRunOpen = runOpenState[runKey] ?? true;
@@ -611,7 +575,7 @@ export const RaidScheduleView: React.FC<Props> = ({
                                                 {m.jobCode}
                                               </span>
                                             </div>
-                                            <div className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400 max-w-[80px] overflow-hidden text-ellipsis whitespace-nowrap">
+                                            <div className="min-w-0 truncate text-[11px] font-medium text-zinc-500 dark:text-zinc-400">
                                               {m.isGuest ? '임시 게스트' : m.lostArkName}
                                             </div>
                                           </div>
@@ -842,7 +806,7 @@ function StatusColumn({ title, count, icon, color, children }: any) {
         </span>
       </div>
 
-      <div className="flex flex-1 flex-col gap-2 overflow-y-auto p-3 lg:max-h-[274px]">
+      <div className="flex flex-1 flex-col gap-2 overflow-y-auto p-3 max-h-[45vh] lg:max-h-[274px]">
         {React.Children.count(children) === 0 ? (
           <div className="py-8 text-center text-xs text-zinc-400">없음</div>
         ) : (
@@ -909,7 +873,7 @@ function RaidMemberCard({
             }`}
             title={isCompleted ? "완료 취소" : "완료(제외) 처리"}
           >
-            {isCompleted ? <ArrowLeftRight size={12} /> : <Check size={12} />}
+            {isCompleted ? <RotateCcw size={12} /> : <Check size={12} />}
             {isCompleted ? '취소' : '완료'}
           </button>
         )}

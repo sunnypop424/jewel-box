@@ -160,7 +160,7 @@ export const LadderGame: React.FC<Props> = ({ allUserNames = [] }) => {
 
   
 
-  const [discordNotified, setDiscordNotified] = useState(false);
+  const discordSentRef = useRef(false);
 
   useEffect(() => {
     if (step !== 'game') return;
@@ -177,18 +177,16 @@ export const LadderGame: React.FC<Props> = ({ allUserNames = [] }) => {
     const isWinnerFinished = finishedPaths[winnerParticipantIndex] || showAll;
 
     // d. 애니메이션이 끝났고 아직 알림을 안 보냈다면 전송
-    if (isWinnerFinished && !discordNotified) {
-      setDiscordNotified(true); // 중복 전송 방지
-
+    if (isWinnerFinished && !discordSentRef.current) {
+      discordSentRef.current = true;
       const actualNames = names.slice(0, playerCount).map((n, i) => n || `참여자 ${i + 1}`);
       const participants = actualNames.join(', ');
       const winnerName = actualNames[winnerParticipantIndex];
-      
       sendDiscordNotification(
         `**사다리 타기 결과**\n참여자: ${participants}\n🎉 **${winnerName}** 님이 당첨되셨습니다! 축하드립니다!`
       );
     }
-  }, [step, finishedPaths, showAll, discordNotified, results, pathsData, names, playerCount]);
+  }, [step, finishedPaths, showAll, results, pathsData, names, playerCount]);
 
   if (step === 'setup') {
     return (

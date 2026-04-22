@@ -1,13 +1,14 @@
 import React, { useMemo } from 'react';
-import type { Character, RaidId } from '../types';
+import type { Character, RaidId, RaidRun } from '../types';
 import type { AbsenteeActionReport } from '../raidLogic';
 import { RAID_META } from '../constants';
+import { getDifficultyStyle } from '../utils/difficultyStyle';
 import {
   AlertTriangle,
   Filter,
   Shield,
   Swords,
-  UserCheck,
+  User,
   UserX,
   Users,
 } from 'lucide-react';
@@ -19,49 +20,6 @@ interface Props {
   onToggleAbsentee?: (name: string) => void;
 }
 
-function getDifficultyStyle(diff: string) {
-  if (diff === 'NORMAL') {
-    return {
-      containerBorder: 'border-sky-200 dark:border-sky-800',
-      headerClass:
-        'text-sky-900 border-sky-200 bg-sky-50/50 dark:text-sky-100 dark:border-sky-800 dark:bg-sky-900/20',
-      titleColor: 'text-sky-900 dark:text-sky-100',
-      dotColor: 'bg-sky-500',
-      btn: 'border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100 dark:border-sky-900 dark:bg-sky-950/30 dark:text-sky-200 dark:hover:bg-sky-950/50',
-    };
-  }
-
-  if (diff === 'HARD') {
-    return {
-      containerBorder: 'border-rose-200 dark:border-rose-800',
-      headerClass:
-        'text-rose-900 border-rose-200 bg-rose-50/50 dark:text-rose-100 dark:border-rose-800 dark:bg-rose-900/20',
-      titleColor: 'text-rose-900 dark:text-rose-100',
-      dotColor: 'bg-rose-500',
-      btn: 'border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-200 dark:hover:bg-rose-950/50',
-    };
-  }
-
-  if (diff === 'STEP1' || diff === 'STEP2' || diff === 'STEP3') {
-    return {
-      containerBorder: 'border-orange-200 dark:border-orange-800',
-      headerClass:
-        'text-orange-900 border-orange-200 bg-orange-50/50 dark:text-orange-100 dark:border-orange-800 dark:bg-orange-900/20',
-      titleColor: 'text-orange-900 dark:text-orange-100',
-      dotColor: 'bg-orange-500',
-      btn: 'border-orange-200 bg-orange-50 text-orange-700 hover:bg-orange-100 dark:border-orange-900 dark:bg-orange-950/30 dark:text-orange-200 dark:hover:bg-orange-950/50',
-    };
-  }
-
-  return {
-    containerBorder: 'border-violet-200 dark:border-violet-800',
-    headerClass:
-      'text-violet-900 border-violet-200 bg-violet-50/50 dark:text-violet-100 dark:border-violet-800 dark:bg-violet-900/20',
-    titleColor: 'text-violet-900 dark:text-violet-100',
-    dotColor: 'bg-violet-500',
-    btn: 'border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100 dark:border-violet-900 dark:bg-violet-950/30 dark:text-violet-200 dark:hover:bg-violet-950/50',
-  };
-}
 
 function sortByDisplayPriority(a: Character, b: Character) {
   if (a.combatPower !== b.combatPower) return b.combatPower - a.combatPower;
@@ -120,7 +78,7 @@ function getSectionStyle(tone: SectionTone) {
     wrapper:
       'border-emerald-200 bg-emerald-50/60 dark:border-emerald-900 dark:bg-emerald-950/20',
     iconBox:
-      'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-300',
+      'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400',
     badge:
       'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-200',
     userCountBadge:
@@ -238,6 +196,167 @@ const SectionBlock: React.FC<SectionBlockProps> = ({
   );
 };
 
+// 온전한 공대의 파티 구성을 보여주는 섹션 — RaidScheduleView 디자인 기준
+const FreeRunsSection: React.FC<{ freeRuns: RaidRun[]; extraFreeChars: Character[] }> = ({
+  freeRuns,
+  extraFreeChars,
+}) => {
+  const style = getSectionStyle('ready');
+  const hasContent = freeRuns.length > 0 || extraFreeChars.length > 0;
+
+  const userCharCount = useMemo(() => {
+    const map = new Map<string, number>();
+    freeRuns.forEach(r => r.parties.flatMap(p => p.members).forEach(m => {
+      map.set(m.discordName, (map.get(m.discordName) ?? 0) + 1);
+    }));
+    return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0], 'ko'));
+  }, [freeRuns]);
+
+  return (
+    <section className={`flex h-full flex-col gap-4 rounded-2xl border p-4 shadow-sm ${style.wrapper}`}>
+      <div className="flex items-start gap-3">
+        <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${style.iconBox}`}>
+          <Swords size={18} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <h4 className="text-base font-bold text-zinc-900 dark:text-zinc-100">먼저 진행 가능</h4>
+          {userCharCount.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {userCharCount.map(([name, count]) => (
+                <span key={name} className={`rounded-lg border px-2 py-1 text-[11px] font-bold ${style.badge}`}>
+                  {name} {count}캐릭
+                </span>
+              ))}
+            </div>
+          )}
+          <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
+            결석자 없이 편성된 공격대입니다. 파티 구성 그대로 진행하면 됩니다.
+          </p>
+        </div>
+      </div>
+
+      {!hasContent ? (
+        <div className="flex min-h-[140px] items-center justify-center rounded-xl border border-dashed border-zinc-200 bg-white/70 px-4 text-center text-sm font-medium text-zinc-400 dark:border-zinc-800 dark:bg-zinc-900/60 dark:text-zinc-500">
+          먼저 진행 가능한 공격대가 없습니다.
+        </div>
+      ) : (
+        <div className="flex flex-col gap-4">
+          {freeRuns.map((run) => (
+            <div key={run.runIndex} className="rounded-xl bg-white/80 shadow-sm ring-1 ring-zinc-900/5 dark:bg-zinc-950/70 dark:ring-zinc-800">
+              {/* 공격대 헤더 — RaidScheduleView 동일 */}
+              <div className="flex items-center gap-2 rounded-t-xl bg-zinc-50 px-3 py-2.5 dark:bg-zinc-900/60">
+                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-zinc-100 text-xs font-bold text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
+                  {run.runIndex}
+                </span>
+                <span className="text-sm font-semibold text-zinc-700 dark:text-zinc-200">공격대</span>
+                <span className="ml-auto text-xs text-zinc-400 dark:text-zinc-500">
+                  평균 CP {Math.round(run.averageCombatPower).toLocaleString()}
+                </span>
+              </div>
+
+              {/* 파티 그리드 — RaidScheduleView 동일 */}
+              <div className="grid gap-3 p-3 lg:grid-cols-2">
+                {run.parties.map((party) => {
+                  const partySize = 4;
+                  const emptySlots = Math.max(0, partySize - party.members.length);
+                  return (
+                    <div
+                      key={party.partyIndex}
+                      className="flex flex-col rounded-2xl border border-zinc-200 bg-zinc-50/50 p-3 dark:border-zinc-800 dark:bg-zinc-950/20"
+                    >
+                      <div className="mb-3 flex items-center justify-between px-1 text-xs font-bold text-zinc-500 dark:text-zinc-400">
+                        <div className="flex items-center gap-1.5">
+                          <Users size={14} />
+                          <span>PARTY {party.partyIndex}</span>
+                        </div>
+                        <span className="text-[10px] text-zinc-400">{party.members.length}/{partySize}</span>
+                      </div>
+
+                      <div className="flex flex-col gap-2">
+                        {party.members.map((m) => {
+                          const isSupport = m.role === 'SUPPORT';
+                          return (
+                            <div
+                              key={m.id}
+                              className="flex items-center justify-between rounded-xl bg-white p-2.5 shadow-sm ring-1 ring-zinc-900/5 dark:bg-zinc-900 dark:ring-zinc-800"
+                            >
+                              <div className="flex min-w-0 items-center gap-3">
+                                <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${isSupport ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400'}`}>
+                                  {isSupport ? <Shield size={16} /> : <Swords size={16} />}
+                                </div>
+                                <div>
+                                  <div className="text-sm font-bold dark:text-zinc-100">{m.jobCode}</div>
+                                  <div className="max-w-[80px] overflow-hidden text-ellipsis whitespace-nowrap text-[11px] font-medium text-zinc-500 dark:text-zinc-400">
+                                    {m.lostArkName || m.discordName}
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="text-right">
+                                <div className="text-xs font-bold dark:text-zinc-300">Lv.{m.itemLevel}</div>
+                                <div className="text-[10px] text-zinc-400">CP {m.combatPower.toLocaleString()}</div>
+                              </div>
+                            </div>
+                          );
+                        })}
+
+                        {Array.from({ length: emptySlots }).map((_, i) => (
+                          <div
+                            key={`empty-${run.runIndex}-${party.partyIndex}-${i}`}
+                            className="flex items-center justify-center gap-2 rounded-xl border border-dashed border-zinc-200 py-3 text-xs text-zinc-400 dark:border-zinc-800 dark:text-zinc-600"
+                          >
+                            <User size={14} className="opacity-50" /> 빈 자리
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+
+          {extraFreeChars.length > 0 && (
+            <div className="rounded-xl bg-white/80 p-4 shadow-sm ring-1 ring-zinc-900/5 dark:bg-zinc-950/70 dark:ring-zinc-800">
+              <div className="mb-3 flex items-center gap-2 text-xs font-bold text-zinc-500 dark:text-zinc-400">
+                <Users size={14} />
+                <span>추가 합류 가능</span>
+                <span className="ml-auto text-[10px] font-medium text-zinc-400">스케줄 미배정 {extraFreeChars.length}캐릭</span>
+              </div>
+              <div className="flex flex-col gap-2">
+                {extraFreeChars.map((m) => {
+                  const isSupport = m.role === 'SUPPORT';
+                  return (
+                    <div
+                      key={m.id}
+                      className="flex items-center justify-between rounded-xl bg-white p-2.5 shadow-sm ring-1 ring-zinc-900/5 dark:bg-zinc-900 dark:ring-zinc-800"
+                    >
+                      <div className="flex min-w-0 items-center gap-3">
+                        <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${isSupport ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400'}`}>
+                          {isSupport ? <Shield size={16} /> : <Swords size={16} />}
+                        </div>
+                        <div>
+                          <div className="text-sm font-bold dark:text-zinc-100">{m.jobCode}</div>
+                          <div className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400">
+                            {m.discordName} · {m.lostArkName}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-xs font-bold dark:text-zinc-300">Lv.{m.itemLevel}</div>
+                        <div className="text-[10px] text-zinc-400">CP {m.combatPower.toLocaleString()}</div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </section>
+  );
+};
+
 const RAID_SORT_ORDER: RaidId[] = [
   'ACT4_NORMAL',
   'ACT4_HARD',
@@ -304,7 +423,7 @@ export const AbsenteeDashboard: React.FC<Props> = ({
                         : 'bg-transparent border-zinc-200 text-zinc-400 decoration-zinc-400 line-through dark:border-zinc-800 dark:text-zinc-600'
                     }`}
                   >
-                    {isSelected ? <UserX className="h-3 w-3" /> : <UserCheck className="h-3 w-3" />}
+                    {isSelected ? <UserX className="h-3 w-3" /> : <User className="h-3 w-3" />}
                     {name}
                   </button>
                 );
@@ -378,14 +497,15 @@ export const AbsenteeDashboard: React.FC<Props> = ({
               ...report.recommendations.flatMap((rec) => rec.heldDps),
             ].sort(sortByDisplayPriority);
 
-            const freeChars = [...report.freeSup, ...report.freeDps].sort(sortByDisplayPriority);
             const shortageTotal = report.shortageSup + report.shortageDps;
+            const freeTotal = report.freeRuns.reduce((acc, r) => acc + r.parties.flatMap(p => p.members).length, 0)
+              + report.extraFreeChars.length;
 
             return (
               <div
                 key={report.raidId}
                 id={`absentee-raid-section-${report.raidId}`}
-                className={`overflow-hidden rounded-2xl border shadow-sm dark:bg-zinc-900 ${style.containerBorder}`}
+                className={`scroll-mt-44 overflow-hidden rounded-2xl border shadow-sm dark:bg-zinc-900 ${style.containerBorder}`}
               >
                 <div
                   className={`flex flex-col gap-3 border-b px-4 py-4 sm:px-5 ${style.headerClass}`}
@@ -404,7 +524,7 @@ export const AbsenteeDashboard: React.FC<Props> = ({
                         대기 권장 {holdChars.length}
                       </span>
                       <span className="rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-700 shadow-sm dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-200">
-                        먼저 진행 가능 {freeChars.length}
+                        먼저 진행 가능 {freeTotal}
                       </span>
                       {shortageTotal > 0 && (
                         <span className="rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-bold text-amber-700 shadow-sm dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
@@ -433,12 +553,9 @@ export const AbsenteeDashboard: React.FC<Props> = ({
                       icon={<Users size={18} />}
                     />
 
-                    <SectionBlock
-                      title="먼저 진행 가능"
-                      description="다른 파티에 영향이 적어 먼저 진행해도 되는 캐릭터입니다."
-                      characters={freeChars}
-                      tone="ready"
-                      icon={<Swords size={18} />}
+                    <FreeRunsSection
+                      freeRuns={report.freeRuns}
+                      extraFreeChars={report.extraFreeChars}
                     />
                   </div>
 

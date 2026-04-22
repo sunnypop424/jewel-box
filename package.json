@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "deploy": "gh-pages -d dist"
+    "deploy": "gh-pages -d dist",
+    "gen:worker-raids": "node scripts/gen-worker-raids.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

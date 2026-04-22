@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { getDifficultyStyle } from '../utils/difficultyStyle';
 import type {
   RaidSchedule,
   RaidRun,
@@ -7,6 +8,7 @@ import type {
   RaidExclusionMap,
 } from '../types';
 import { RAID_META } from '../constants';
+import { ALL_RAID_IDS } from '../data/raids';
 import {
   ArrowRight,
   UserPlus,
@@ -25,7 +27,7 @@ import {
   ArrowLeftRight,
   User,
 } from 'lucide-react';
-import { excludeCharactersOnRaid } from '../api/firebaseApi';
+// 레이드 완료 토글은 부모의 onExcludeRun prop 으로 ledger 에 기록.
 
 import {
   DndContext,
@@ -48,8 +50,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { SwapModal } from './SwapModal';
 import { toast } from 'sonner';
 import { useConfirm } from '../hooks/useConfirm';
-
-type BalanceMode = 'overall' | 'role' | 'speed';
+import type { BalanceMode } from '../raidLogic';
 
 // ----------------------------------------------------------------------
 // [LOGIC ZONE]
@@ -77,38 +78,6 @@ const DIFF_LABEL = {
   STEP3: '3단계',
 } as const;
 
-function getDifficultyStyle(diff: string) {
-  if (diff === 'NORMAL') {
-    return {
-      btn: 'bg-sky-50 border-sky-200 text-sky-700 dark:bg-sky-950/30 dark:border-sky-900 dark:text-sky-200 shadow-sm',
-      dot: 'bg-sky-500',
-      borderActive: 'border-sky-500',
-      badge: 'bg-sky-100 text-sky-700 dark:bg-sky-900 dark:text-sky-300',
-    };
-  }
-  if (diff === 'HARD') {
-    return {
-      btn: 'bg-rose-50 border-rose-200 text-rose-700 dark:bg-rose-950/30 dark:border-rose-900 dark:text-rose-200 shadow-sm',
-      dot: 'bg-rose-500',
-      borderActive: 'border-rose-500',
-      badge: 'bg-rose-100 text-rose-700 dark:bg-rose-900 dark:text-rose-300',
-    };
-  }
-  if (diff === 'STEP1' || diff === 'STEP2' || diff === 'STEP3') {
-    return {
-      btn: 'bg-orange-50 border-orange-200 text-orange-700 dark:bg-orange-950/30 dark:border-orange-900 dark:text-orange-200 shadow-sm',
-      dot: 'bg-orange-500',
-      borderActive: 'border-orange-500',
-      badge: 'bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300',
-    };
-  }
-  return {
-    btn: 'bg-violet-50 border-violet-200 text-violet-700 dark:bg-violet-950/30 dark:border-violet-900 dark:text-violet-200 shadow-sm',
-    dot: 'bg-violet-500',
-    borderActive: 'border-violet-500',
-    badge: 'bg-violet-100 text-violet-700 dark:bg-violet-900 dark:text-violet-300',
-  };
-}
 
 interface GlobalStep {
   index: number;
@@ -540,7 +509,7 @@ function SortableFilterItem({
         onClick={onToggle}
         className={`${btnClass} group relative pr-7 touch-none`}
       >
-        <div className={`h-2 w-2 rounded-full ${diffStyle.dot}`} />
+        <div className={`h-2 w-2 rounded-full ${diffStyle.dotColor}`} />
         {meta.label}
 
         <div
@@ -565,7 +534,8 @@ interface Props {
   exclusions?: RaidExclusionMap;
   balanceMode?: BalanceMode;
   updatedBy?: string;
-  onExclusionsUpdated?: (next: RaidExclusionMap) => void;
+  // ledger 로 전환 후 '레이드 완료' 는 부모 핸들러가 ledger 에 스냅샷 기록.
+  onExcludeRun?: (raidId: RaidId, charIds: string[]) => Promise<void> | void;
   onSwapCharacter?: (
     raidId: RaidId,
     charId1: string,
@@ -582,7 +552,7 @@ export const RaidSequenceView: React.FC<Props> = ({
   schedule,
   exclusions,
   balanceMode = 'overall',
-  onExclusionsUpdated,
+  onExcludeRun,
   onSwapCharacter,
   allCharacters = [],
   isSwapping: isSwappingFromParent = false,
@@ -643,23 +613,9 @@ export const RaidSequenceView: React.FC<Props> = ({
   const filteredSchedule = useMemo(() => {
     if (!schedule) return null;
 
-    const fs: RaidSchedule = {
-      ACT2_HARD: [],
-      ACT3_HARD: [],
-      ACT4_NORMAL: [],
-      ACT4_HARD: [],
-      SERKA_NORMAL: [],
-      SERKA_HARD: [],
-      SERKA_NIGHTMARE: [],
-      FINAL_NORMAL: [],
-      FINAL_HARD: [],
-      HORIZON_STEP1: [],
-      HORIZON_STEP2: [],
-      HORIZON_STEP3: [],
-      ACT1_HARD: [],
-      ACT2_NORMAL: [],
-      ACT3_NORMAL: [],
-    };
+    const fs = Object.fromEntries(
+      ALL_RAID_IDS.map((id) => [id, [] as RaidRun[]])
+    ) as RaidSchedule;
 
     selectedRaids.forEach((raidId) => {
       const runs = schedule[raidId];
@@ -729,23 +685,7 @@ export const RaidSequenceView: React.FC<Props> = ({
     const meta = RAID_META[step.raidId];
     const difficulty = meta.difficulty;
     const diffStyle = getDifficultyStyle(difficulty);
-
-    let titleClass = '';
-    let labelClass = '';
-
-    if (difficulty === 'NORMAL') {
-      titleClass = 'text-sky-600 dark:text-sky-400';
-      labelClass = 'text-sky-800/60 dark:text-sky-300/60';
-    } else if (difficulty === 'HARD') {
-      titleClass = 'text-rose-600 dark:text-rose-400';
-      labelClass = 'text-rose-800/60 dark:text-rose-300/60';
-    } else if (difficulty === 'STEP1' || difficulty === 'STEP2' || difficulty === 'STEP3') {
-      titleClass = 'text-orange-600 dark:text-orange-400';
-      labelClass = 'text-orange-800/60 dark:text-orange-300/60';
-    } else {
-      titleClass = 'text-violet-600 dark:text-violet-400';
-      labelClass = 'text-violet-800/60 dark:text-violet-300/60';
-    }
+    const { stepTitleClass: titleClass, stepLabelClass: labelClass } = diffStyle;
 
     const hasLeaving = !!(transition && transition.leaving.length > 0);
     const hasEntering = !!(transition && transition.entering.length > 0);
@@ -901,14 +841,7 @@ export const RaidSequenceView: React.FC<Props> = ({
 
                       try {
                         setCompletingKey(completeBtnKey);
-
-                        const next = await excludeCharactersOnRaid(
-                          step.raidId,
-                          completeTargetIds,
-                        );
-
-                        setLocalExclusions(next);
-                        onExclusionsUpdated?.(next);
+                        await onExcludeRun?.(step.raidId, completeTargetIds);
                       } catch (e) {
                         console.error(e);
                         toast.error('레이드 완료 처리에 실패했습니다.');
@@ -1081,10 +1014,7 @@ export const RaidSequenceView: React.FC<Props> = ({
 
                     try {
                       setCompletingKey(completeBtnKey);
-                      const next = await excludeCharactersOnRaid(step.raidId, completeTargetIds);
-
-                      setLocalExclusions(next);
-                      onExclusionsUpdated?.(next);
+                      await onExcludeRun?.(step.raidId, completeTargetIds);
                     } catch (e) {
                       console.error(e);
                       toast.error('레이드 완료 처리에 실패했습니다.');

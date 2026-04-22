@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import type { Character, Role, GoldOption, RaidId } from '../types';
+import type { Character, Role, GoldOption, RaidId, WeeklyClears, RosterRaidState } from '../types';
 import { JOB_OPTIONS, ROLE_OPTIONS } from '../constants';
+import { hasSingleModeForFamily } from '../data/raids';
+import { RosterRaidsSection } from './RosterRaidsSection';
 import { Trash2, Plus, Save, User, Shield, Swords, Loader2, Download, ChevronDown, GripVertical, Search, Users, Info, Hash } from 'lucide-react';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
@@ -12,10 +14,12 @@ import { toast } from 'sonner';
 import { useConfirm } from '../hooks/useConfirm';
 
 interface CharacterFormRow {
-    uid: string; id?: string; discordName: string; discordId?: string; 
+    uid: string; id?: string; discordName: string; discordId?: string;
     jobCode: string; role: Role; itemLevel: number | ''; combatPower: number | '';
     serkaNightmare: boolean; valkyCanSupport: boolean; receiveBoundGold: boolean;
-    lostArkName?: string; singleRaids: RaidId[]; 
+    lostArkName?: string; singleRaids: RaidId[];
+    rosterId: string;        // 소속 원정대. 기본값 = discordName.
+    rosterLabel?: string;    // 표시 이름. 지정 시에만 노출.
 }
 
 interface Props {
@@ -23,11 +27,17 @@ interface Props {
     onSubmit: (discordName: string, characters: Character[]) => void;
     onCancel?: () => void;
     onLoadByDiscordName: (targetName: string) => Character[];
+    // 원정대 레이드 (카제로스 등) 관리를 위한 prop.
+    clears?: WeeklyClears;
+    rosterRaidState?: RosterRaidState;
+    onSetRosterRep?: (rosterId: string, family: string, selection: { selectedCharId: string; difficulty: string }) => void | Promise<void>;
+    onClearRosterRep?: (rosterId: string, family: string) => void | Promise<void>;
 }
 
-function SortableCharacterRow({ row, index, handleChangeRow, handleRemoveRow, isSaving }: {
+function SortableCharacterRow({ row, index, handleChangeRow, handleRemoveRow, isSaving, availableRosters }: {
     row: CharacterFormRow; index: number; handleChangeRow: (index: number, field: keyof CharacterFormRow, value: any) => void;
     handleRemoveRow: (index: number) => void; isSaving: boolean;
+    availableRosters: Array<{ id: string; label: string }>;
 }) {
     const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: row.uid });
 
@@ -38,9 +48,11 @@ function SortableCharacterRow({ row, index, handleChangeRow, handleRemoveRow, is
         handleChangeRow(index, 'singleRaids', next);
     };
 
+    // 싱글모드 UI 는 레지스트리에 싱글모드가 활성화된 family 가 있을 때만 노출.
+    // 2026-04-22 패치로 ACT2/ACT3 싱글모드는 일반과 동일해져 플래그 내림.
     const isAct2Act3Participant = typeof row.itemLevel === 'number' && row.itemLevel >= 1680 && row.itemLevel < 1710;
-    const canDoAct2Single = isAct2Act3Participant;
-    const canDoAct3Single = isAct2Act3Participant;
+    const canDoAct2Single = isAct2Act3Participant && hasSingleModeForFamily('ACT2');
+    const canDoAct3Single = isAct2Act3Participant && hasSingleModeForFamily('ACT3');
 
     return (
         <div ref={setNodeRef} style={style} className={`group relative flex flex-col gap-3 p-4 pt-10 sm:grid sm:grid-cols-12 sm:items-center sm:gap-3 sm:py-3 sm:pr-3 sm:pl-6 bg-white dark:bg-transparent ${isDragging ? 'shadow-xl ring-2 ring-indigo-500 rounded-xl' : ''}`}>
@@ -83,6 +95,21 @@ function SortableCharacterRow({ row, index, handleChangeRow, handleRemoveRow, is
                 </div>
                 
                 <div className="flex flex-wrap items-center justify-start sm:justify-center gap-1.5 sm:col-span-3">
+                    {availableRosters.length > 1 && (
+                        <select
+                            value={row.rosterId}
+                            onChange={(e) => handleChangeRow(index, 'rosterId', e.target.value)}
+                            disabled={isSaving}
+                            className="rounded-md border border-indigo-200 bg-indigo-50 px-1.5 py-1 text-[11px] font-semibold text-indigo-700 dark:border-indigo-900/50 dark:bg-indigo-900/20 dark:text-indigo-300 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                            title="소속 원정대"
+                        >
+                            {availableRosters.map(r => (
+                                <option key={r.id} value={r.id}>
+                                    {r.label || (r.id === row.discordName ? '기본 원정대' : '(이름 없음)')}
+                                </option>
+                            ))}
+                        </select>
+                    )}
                     <label className="inline-flex select-none items-center gap-1 rounded-md border border-zinc-200 bg-white px-1.5 py-1 text-[11px] font-semibold text-zinc-600 shadow-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 hover:border-indigo-300 dark:hover:border-indigo-500 transition-colors cursor-pointer">
                         <input type="checkbox" checked={row.receiveBoundGold} onChange={(e) => handleChangeRow(index, 'receiveBoundGold', e.target.checked)} disabled={isSaving} className="h-3 w-3 shrink-0 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500 disabled:opacity-50 cursor-pointer" />
                         <span className="whitespace-nowrap">귀속</span>
@@ -124,17 +151,25 @@ function SortableCharacterRow({ row, index, handleChangeRow, handleRemoveRow, is
 }
 
 export const CharacterFormList: React.FC<Props> = ({
-    discordName, characters, isLoading = false, onSubmit, onCancel, onLoadByDiscordName
+    discordName, characters, isLoading = false, onSubmit, onCancel, onLoadByDiscordName,
+    clears, rosterRaidState, onSetRosterRep, onClearRosterRep,
 }) => {
     // ✨ Hook 
     
     const { confirm } = useConfirm();
 
     const [localDiscord, setLocalDiscord] = useState(discordName);
-    const [localDiscordId, setLocalDiscordId] = useState(''); 
+    const [localDiscordId, setLocalDiscordId] = useState('');
     const [rows, setRows] = useState<CharacterFormRow[]>([]);
     const [isFetching, setIsFetching] = useState(false);
     const [goldOption, setGoldOption] = useState<GoldOption>('ALL_MAX');
+
+    // 원정대(다중 원정대) 관리 state
+    // rosterDrafts: 아직 캐릭이 한 명도 없는 "신규 원정대" (저장 시 자동 소멸)
+    // lastUsedRosterId: 신규 캐릭 추가 시 기본 rosterId (Q4: 마지막 선택 유지)
+    const [rosterDrafts, setRosterDrafts] = useState<Array<{ id: string; label: string }>>([]);
+    const [lastUsedRosterId, setLastUsedRosterId] = useState<string>(discordName);
+
 
     const [searchRosterName, setSearchRosterName] = useState('');
     const [isSearchingRoster, setIsSearchingRoster] = useState(false);
@@ -150,23 +185,122 @@ export const CharacterFormList: React.FC<Props> = ({
 
     useEffect(() => {
         setLocalDiscord(discordName);
+        setLastUsedRosterId(discordName);
+        setRosterDrafts([]);
         if (characters.length > 0) {
-            setLocalDiscordId(characters[0].discordId || ''); 
+            setLocalDiscordId(characters[0].discordId || '');
             setGoldOption(characters[0].goldOption ?? 'ALL_MAX');
             setRows(characters.map((c, i) => ({
                 ...c,
                 uid: c.id || `char-${i}-${Date.now()}`,
                 serkaNightmare: c.serkaNightmare ?? (c.itemLevel >= 1740),
                 valkyCanSupport: c.valkyCanSupport ?? false,
-                receiveBoundGold: c.receiveBoundGold ?? false,
+                receiveBoundGold: c.receiveBoundGold ?? true,
                 singleRaids: c.singleRaids || [],
+                rosterId: c.rosterId || c.discordName,
+                rosterLabel: c.rosterLabel,
             })));
         } else {
             setLocalDiscordId('');
-            setGoldOption('ALL_MAX'); 
-            setRows([{ uid: `new-0-${Date.now()}`, discordName, jobCode: '', role: 'DPS', itemLevel: 1700, combatPower: '', serkaNightmare: false, valkyCanSupport: false, receiveBoundGold: false, singleRaids: [] }]);
+            setGoldOption('ALL_MAX');
+            setRows([{
+                uid: `new-0-${Date.now()}`, discordName, jobCode: '', role: 'DPS',
+                itemLevel: 1700, combatPower: '', serkaNightmare: false, valkyCanSupport: false,
+                receiveBoundGold: true, singleRaids: [], rosterId: discordName,
+            }]);
         }
     }, [discordName, characters]);
+
+    // 사용 가능한 원정대 (rows + drafts + 항상 존재하는 기본 원정대)
+    const availableRosters = React.useMemo(() => {
+        const map = new Map<string, string>(); // rosterId → label
+        rows.forEach(r => {
+            if (!map.has(r.rosterId)) map.set(r.rosterId, r.rosterLabel || '');
+        });
+        rosterDrafts.forEach(d => {
+            if (!map.has(d.id)) map.set(d.id, d.label);
+        });
+        // 기본 원정대(= localDiscord)는 항상 존재
+        if (!map.has(localDiscord)) map.set(localDiscord, '');
+        return Array.from(map.entries()).map(([id, label]) => ({ id, label }));
+    }, [rows, rosterDrafts, localDiscord]);
+
+    // 원정대 레이드 섹션용 rosterGroups — 저장된 캐릭만 포함 (rosterRaidState 는 char.id 가 안정적일 때만 의미).
+    const rosterGroupsForRaids = React.useMemo(() => {
+        const map = new Map<string, { rosterId: string; label: string; discordName: string; chars: Character[] }>();
+        rows.forEach(r => {
+            if (!r.id) return;                    // 아직 저장 안 된 행은 제외 (id 부여 전)
+            if (!r.jobCode) return;                // 미완성 행 제외
+            if (typeof r.itemLevel !== 'number') return;
+            const rosterId = r.rosterId || localDiscord;
+            if (!map.has(rosterId)) {
+                const label = r.rosterLabel || (rosterId === localDiscord ? localDiscord : rosterId);
+                map.set(rosterId, { rosterId, label, discordName: localDiscord, chars: [] });
+            }
+            const char: Character = {
+                id: r.id,
+                discordName: localDiscord,
+                discordId: r.discordId,
+                jobCode: r.jobCode,
+                role: r.role,
+                itemLevel: r.itemLevel,
+                combatPower: typeof r.combatPower === 'number' ? r.combatPower : 0,
+                serkaNightmare: r.serkaNightmare,
+                valkyCanSupport: r.valkyCanSupport,
+                receiveBoundGold: r.receiveBoundGold,
+                lostArkName: r.lostArkName,
+                singleRaids: r.singleRaids,
+                rosterId: r.rosterId,
+                rosterLabel: r.rosterLabel,
+            };
+            map.get(rosterId)!.chars.push(char);
+        });
+        return Array.from(map.values()).sort((a, b) => a.label.localeCompare(b.label));
+    }, [rows, localDiscord]);
+
+    const charCountByRoster = React.useMemo(() => {
+        const counts = new Map<string, number>();
+        rows.forEach(r => counts.set(r.rosterId, (counts.get(r.rosterId) || 0) + 1));
+        return counts;
+    }, [rows]);
+
+    const handleAddRoster = () => {
+        const defaultLabel = `원정대 ${availableRosters.length + 1}`;
+        const label = window.prompt('새 원정대 이름을 입력하세요', defaultLabel);
+        if (!label || !label.trim()) return;
+        const newId = `roster-${Date.now()}`;
+        setRosterDrafts(prev => [...prev, { id: newId, label: label.trim() }]);
+        setLastUsedRosterId(newId);
+    };
+
+    const handleRenameRoster = (rosterId: string) => {
+        if (rosterId === localDiscord) {
+            toast.error('기본 원정대는 이름을 변경할 수 없습니다.');
+            return;
+        }
+        const current = availableRosters.find(r => r.id === rosterId);
+        if (!current) return;
+        const label = window.prompt('원정대 이름', current.label);
+        if (!label || !label.trim()) return;
+        // 같은 rosterId 를 가진 모든 행의 label 업데이트
+        setRows(prev => prev.map(r => r.rosterId === rosterId ? { ...r, rosterLabel: label.trim() } : r));
+        setRosterDrafts(prev => prev.map(d => d.id === rosterId ? { ...d, label: label.trim() } : d));
+    };
+
+    const handleDeleteRoster = async (rosterId: string) => {
+        if (rosterId === localDiscord) {
+            toast.error('기본 원정대는 삭제할 수 없습니다.');
+            return;
+        }
+        const count = charCountByRoster.get(rosterId) || 0;
+        if (count > 0) {
+            toast.error('소속된 캐릭터가 있는 원정대는 삭제할 수 없습니다. 먼저 캐릭터를 다른 원정대로 이동해 주세요.');
+            return;
+        }
+        if (!(await confirm('이 원정대를 삭제하시겠습니까?'))) return;
+        setRosterDrafts(prev => prev.filter(d => d.id !== rosterId));
+        if (lastUsedRosterId === rosterId) setLastUsedRosterId(localDiscord);
+    };
 
     useEffect(() => {
         if (rows.length === 0) return;
@@ -208,6 +342,7 @@ export const CharacterFormList: React.FC<Props> = ({
     const handleAddSelectedRoster = async () => {
         if (checkedRosterNames.size === 0) return;
         setIsSearchingRoster(true);
+        const rosterInfo = availableRosters.find(r => r.id === lastUsedRosterId);
         const newRows: CharacterFormRow[] = [];
         for (const charName of Array.from(checkedRosterNames)) {
             if (rows.some(r => r.lostArkName === charName)) continue;
@@ -227,22 +362,25 @@ export const CharacterFormList: React.FC<Props> = ({
                         combatPower: Math.floor(cp),
                         serkaNightmare: lv >= 1740,
                         valkyCanSupport: false,
-                        receiveBoundGold: false,
-                        singleRaids: []
-                    } as any);
+                        receiveBoundGold: true,
+                        singleRaids: [],
+                        rosterId: lastUsedRosterId,
+                        rosterLabel: rosterInfo?.label || undefined,
+                    });
                 }
             } catch (e) { console.error(`${charName} 조회 실패`); }
         }
+        if (newRows.length > 0) setRosterDrafts(prev => prev.filter(d => d.id !== lastUsedRosterId));
         setRows(prev => [...prev, ...newRows]);
-        setRosterList([]); 
+        setRosterList([]);
         setIsSearchingRoster(false);
     };
 
     const handleAddSingle = async () => {
         if (!searchSingleName.trim()) return;
-        if (rows.some(r => r.lostArkName === searchSingleName)) { 
-            toast.error('이미 추가된 캐릭터입니다.'); // ✨
-            return; 
+        if (rows.some(r => r.lostArkName === searchSingleName)) {
+            toast.error('이미 추가된 캐릭터입니다.');
+            return;
         }
         try {
             setIsSearchingSingle(true);
@@ -250,6 +388,7 @@ export const CharacterFormList: React.FC<Props> = ({
             if (profile && profile.CharacterName) {
                 const lv = parseFloat(profile.ItemAvgLevel.replace(/,/g, ''));
                 const cp = parseFloat(profile.CombatPower.replace(/,/g, ''));
+                const rosterInfo = availableRosters.find(r => r.id === lastUsedRosterId);
                 setRows(prev => [...prev, {
                     uid: `api-${profile.CharacterName}-${Date.now()}`,
                     discordName: localDiscord,
@@ -261,13 +400,16 @@ export const CharacterFormList: React.FC<Props> = ({
                     combatPower: Math.floor(cp),
                     serkaNightmare: lv >= 1740,
                     valkyCanSupport: false,
-                    receiveBoundGold: false,
-                    singleRaids: []
+                    receiveBoundGold: true,
+                    singleRaids: [],
+                    rosterId: lastUsedRosterId,
+                    rosterLabel: rosterInfo?.label || undefined,
                 }]);
+                setRosterDrafts(prev => prev.filter(d => d.id !== lastUsedRosterId));
                 setSearchSingleName('');
             }
-        } catch (e: any) { 
-            toast.error(`캐릭터 검색에 실패했습니다. : ${e.message}`); // ✨
+        } catch (e: any) {
+            toast.error(`캐릭터 검색에 실패했습니다. : ${e.message}`);
         }
         finally { setIsSearchingSingle(false); }
     };
@@ -301,22 +443,26 @@ export const CharacterFormList: React.FC<Props> = ({
             setIsFetching(true);
             const myCharacters = onLoadByDiscordName(trimmedName);
             if (myCharacters.length > 0) {
-                setLocalDiscordId(myCharacters[0].discordId || ''); 
+                setLocalDiscordId(myCharacters[0].discordId || '');
                 setGoldOption(myCharacters[0].goldOption ?? 'ALL_MAX');
                 setRows(myCharacters.map((c, i) => ({
                     ...c,
                     uid: c.id || `char-${i}-${Date.now()}`,
                     serkaNightmare: c.serkaNightmare ?? (c.itemLevel >= 1740),
                     valkyCanSupport: c.valkyCanSupport ?? false,
-                    receiveBoundGold: c.receiveBoundGold ?? false,
-                    singleRaids: c.singleRaids || []
+                    receiveBoundGold: c.receiveBoundGold ?? true,
+                    singleRaids: c.singleRaids || [],
+                    rosterId: c.rosterId || c.discordName,
+                    rosterLabel: c.rosterLabel,
                 })));
-                toast.success(`${trimmedName}님의 캐릭터 데이터를 불러왔습니다.`); // ✨
-            } else { 
-                toast.info('저장된 데이터가 없습니다.'); // ✨
+                setRosterDrafts([]);
+                setLastUsedRosterId(trimmedName);
+                toast.success(`${trimmedName}님의 캐릭터 데이터를 불러왔습니다.`);
+            } else {
+                toast.info('저장된 데이터가 없습니다.');
             }
-        } catch (e) { 
-            toast.error('데이터 불러오기 중 오류가 발생했습니다.'); // ✨
+        } catch (e) {
+            toast.error('데이터 불러오기 중 오류가 발생했습니다.');
         }
         finally { setIsFetching(false); }
     };
@@ -333,7 +479,7 @@ export const CharacterFormList: React.FC<Props> = ({
                 if (field === 'itemLevel') {
                     const prevIl = typeof row.itemLevel === 'number' ? row.itemLevel : 0;
                     const nextIl = typeof numValue === 'number' ? numValue : 0;
-                    
+
                     let nextSerkaNightmare = row.serkaNightmare;
                     if (prevIl < 1740 && nextIl >= 1740) nextSerkaNightmare = true;
                     if (prevIl >= 1740 && nextIl < 1740) nextSerkaNightmare = false;
@@ -346,12 +492,31 @@ export const CharacterFormList: React.FC<Props> = ({
                 }
                 return { ...row, [field]: numValue } as CharacterFormRow;
             }
+            if (field === 'rosterId') {
+                const newRosterId = String(value);
+                const roster = availableRosters.find(r => r.id === newRosterId);
+                const newLabel = roster?.label || undefined;
+                return { ...row, rosterId: newRosterId, rosterLabel: newLabel } as CharacterFormRow;
+            }
             return { ...row, [field]: value } as CharacterFormRow;
         }));
+        if (field === 'rosterId') {
+            setLastUsedRosterId(String(value));
+            // 드래프트에 있던 원정대가 첫 캐릭을 받으면 드래프트에서 제거 (이제 행이 원장)
+            setRosterDrafts(prev => prev.filter(d => d.id !== value));
+        }
     };
 
     const handleAddRow = () => {
-        setRows(prev => [...prev, { uid: `new-${Date.now()}`, discordName: localDiscord, discordId: localDiscordId, jobCode: '', role: 'DPS', itemLevel: 1700, combatPower: '', serkaNightmare: false, valkyCanSupport: false, receiveBoundGold: false, singleRaids: [] }]);
+        const roster = availableRosters.find(r => r.id === lastUsedRosterId);
+        setRows(prev => [...prev, {
+            uid: `new-${Date.now()}`, discordName: localDiscord, discordId: localDiscordId,
+            jobCode: '', role: 'DPS', itemLevel: 1700, combatPower: '',
+            serkaNightmare: false, valkyCanSupport: false, receiveBoundGold: true,
+            singleRaids: [], rosterId: lastUsedRosterId, rosterLabel: roster?.label || undefined,
+        }]);
+        // 드래프트에 있던 원정대가 첫 캐릭 받음 → 드래프트에서 제거
+        setRosterDrafts(prev => prev.filter(d => d.id !== lastUsedRosterId));
     };
 
     const handleRemoveRow = async (index: number) => {
@@ -379,21 +544,25 @@ export const CharacterFormList: React.FC<Props> = ({
         const cleaned: Character[] = rows
             .filter(r => r.jobCode && r.itemLevel && r.combatPower !== '')
             .map((r, idx) => {
+                const rosterInfo = availableRosters.find(rr => rr.id === r.rosterId);
+                const rosterLabelResolved = rosterInfo?.label || r.rosterLabel;
                 const charData: Character = {
                     id: r.id ?? `${trimmedName}-${idx}-${Date.now()}`,
-                    discordName: trimmedName, 
-                    discordId: trimmedId, 
-                    jobCode: r.jobCode, 
+                    discordName: trimmedName,
+                    discordId: trimmedId,
+                    jobCode: r.jobCode,
                     role: r.role,
-                    itemLevel: Number(r.itemLevel), 
+                    itemLevel: Number(r.itemLevel),
                     combatPower: Number(r.combatPower),
                     serkaNightmare: Boolean(r.serkaNightmare),
                     valkyCanSupport: r.jobCode === '발키리' ? Boolean(r.valkyCanSupport) : false,
                     receiveBoundGold: Boolean(r.receiveBoundGold),
                     goldOption,
                     singleRaids: r.singleRaids || [],
+                    rosterId: r.rosterId || trimmedName,
                 };
                 if (r.lostArkName) charData.lostArkName = r.lostArkName;
+                if (rosterLabelResolved) charData.rosterLabel = rosterLabelResolved;
                 return charData;
             });
 
@@ -519,12 +688,54 @@ export const CharacterFormList: React.FC<Props> = ({
                 </div>
             </div>
 
+            <RosterRaidsSection
+                rosterGroups={rosterGroupsForRaids}
+                clears={clears || {}}
+                rosterRaidState={rosterRaidState || {}}
+                onSetRosterRep={onSetRosterRep}
+                onClearRosterRep={onClearRosterRep}
+            />
+
             <div>
                 <div className="mb-3 flex items-center justify-between px-1">
                     <h3 className="flex items-center gap-2 text-sm font-bold text-zinc-900 dark:text-zinc-100">
                         내 캐릭터 목록 <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-extrabold text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">{characterCount}</span>
                     </h3>
                     <span className="text-[10px] text-zinc-400 font-medium flex items-center gap-1"><GripVertical size={12}/> 드래그하여 순서 변경</span>
+                </div>
+
+                {/* 원정대 관리 섹션 — 2+ 원정대 때는 칩 목록, 1 원정대 때는 + 추가 버튼만 */}
+                <div className="mb-3 flex flex-wrap items-center gap-2 px-1">
+                    {availableRosters.length > 1 ? (
+                        <>
+                            <span className="text-[11px] font-bold text-zinc-500 dark:text-zinc-400">원정대</span>
+                            {availableRosters.map(r => {
+                                const count = charCountByRoster.get(r.id) || 0;
+                                const isDefault = r.id === localDiscord;
+                                const displayLabel = r.label || (isDefault ? '기본 원정대' : '(이름 없음)');
+                                return (
+                                    <div key={r.id} className="flex items-center gap-1 rounded-lg border border-zinc-200 bg-white px-2 py-1 text-[11px] dark:border-zinc-700 dark:bg-zinc-900">
+                                        <span className="font-bold text-zinc-700 dark:text-zinc-200">{displayLabel}</span>
+                                        <span className="text-zinc-400">({count})</span>
+                                        {!isDefault && (
+                                            <>
+                                                <button type="button" onClick={() => handleRenameRoster(r.id)} className="ml-0.5 text-zinc-400 hover:text-indigo-600" title="이름 변경">✎</button>
+                                                <button type="button" onClick={() => handleDeleteRoster(r.id)} disabled={count > 0} className="text-zinc-400 hover:text-rose-500 disabled:opacity-30" title={count > 0 ? '소속 캐릭이 있어 삭제 불가' : '삭제'}>🗑</button>
+                                            </>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                            <button type="button" onClick={handleAddRoster} disabled={isSaving} className="rounded-lg border border-dashed border-indigo-300 bg-indigo-50 px-2 py-1 text-[11px] font-bold text-indigo-700 hover:bg-indigo-100 dark:border-indigo-900/50 dark:bg-indigo-900/20 dark:text-indigo-300">
+                                + 원정대 추가
+                            </button>
+                        </>
+                    ) : (
+                        <button type="button" onClick={handleAddRoster} disabled={isSaving} className="inline-flex items-center gap-1 rounded-lg border border-dashed border-indigo-300 bg-indigo-50 px-3 py-1.5 text-xs font-bold text-indigo-700 hover:bg-indigo-100 dark:border-indigo-900/50 dark:bg-indigo-900/20 dark:text-indigo-300 dark:hover:bg-indigo-900/40 transition-colors disabled:opacity-50">
+                            + 원정대 추가
+                            <span className="text-[10px] font-medium text-indigo-500 dark:text-indigo-400">(복수 원정대 관리 시)</span>
+                        </button>
+                    )}
                 </div>
 
                 <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900/50">
@@ -541,7 +752,7 @@ export const CharacterFormList: React.FC<Props> = ({
                         <SortableContext items={rows.map(r => r.uid)} strategy={verticalListSortingStrategy}>
                             <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
                                 {rows.map((row, index) => (
-                                    <SortableCharacterRow key={row.uid} row={row} index={index} handleChangeRow={handleChangeRow} handleRemoveRow={handleRemoveRow} isSaving={isSaving} />
+                                    <SortableCharacterRow key={row.uid} row={row} index={index} handleChangeRow={handleChangeRow} handleRemoveRow={handleRemoveRow} isSaving={isSaving} availableRosters={availableRosters} />
                                 ))}
                             </div>
                         </SortableContext>
@@ -561,6 +772,7 @@ export const CharacterFormList: React.FC<Props> = ({
                     {isLoading ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />} {isLoading ? '저장하고 있습니다.' : '설정 저장하기'}
                 </button>
             </div>
+
         </div>
     );
 };

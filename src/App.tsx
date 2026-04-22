@@ -1,15 +1,22 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import type { Character, RaidId, RaidExclusionMap, RaidSettingsMap, RaidSwap } from './types';
+import type { Character, RaidId, RaidExclusionMap, RaidSettingsMap, RaidSwap, WeeklyClears, ClearEntry, RosterRaidState } from './types';
+import type { RaidFamily, DifficultyTier } from './data/raids';
 import { GuestAddModal } from './components/GuestAddModal';
 import { RAID_META } from './constants';
-import { buildRaidCandidatesMap, buildRaidSchedule, calculateHoldbacksSpecific } from './raidLogic';
+import { buildRaidCandidatesMap, buildRaidSchedule, calculateHoldbacksSpecific, type BalanceMode } from './raidLogic';
 import { CharacterFormList } from './components/CharacterFormList';
 import { RaidScheduleView } from './components/RaidScheduleView';
 import { RaidSequenceView } from './components/RaidSequenceView';
-import { UserRaidProgressPanel, RAID_ORDER_FOR_PROGRESS, getExpectedRaids } from './components/UserRaidProgressPanel';
+import { UserRaidProgressPanel } from './components/UserRaidProgressPanel';
 import { AbsenteeDashboard } from './components/AbsenteeDashboard';
 import { ScheduleCalendar } from './components/ScheduleCalendar';
-import { fetchCharacters, saveCharacters, fetchRaidSettings, setRaidSetting, fetchSwaps, addSwap, resetSwaps, fetchRaidExclusions, toggleCharacterOnRaid, excludeCharactersOnRaid, resetRaidExclusions, fetchAccumulatedGold, updateAccumulatedGoldMulti, resetAccumulatedGold, type AccumulatedGoldMap } from './api/firebaseApi';
+import {
+    fetchCharacters, saveCharacters, fetchRaidSettings, setRaidSetting,
+    fetchSwaps, addSwap, resetSwaps,
+    fetchClears, writeClearEntry, writeClearEntriesBulk, deleteClearEntry, resetClears, deriveExclusionsFromClears,
+    fetchRosterRaidState, writeRosterRaidSelection, deleteRosterRaidSelection,
+    fetchAccumulatedGold, updateAccumulatedGoldMulti, resetAccumulatedGold, type AccumulatedGoldMap,
+} from './api/firebaseApi';
 import { syncCharactersWithLostArkAPI, fetchProfile } from './api/lostArkApi';
 import { Modal } from './components/Modal';
 import { LadderGame } from './components/LadderGame';
@@ -25,65 +32,58 @@ import { useConfirm } from './hooks/useConfirm';
 import { toast } from 'sonner';
 
 type Theme = 'light' | 'dark';
-type BalanceMode = 'overall' | 'role' | 'speed';
 
 interface Squad { discordName: string; characters: Character[]; }
 
 const THEME_KEY = 'raidTheme_v1';
 const USER_FILTER_KEY = 'raid_user_filter_v1';
 
-// --- 주간 정산 시 사용될 골드 계산 헬퍼 함수 ---
-function calculateGoldDelta(raidId: RaidId, charId: string, allChars: Character[]): { g: number, b: number } {
-    const c = allChars.find(x => x.id === charId);
-    if (!c) return { g: 0, b: 0 };
+// 캐릭의 ignoreBound 판정 (receiveBoundGold + 레거시 goldOption).
+function computeIgnoreBoundGold(char: Character, userChars: Character[]): boolean {
+    if (char.receiveBoundGold !== undefined) return !char.receiveBoundGold;
+    const option = char.goldOption || 'ALL_MAX';
+    if (option === 'GENERAL_MAX') return true;
+    if (option === 'MAIN_ALL_ALT_GENERAL') {
+        const mainChar = userChars.reduce((max, curr) => curr.itemLevel > max.itemLevel ? curr : max, userChars[0]);
+        return char.id !== mainChar.id;
+    }
+    return false;
+}
 
-    const userChars = allChars.filter(x => x.discordName === c.discordName);
-    const mainChar = userChars.reduce((max, curr) => curr.itemLevel > max.itemLevel ? curr : max, userChars[0]);
-    const isMain = c.id === mainChar.id;
-
-    const expectedIds = getExpectedRaids(c);
-    const raidsForChar = RAID_ORDER_FOR_PROGRESS.filter(id => expectedIds.includes(id));
-
-    let ignoreBoundGold = false;
-    if (c.receiveBoundGold !== undefined) {
-        ignoreBoundGold = !c.receiveBoundGold;
-    } else {
-        const option = c.goldOption || 'ALL_MAX';
-        if (option === 'GENERAL_MAX') ignoreBoundGold = true;
-        else if (option === 'MAIN_ALL_ALT_GENERAL' && !isMain) ignoreBoundGold = true;
+// 원장 기반 유저별 주간 획득 골드 집계 — /초기화 전체에서 사용.
+// 각 캐릭의 ledger 엔트리 중 top3(effectiveGold 기준) 합산, 유저 단위로 합계.
+// 원정대 스코프 레이드는 대표 캐릭의 ledger 에 이미 포함되므로 별도 처리 불필요.
+function aggregateLedgerByUser(clears: WeeklyClears, allChars: Character[]): Record<string, { general: number; bound: number }> {
+    const byUser: Record<string, { general: number; bound: number }> = {};
+    const charsByUser: Record<string, Character[]> = {};
+    for (const c of allChars) {
+        if (!charsByUser[c.discordName]) charsByUser[c.discordName] = [];
+        charsByUser[c.discordName].push(c);
     }
 
-    const raidYields = raidsForChar.map(id => {
-        const meta = RAID_META[id];
-        const isAct2Single = id.startsWith('ACT2_') && c.singleRaids?.includes('ACT2_NORMAL');
-        const isAct3Single = id.startsWith('ACT3_') && c.singleRaids?.includes('ACT3_NORMAL');
-        const isSingle = isAct2Single || isAct3Single;
+    for (const char of allChars) {
+        const charClears = clears[char.id];
+        if (!charClears) continue;
+        const entries = Object.values(charClears).filter(Boolean) as ClearEntry[];
+        if (entries.length === 0) continue;
 
-        let effectiveGold = meta.gold;
-        if (isSingle) {
-            const normalMeta = id.startsWith('ACT2_') ? RAID_META['ACT2_NORMAL'] : RAID_META['ACT3_NORMAL'];
-            effectiveGold = (normalMeta.gold / 2) + (ignoreBoundGold ? 0 : normalMeta.gold / 2);
-        } else if (ignoreBoundGold && meta.goldType === 'BOUND') {
-            effectiveGold = -1;
+        const ignoreBound = computeIgnoreBoundGold(char, charsByUser[char.discordName] || []);
+        const withEffective = entries
+            .map(e => ({ entry: e, effective: e.generalGold + (ignoreBound ? 0 : e.boundGold) }))
+            .sort((a, b) => b.effective - a.effective);
+        const top3 = withEffective.slice(0, 3);
+
+        let g = 0, b = 0;
+        for (const { entry } of top3) {
+            g += entry.generalGold;
+            if (!ignoreBound) b += entry.boundGold;
         }
-        return { id, ...meta, effectiveGold, isSingle };
-    }).sort((a, b) => b.effectiveGold - a.effectiveGold);
 
-    const top3Yields = raidYields.filter(y => y.effectiveGold > 0).slice(0, 3);
-    const targetYield = top3Yields.find(y => y.id === raidId);
-
-    if (!targetYield) return { g: 0, b: 0 };
-
-    let g = 0; let b = 0;
-    if (targetYield.isSingle) {
-        const normalMeta = targetYield.id.startsWith('ACT2_') ? RAID_META['ACT2_NORMAL'] : RAID_META['ACT3_NORMAL'];
-        g = normalMeta.gold / 2;
-        b = normalMeta.gold / 2;
-    } else {
-        if (targetYield.goldType === 'GENERAL') g = targetYield.gold;
-        else b = targetYield.gold;
+        if (!byUser[char.discordName]) byUser[char.discordName] = { general: 0, bound: 0 };
+        byUser[char.discordName].general += g;
+        byUser[char.discordName].bound += b;
     }
-    return { g, b };
+    return byUser;
 }
 
 const App: React.FC = () => {
@@ -109,15 +109,21 @@ const App: React.FC = () => {
     const [isCalcOpen, setIsCalcOpen] = useState(false);
     const [isGatheringModalOpen, setIsGatheringModalOpen] = useState(false);
 
-    const [raidExclusions, setRaidExclusions] = useState<RaidExclusionMap>({});
-    const [loadingExclusions, setLoadingExclusions] = useState(false);
+    // 주간 클리어 원장 (Ledger) — 클리어 시점 골드 스냅샷.
+    const [clears, setClears] = useState<WeeklyClears>({});
+    const [loadingClears, setLoadingClears] = useState(false);
+    // 스케줄 로직 호환을 위해 ledger 에서 exclusion map 을 파생.
+    const raidExclusions: RaidExclusionMap = useMemo(() => deriveExclusionsFromClears(clears), [clears]);
+
+    // 원정대 스코프 레이드 (카제로스 등) — 각 원정대의 대표 캐릭/난이도 선택.
+    const [rosterRaidState, setRosterRaidState] = useState<RosterRaidState>({});
 
     const [raidSettings, setRaidSettings] = useState<RaidSettingsMap>({});
     const [loadingRaidSettings, setLoadingRaidSettings] = useState(false);
 
     const [raidSwaps, setRaidSwaps] = useState<RaidSwap[]>([]);
     const [isSwapping, setIsSwapping] = useState(false);
-    const [balanceMode, _setBalanceMode] = useState<BalanceMode>('speed');
+    const balanceMode = 'speed' as BalanceMode;
 
     const [raidGuests, setRaidGuests] = useState<Partial<Record<RaidId, Character[]>>>({});
     const [guestModalData, setGuestModalData] = useState<{ isOpen: boolean; raidId: RaidId | null }>({
@@ -155,9 +161,13 @@ const App: React.FC = () => {
         }
     };
 
-    const refreshExclusions = async () => {
-        try { setLoadingExclusions(true); const ex = await fetchRaidExclusions(); setRaidExclusions(ex); }
-        finally { setLoadingExclusions(false); }
+    const refreshClears = async () => {
+        try { setLoadingClears(true); const c = await fetchClears(); setClears(c); }
+        finally { setLoadingClears(false); }
+    };
+
+    const refreshRosterRaidState = async () => {
+        try { const s = await fetchRosterRaidState(); setRosterRaidState(s); } catch (e) { }
     };
 
     const refreshRaidSettings = async () => {
@@ -175,7 +185,8 @@ const App: React.FC = () => {
 
     useEffect(() => {
         refreshAllCharacters().catch(console.error);
-        refreshExclusions().catch(console.error);
+        refreshClears().catch(console.error);
+        refreshRosterRaidState().catch(console.error);
         refreshRaidSettings().catch(console.error);
         refreshSwaps().catch(console.error);
         refreshAccumulatedGold().catch(console.error);
@@ -207,13 +218,13 @@ const App: React.FC = () => {
     }, [effectiveCharacters, inactiveUsers]);
 
     const schedule = useMemo(
-        () => buildRaidSchedule(schedulingCharacters, raidExclusions, balanceMode, raidSettings, raidSwaps, raidGuests),
-        [schedulingCharacters, raidExclusions, balanceMode, raidSettings, raidSwaps, raidGuests],
+        () => buildRaidSchedule(schedulingCharacters, raidExclusions, balanceMode, raidSettings, raidSwaps, raidGuests, clears, rosterRaidState),
+        [schedulingCharacters, raidExclusions, balanceMode, raidSettings, raidSwaps, raidGuests, clears, rosterRaidState],
     );
 
     const raidCandidates = useMemo(
-        () => buildRaidCandidatesMap(schedulingCharacters, raidExclusions, raidSettings),
-        [schedulingCharacters, raidExclusions, raidSettings],
+        () => buildRaidCandidatesMap(schedulingCharacters, raidExclusions, raidSettings, clears, rosterRaidState),
+        [schedulingCharacters, raidExclusions, raidSettings, clears, rosterRaidState],
     );
 
     const [selectedUserFilter, setSelectedUserFilter] = useState<string>(() => {
@@ -242,8 +253,8 @@ const App: React.FC = () => {
     const absenteeReports = useMemo(() => {
         if (selectedAbsentees.length === 0) return [];
         // ✨ 수정됨: effectiveCharacters 대신 완성된 schedule을 인자로 전달
-        return calculateHoldbacksSpecific(selectedAbsentees, schedule, effectiveCharacters);
-    }, [selectedAbsentees, schedule, effectiveCharacters]); // 의존성 배열도 맞게 수정
+        return calculateHoldbacksSpecific(selectedAbsentees, schedule, effectiveCharacters, clears, rosterRaidState);
+    }, [selectedAbsentees, schedule, effectiveCharacters, clears, rosterRaidState]);
 
     const handleToggleAbsentee = (name: string) => {
         setSelectedAbsentees(prev => {
@@ -322,63 +333,79 @@ const App: React.FC = () => {
         }
     };
 
+    // 클리어 토글 — 체크 시 ledger 엔트리 생성(골드 스냅샷), 해제 시 삭제.
     const handleExcludeCharacterFromRaid = async (raidId: RaidId, charId: string, isCurrentlyExcluded: boolean = false) => {
         try {
             if (isSwapping) return;
-            const next = await toggleCharacterOnRaid(raidId, charId, isCurrentlyExcluded);
-            setRaidExclusions(next);
-            // 단일 체크박스 클릭이므로 토스트 생략
+            if (isCurrentlyExcluded) {
+                await deleteClearEntry(charId, raidId);
+            } else {
+                const char = effectiveCharacters.find(c => c.id === charId);
+                if (!char) throw new Error('캐릭터를 찾을 수 없습니다.');
+                const meta = RAID_META[raidId];
+                const entry: ClearEntry = {
+                    raidId,
+                    clearedAt: new Date().toISOString(),
+                    clearedItemLevel: char.itemLevel,
+                    generalGold: meta.generalGold,
+                    boundGold: meta.boundGold,
+                };
+                await writeClearEntry(charId, entry);
+            }
+            await refreshClears();
         } catch (e) {
             toast.error('상태 변경에 실패했습니다.');
         }
     };
 
+    // 공격대 일괄 완료 — 여러 캐릭을 동시에 ledger 에 추가.
     const handleExcludeRun = async (raidId: RaidId, charIds: string[]) => {
         try {
             if (isSwapping) return;
             const uniqIds = Array.from(new Set((charIds ?? []).map((id) => String(id ?? '').trim()).filter(Boolean)));
             if (uniqIds.length === 0) return;
 
-            const next = await excludeCharactersOnRaid(raidId, uniqIds);
-            setRaidExclusions(next);
+            const meta = RAID_META[raidId];
+            const now = new Date().toISOString();
+            const entries = uniqIds
+                .map(id => effectiveCharacters.find(c => c.id === id))
+                .filter((c): c is Character => !!c)
+                .map(char => ({
+                    charId: char.id,
+                    entry: {
+                        raidId,
+                        clearedAt: now,
+                        clearedItemLevel: char.itemLevel,
+                        generalGold: meta.generalGold,
+                        boundGold: meta.boundGold,
+                    } as ClearEntry,
+                }));
+
+            if (entries.length > 0) await writeClearEntriesBulk(entries);
+            await refreshClears();
             toast.success('공격대가 완료 처리되었습니다.');
         } catch (e) {
             toast.error('공격대 완료 처리에 실패했습니다.');
         }
     };
 
+    // 주간 초기화 — ledger 의 top3 합산 → accumulatedGold 에 가산, ledger/swap 비움.
     const handleResetExclusions = async () => {
         const ok = await confirm('모든 레이드 완료 내역을 초기화하시겠습니까?\n\n(이번 주 획득한 골드는 이전 누적 골드에 안전하게 합산되어 이관됩니다.)', '주간 내역 초기화');
         if (!ok) return;
 
         setIsUpdating(true);
         try {
-            const updatesMap: Record<string, { g: number, b: number }> = {};
+            const byUser = aggregateLedgerByUser(clears, effectiveCharacters);
+            const updates = Object.entries(byUser)
+                .filter(([, v]) => v.general > 0 || v.bound > 0)
+                .map(([discordName, v]) => ({ discordName, deltaGeneral: v.general, deltaBound: v.bound }));
 
-            for (const [raidId, charIds] of Object.entries(raidExclusions)) {
-                for (const charId of charIds) {
-                    const { g, b } = calculateGoldDelta(raidId as RaidId, charId, effectiveCharacters);
-                    const char = effectiveCharacters.find(c => c.id === charId);
-                    if (char && (g > 0 || b > 0)) {
-                        if (!updatesMap[char.discordName]) updatesMap[char.discordName] = { g: 0, b: 0 };
-                        updatesMap[char.discordName].g += g;
-                        updatesMap[char.discordName].b += b;
-                    }
-                }
-            }
+            if (updates.length > 0) await updateAccumulatedGoldMulti(updates);
 
-            const updates = Object.entries(updatesMap).map(([discordName, val]) => ({
-                discordName, deltaGeneral: val.g, deltaBound: val.b
-            }));
-
-            if (updates.length > 0) {
-                await updateAccumulatedGoldMulti(updates);
-            }
-
-            await resetRaidExclusions();
+            await resetClears();
             await resetSwaps();
-
-            await Promise.all([refreshExclusions(), refreshSwaps(), refreshAccumulatedGold()]);
+            await Promise.all([refreshClears(), refreshSwaps(), refreshAccumulatedGold()]);
 
             toast.success('모든 내역이 초기화되었습니다.');
         } catch (e) {
@@ -386,6 +413,25 @@ const App: React.FC = () => {
             toast.error('초기화에 실패했습니다.');
         } finally {
             setIsUpdating(false);
+        }
+    };
+
+    // 원정대 레이드 대표/난이도 지정 + 해제.
+    const handleSetRosterRep = async (rosterId: string, family: string, selection: { selectedCharId: string; difficulty: string }) => {
+        try {
+            await writeRosterRaidSelection(rosterId, family as RaidFamily, { selectedCharId: selection.selectedCharId, difficulty: selection.difficulty as DifficultyTier });
+            await refreshRosterRaidState();
+        } catch (e) {
+            toast.error('원정대 대표 저장에 실패했습니다.');
+        }
+    };
+
+    const handleClearRosterRep = async (rosterId: string, family: string) => {
+        try {
+            await deleteRosterRaidSelection(rosterId, family as RaidFamily);
+            await refreshRosterRaidState();
+        } catch (e) {
+            toast.error('원정대 대표 해제에 실패했습니다.');
         }
     };
 
@@ -491,7 +537,7 @@ const App: React.FC = () => {
             });
 
             setAllCharacters(list);
-            await Promise.all([refreshExclusions(), refreshRaidSettings(), refreshSwaps()]);
+            await Promise.all([refreshClears(), refreshRaidSettings(), refreshSwaps()]);
             toast.success('모든 캐릭터의 정보가 업데이트되었습니다.');
         } catch (e) {
             toast.error('전체 업데이트 중 오류가 발생했습니다.');
@@ -534,7 +580,7 @@ const App: React.FC = () => {
             return { title: '결석 대응 현황', Icon: UserRoundMinus };
         }
         if (location.pathname === '/calendar') {
-            return { title: '참여 불가 캘린더', Icon: CalendarDays };
+            return { title: '일정 공유 캘린더', Icon: CalendarDays };
         }
         return { title: '개인별 진행 현황', Icon: LayoutDashboard };
     }, [location.pathname]);
@@ -618,7 +664,7 @@ const App: React.FC = () => {
                         </button>
 
                         <button onClick={() => handleNavClick('/calendar')} className={navButtonClass(isActive('/calendar'))}>
-                            <CalendarDays size={18} /> 참여 불가 캘린더
+                            <CalendarDays size={18} /> 일정 공유 캘린더
                         </button>
 
                         <div className="my-3 h-px bg-zinc-100 dark:bg-zinc-800" />
@@ -659,7 +705,7 @@ const App: React.FC = () => {
                                 <button onClick={handleRefresh} disabled={loading || saving || isSwapping} className={subMenuButtonClass}>
                                     전체 전투력 업데이트
                                 </button>
-                                <button onClick={handleResetExclusions} disabled={loadingExclusions || isSwapping} className={`${subMenuButtonClass} text-rose-600 dark:text-rose-400`}>
+                                <button onClick={handleResetExclusions} disabled={loadingClears || isSwapping} className={`${subMenuButtonClass} text-rose-600 dark:text-rose-400`}>
                                     레이드 완료 내역 초기화
                                 </button>
                             </div>
@@ -700,7 +746,7 @@ const App: React.FC = () => {
             </aside>
 
             <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
-                <header className="mobile-app-header sticky top-0 z-30 border-b border-zinc-200/80 bg-white/78 px-3 pb-3 pt-[calc(env(safe-area-inset-top)+0.7rem)] shadow-[0_12px_30px_rgba(15,23,42,0.06)] backdrop-blur-xl dark:border-zinc-800/80 dark:bg-zinc-950/82 md:hidden">
+                <header className="mobile-app-header sticky top-0 z-30 border-b border-zinc-200/80 bg-white/80 px-3 pb-3 pt-[calc(env(safe-area-inset-top)+0.7rem)] shadow-[0_12px_30px_rgba(15,23,42,0.06)] backdrop-blur-xl dark:border-zinc-800/80 dark:bg-zinc-950/80 md:hidden">
                     <div className="relative flex items-center justify-between gap-2">
                         <button
                             onClick={toggleSidebar}
@@ -830,17 +876,44 @@ const App: React.FC = () => {
                                         </div>
                                     </div>
 
-                                    <UserRaidProgressPanel
-                                        characters={filteredCharactersForProgress}
-                                        raidCandidates={raidCandidates}
-                                        exclusions={raidExclusions}
-                                        schedule={schedule}
-                                        accumulatedGold={accumulatedGold}
-                                        onMarkRaidComplete={handleExcludeCharacterFromRaid}
-                                        onRefreshCharacter={handleRefreshSingleCharacter}
-                                        onRefreshUser={handleRefreshUserCharacters}
-                                        onResetAccumulatedGold={handleResetAccumulatedGold}
-                                    />
+                                    {allCharacters.length === 0 && !loading ? (
+                                        <div className="flex min-h-[400px] flex-col items-center justify-center rounded-3xl border-2 border-dashed border-zinc-200 bg-white/50 p-8 text-center dark:border-zinc-800 dark:bg-zinc-900/50">
+                                            <div className="mb-5 rounded-full bg-indigo-50 p-5 dark:bg-indigo-950/30">
+                                                <Swords size={36} className="text-indigo-500" strokeWidth={2} />
+                                            </div>
+                                            <h3 className="text-xl font-bold text-zinc-900 dark:text-zinc-100">
+                                                처음 오셨나요?
+                                            </h3>
+                                            <p className="mt-2 max-w-xs text-sm text-zinc-500 dark:text-zinc-400">
+                                                원정대를 등록하면 레이드 배정 · 진행 현황 · 골드 집계를<br className="hidden sm:inline" /> 한눈에 확인할 수 있습니다.
+                                            </p>
+                                            <button
+                                                onClick={() => setIsModalOpen(true)}
+                                                className="mt-6 inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-bold text-white shadow-md shadow-indigo-500/25 transition-colors hover:bg-indigo-700 active:bg-indigo-800"
+                                            >
+                                                <UserCog size={16} />
+                                                내 원정대 등록하기
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <UserRaidProgressPanel
+                                            characters={filteredCharactersForProgress}
+                                            raidCandidates={raidCandidates}
+                                            clears={clears}
+                                            rosterRaidState={rosterRaidState}
+                                            schedule={schedule}
+                                            accumulatedGold={accumulatedGold}
+                                            onEditRoster={(name: string) => {
+                                                const userChars = effectiveCharacters.filter((c) => c.discordName === name);
+                                                setLocalSquad({ discordName: name, characters: userChars });
+                                                setIsModalOpen(true);
+                                            }}
+                                            onMarkRaidComplete={handleExcludeCharacterFromRaid}
+                                            onRefreshCharacter={handleRefreshSingleCharacter}
+                                            onRefreshUser={handleRefreshUserCharacters}
+                                            onResetAccumulatedGold={handleResetAccumulatedGold}
+                                        />
+                                    )}
                                 </section>
                             } />
 
@@ -898,7 +971,7 @@ const App: React.FC = () => {
                                         balanceMode={balanceMode}
                                         onSwapCharacter={handleSwapCharacter}
                                         allCharacters={effectiveCharacters}
-                                        onExclusionsUpdated={(next) => setRaidExclusions(next)}
+                                        onExcludeRun={handleExcludeRun}
                                         isSwapping={isSwapping}
                                         updatedBy={localSquad.discordName || 'User'}
                                         allUserNames={allUserNames}
@@ -929,7 +1002,7 @@ const App: React.FC = () => {
                                 <section className="flex flex-col gap-6">
                                     <div className="hidden flex-col gap-3 sm:flex-row sm:items-center sm:justify-between md:flex md:h-[38px]">
                                         <h2 className="flex items-center gap-2 text-xl font-bold text-zinc-900 dark:text-zinc-100">
-                                            <CalendarDays className="text-indigo-500" /> 참여 불가 캘린더
+                                            <CalendarDays className="text-indigo-500" /> 일정 공유 캘린더
                                         </h2>
                                     </div>
 
@@ -951,6 +1024,10 @@ const App: React.FC = () => {
                         onSubmit={handleSaveAndSync}
                         onCancel={() => setIsModalOpen(false)}
                         onLoadByDiscordName={(targetName: string) => { return allCharacters.filter((c) => c.discordName === targetName); }}
+                        clears={clears}
+                        rosterRaidState={rosterRaidState}
+                        onSetRosterRep={handleSetRosterRep}
+                        onClearRosterRep={handleClearRosterRep}
                     />
                 </Modal>
 

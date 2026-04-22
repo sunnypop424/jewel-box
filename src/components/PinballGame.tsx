@@ -33,6 +33,7 @@ export const PinballGame: React.FC<Props> = ({ allUserNames = [] }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
+  const discordSentRef = useRef(false);
   const engineRef = useRef<Matter.Engine | null>(null);
   const renderRef = useRef<Matter.Render | null>(null);
   const runnerRef = useRef<Matter.Runner | null>(null);
@@ -47,18 +48,19 @@ export const PinballGame: React.FC<Props> = ({ allUserNames = [] }) => {
   );
 
   useEffect(() => {
-    if (winner) {
+    if (winner && !discordSentRef.current) {
+      discordSentRef.current = true;
       const participants = setupNames.join(', ');
-      const conditionText = 
-        winningRank === 0 ? '가장 먼저' : 
-        winningRank === playerCount - 1 ? '가장 늦게' : 
+      const conditionText =
+        winningRank === 0 ? '가장 먼저' :
+        winningRank === playerCount - 1 ? '가장 늦게' :
         `${winningRank + 1}번째로`;
 
       sendDiscordNotification(
         `**마블 레이스 결과**\n참여자: ${participants}\n🎉 **${winner}** 님이 ${conditionText} 도착하여 당첨되셨습니다! 축하드립니다!`
       );
     }
-  }, [winner, setupNames, winningRank, playerCount]);
+  }, [winner]);
 
   useEffect(() => {
     setWinningRank((prev) => Math.min(prev, playerCount - 1));

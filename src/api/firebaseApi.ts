@@ -1,11 +1,14 @@
-import { collection, doc, getDocs, getDoc, setDoc, updateDoc, addDoc, deleteDoc, query, where, orderBy, arrayUnion, arrayRemove } from 'firebase/firestore';
+import { collection, doc, getDocs, getDoc, setDoc, updateDoc, addDoc, deleteDoc, query, where, orderBy, arrayUnion, deleteField } from 'firebase/firestore';
 import { db } from '../firebase';
-import type { Character, RaidSettingsMap, RaidSwap, RaidId, RaidExclusionMap } from '../types';
+import type { Character, RaidSettingsMap, RaidSwap, RaidId, RaidExclusionMap, ClearEntry, WeeklyClears, RosterRaidState, RosterRaidSelection } from '../types';
+import type { RaidFamily } from '../data/raids';
+import { getRaidFamily, ALL_RAID_IDS } from '../data/raids';
 
 const USERS_COLLECTION = collection(db, 'users');
 const SETTINGS_DOC_REF = doc(db, 'raidData', 'settings');
 const SWAPS_DOC_REF = doc(db, 'raidData', 'swaps');
-const EXCLUSION_DOC_REF = doc(db, 'raidData', 'exclusions');
+const CLEARS_DOC_REF = doc(db, 'raidData', 'clears');
+const ROSTER_RAID_STATE_DOC_REF = doc(db, 'raidData', 'rosterRaidState');
 const GOLD_DOC_REF = doc(db, 'raidData', 'accumulatedGold');
 // 공대원 개인 일정 컬렉션 (참여 불가일)
 // 각 문서 = 하나의 일정. 구조: { discordName, discordId?, date(YYYY-MM-DD), reason, createdAt, updatedAt, source }
@@ -13,10 +16,16 @@ const SCHEDULES_COLLECTION = collection(db, 'personalSchedules');
 
 export type AccumulatedGoldMap = Record<string, { general: number; bound: number }>;
 
+// 읽어올 때 rosterId 기본값(= discordName) 주입. 기존 데이터 호환 + 다중 원정대 전환 준비.
+function normalizeCharacter(c: Character): Character {
+  return { ...c, rosterId: c.rosterId || c.discordName };
+}
+
 export async function fetchCharacters(discordName?: string): Promise<Character[]> {
   if (discordName) {
     const snap = await getDoc(doc(USERS_COLLECTION, discordName));
-    return snap.exists() ? (snap.data().characters || []) : [];
+    const chars: Character[] = snap.exists() ? (snap.data().characters || []) : [];
+    return chars.map(normalizeCharacter);
   } else {
     const snap = await getDocs(USERS_COLLECTION);
     const allChars: Character[] = [];
@@ -24,7 +33,7 @@ export async function fetchCharacters(discordName?: string): Promise<Character[]
       const data = doc.data();
       if (data.characters) allChars.push(...data.characters);
     });
-    return allChars;
+    return allChars.map(normalizeCharacter);
   }
 }
 
@@ -66,36 +75,116 @@ export async function resetSwaps(): Promise<RaidSwap[]> {
   return [];
 }
 
-export async function fetchRaidExclusions(): Promise<RaidExclusionMap> {
-  const snap = await getDoc(EXCLUSION_DOC_REF);
-  return snap.exists() ? snap.data() as RaidExclusionMap : {};
+// =============================================================================
+// 주간 클리어 원장 (Ledger) API — raidData/clears
+// -----------------------------------------------------------------------------
+// 구조: { [charId]: { [raidId]: ClearEntry } }
+// 클리어 시점의 골드 스냅샷을 보관해 아이템 레벨 상승 등으로 top3 가 변해도
+// 기록이 왜곡되지 않음. 주간 리셋(/초기화 전체) 시 유저별 합산 후 accumulatedGold
+// 에 가산하고 원장 전체 삭제.
+// =============================================================================
+
+export async function fetchClears(): Promise<WeeklyClears> {
+  const snap = await getDoc(CLEARS_DOC_REF);
+  return snap.exists() ? (snap.data() as WeeklyClears) : {};
 }
 
-export async function toggleCharacterOnRaid(raidId: RaidId, characterId: string, isCurrentlyExcluded: boolean): Promise<RaidExclusionMap> {
-  const snap = await getDoc(EXCLUSION_DOC_REF);
-  if (!snap.exists()) await setDoc(EXCLUSION_DOC_REF, {});
-
-  await updateDoc(EXCLUSION_DOC_REF, {
-    [raidId]: isCurrentlyExcluded ? arrayRemove(characterId) : arrayUnion(characterId)
-  });
-  return await fetchRaidExclusions();
+// 특정 캐릭의 한 레이드에 엔트리를 write. 덮어쓰기 (cleared 시점 기록).
+export async function writeClearEntry(charId: string, entry: ClearEntry): Promise<void> {
+  const snap = await getDoc(CLEARS_DOC_REF);
+  if (!snap.exists()) await setDoc(CLEARS_DOC_REF, {});
+  await updateDoc(CLEARS_DOC_REF, { [`${charId}.${entry.raidId}`]: entry });
 }
 
-export async function excludeCharactersOnRaid(raidId: RaidId, characterIds: string[]): Promise<RaidExclusionMap> {
-  const snap = await getDoc(EXCLUSION_DOC_REF);
-  if (!snap.exists()) await setDoc(EXCLUSION_DOC_REF, {});
-
-  if (characterIds.length > 0) {
-    await updateDoc(EXCLUSION_DOC_REF, {
-      [raidId]: arrayUnion(...characterIds)
-    });
+// 여러 캐릭을 한 번에 write (일괄 완료 처리용).
+export async function writeClearEntriesBulk(entries: Array<{ charId: string; entry: ClearEntry }>): Promise<void> {
+  if (entries.length === 0) return;
+  const snap = await getDoc(CLEARS_DOC_REF);
+  if (!snap.exists()) await setDoc(CLEARS_DOC_REF, {});
+  const updates: Record<string, unknown> = {};
+  for (const { charId, entry } of entries) {
+    updates[`${charId}.${entry.raidId}`] = entry;
   }
-  return await fetchRaidExclusions();
+  await updateDoc(CLEARS_DOC_REF, updates);
 }
 
-export async function resetRaidExclusions(): Promise<RaidExclusionMap> {
-  await setDoc(EXCLUSION_DOC_REF, {});
+// 엔트리 삭제 (완료 취소).
+export async function deleteClearEntry(charId: string, raidId: RaidId): Promise<void> {
+  const snap = await getDoc(CLEARS_DOC_REF);
+  if (!snap.exists()) return;
+  await updateDoc(CLEARS_DOC_REF, { [`${charId}.${raidId}`]: deleteField() });
+}
+
+// 원장 전체 리셋 (/초기화 전체 후단에서 사용).
+export async function resetClears(): Promise<WeeklyClears> {
+  await setDoc(CLEARS_DOC_REF, {});
   return {};
+}
+
+// =============================================================================
+// 원정대 스코프 레이드 상태 (rosterRaidState) API
+// 구조: { [rosterId]: { [raidFamily]: { selectedCharId, difficulty } } }
+// =============================================================================
+
+export async function fetchRosterRaidState(): Promise<RosterRaidState> {
+  const snap = await getDoc(ROSTER_RAID_STATE_DOC_REF);
+  return snap.exists() ? (snap.data() as RosterRaidState) : {};
+}
+
+export async function writeRosterRaidSelection(
+  rosterId: string,
+  family: RaidFamily,
+  selection: RosterRaidSelection
+): Promise<void> {
+  const snap = await getDoc(ROSTER_RAID_STATE_DOC_REF);
+  if (!snap.exists()) await setDoc(ROSTER_RAID_STATE_DOC_REF, {});
+  await updateDoc(ROSTER_RAID_STATE_DOC_REF, { [`${rosterId}.${family}`]: selection });
+}
+
+export async function deleteRosterRaidSelection(
+  rosterId: string,
+  family: RaidFamily
+): Promise<void> {
+  const snap = await getDoc(ROSTER_RAID_STATE_DOC_REF);
+  if (!snap.exists()) return;
+  await updateDoc(ROSTER_RAID_STATE_DOC_REF, { [`${rosterId}.${family}`]: deleteField() });
+}
+
+export async function resetRosterRaidState(): Promise<RosterRaidState> {
+  await setDoc(ROSTER_RAID_STATE_DOC_REF, {});
+  return {};
+}
+
+// -----------------------------------------------------------------------------
+// Adapter: 원장 → RaidExclusionMap
+// -----------------------------------------------------------------------------
+// raidLogic.ts 등 기존 호출부가 `exclusions[raidId].includes(charId)` 로
+// "완료된 캐릭" 을 판정하는데, 이를 원장에서 파생해 그대로 공급.
+// 추가: exclusiveDifficulty family 처리 — 한 tier 라도 클리어하면 같은 family
+// 의 다른 tier 에도 해당 charId 를 포함시켜 "스케줄 후보 제외" 효과.
+
+export function deriveExclusionsFromClears(clears: WeeklyClears): RaidExclusionMap {
+  const out: Partial<Record<RaidId, Set<string>>> = {};
+  const addExclusion = (raidId: RaidId, charId: string) => {
+    if (!out[raidId]) out[raidId] = new Set();
+    out[raidId]!.add(charId);
+  };
+  for (const charId of Object.keys(clears)) {
+    const charClears = clears[charId] || {};
+    const clearedFamilies = new Set<string>();
+    for (const rId of Object.keys(charClears) as RaidId[]) {
+      if (charClears[rId]) clearedFamilies.add(getRaidFamily(rId));
+    }
+    // 해당 charId 를 cleared family 의 모든 tier 에 추가 (exclusiveDifficulty 반영).
+    for (const raidId of ALL_RAID_IDS) {
+      if (clearedFamilies.has(getRaidFamily(raidId))) addExclusion(raidId, charId);
+    }
+  }
+  const final: Partial<Record<RaidId, string[]>> = {};
+  for (const raidId of Object.keys(out) as RaidId[]) {
+    final[raidId] = Array.from(out[raidId]!);
+  }
+  return final as RaidExclusionMap;
 }
 
 // --- 누적 골드 API ---

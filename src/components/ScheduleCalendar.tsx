@@ -137,7 +137,7 @@ export const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ currentUser,
     const list = schedulesByDate.get(formatDateKey(date));
     if (!list || list.length === 0) return null;
 
-    const visible = list.slice(0, 2);
+    const visible = list.slice(0, 3);
     const remain = list.length - visible.length;
 
     return (
@@ -403,7 +403,7 @@ export const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ currentUser,
                   value={identity}
                   onChange={(e) => setIdentity(e.target.value)}
                   disabled={submitting}
-                  className="w-full appearance-none cursor-pointer rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 pr-10 text-sm font-medium text-zinc-700 transition-all focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-70 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
+                  className="h-10 w-full appearance-none cursor-pointer rounded-lg border border-zinc-200 bg-zinc-50 px-3 pr-10 text-sm font-medium text-zinc-700 transition-all focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-70 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
                 >
                   <option value="">— 본인 선택 —</option>
                   {allUserNames.map((name) => (
@@ -433,7 +433,7 @@ export const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ currentUser,
                   }}
                   onClick={(e) => e.currentTarget.showPicker?.()}
                   disabled={submitting}
-                  className="w-full cursor-pointer rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm font-medium text-zinc-700 transition-all focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
+                  className="h-10 w-full cursor-pointer rounded-lg border border-zinc-200 bg-zinc-50 px-3 text-sm font-medium text-zinc-700 transition-all focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
                 />
                 <span className="shrink-0 text-xs font-bold text-zinc-400">~</span>
                 <input
@@ -445,7 +445,7 @@ export const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ currentUser,
                   }}
                   onClick={(e) => e.currentTarget.showPicker?.()}
                   disabled={submitting}
-                  className="w-full cursor-pointer rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm font-medium text-zinc-700 transition-all focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
+                  className="h-10 w-full cursor-pointer rounded-lg border border-zinc-200 bg-zinc-50 px-3 text-sm font-medium text-zinc-700 transition-all focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
                 />
               </div>
               <p className="mt-1 text-[10px] text-zinc-500 dark:text-zinc-400">

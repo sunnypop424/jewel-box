@@ -12,51 +12,472 @@ const InteractionResponseType = {
   APPLICATION_COMMAND_AUTOCOMPLETE_RESULT: 8 
 };
 
+// === GEN:RAID-LEDGER-BEGIN ===
+// 자동 생성: npm run gen:worker-raids
+// 원본: src/data/raids.ts — 직접 수정하지 말 것.
+
 const RAID_META = {
-  ACT1_HARD: { label: '1막 하드', gold: 18000, goldType: 'GENERAL' },
-  ACT2_NORMAL: { label: '2막 노말', gold: 16500, goldType: 'GENERAL' },
-  ACT3_NORMAL: { label: '3막 노말', gold: 21000, goldType: 'GENERAL' },
-  ACT2_HARD: { label: '2막 하드', gold: 23000, goldType: 'GENERAL' },
-  ACT3_HARD: { label: '3막 하드', gold: 27000, goldType: 'GENERAL' },
-  ACT4_NORMAL: { label: '4막 노말', gold: 33000, goldType: 'GENERAL' },
-  ACT4_HARD: { label: '4막 하드', gold: 42000, goldType: 'GENERAL' },
-  SERKA_NORMAL: { label: '세르카 노말', gold: 35000, goldType: 'GENERAL' },
-  SERKA_HARD: { label: '세르카 하드', gold: 44000, goldType: 'GENERAL' },
-  SERKA_NIGHTMARE: { label: '세르카 나이트메어', gold: 54000, goldType: 'GENERAL' },
-  FINAL_NORMAL: { label: '종막 노말', gold: 40000, goldType: 'GENERAL' },
-  FINAL_HARD: { label: '종막 하드', gold: 52000, goldType: 'GENERAL' },
-  HORIZON_STEP1: { label: '지평의 성당 1단계', gold: 30000, goldType: 'BOUND' },
-  HORIZON_STEP2: { label: '지평의 성당 2단계', gold: 40000, goldType: 'BOUND' },
-  HORIZON_STEP3: { label: '지평의 성당 3단계', gold: 50000, goldType: 'BOUND' }
+  "HORIZON_STEP1": {
+    "label": "지평의 성당 1단계",
+    "generalGold": 0,
+    "boundGold": 30000
+  },
+  "HORIZON_STEP2": {
+    "label": "지평의 성당 2단계",
+    "generalGold": 0,
+    "boundGold": 40000
+  },
+  "HORIZON_STEP3": {
+    "label": "지평의 성당 3단계",
+    "generalGold": 0,
+    "boundGold": 50000
+  },
+  "KAZEROS_NORMAL": {
+    "label": "카제로스 익스트림 노말",
+    "generalGold": 20000,
+    "boundGold": 0
+  },
+  "KAZEROS_HARD": {
+    "label": "카제로스 익스트림 하드",
+    "generalGold": 45000,
+    "boundGold": 0
+  },
+  "KAZEROS_NIGHTMARE": {
+    "label": "카제로스 익스트림 나이트메어",
+    "generalGold": 45000,
+    "boundGold": 0
+  },
+  "SERKA_NORMAL": {
+    "label": "세르카 노말",
+    "generalGold": 17500,
+    "boundGold": 17500
+  },
+  "SERKA_HARD": {
+    "label": "세르카 하드",
+    "generalGold": 44000,
+    "boundGold": 0
+  },
+  "SERKA_NIGHTMARE": {
+    "label": "세르카 나이트메어",
+    "generalGold": 54000,
+    "boundGold": 0
+  },
+  "FINAL_NORMAL": {
+    "label": "종막 노말",
+    "generalGold": 20000,
+    "boundGold": 20000
+  },
+  "FINAL_HARD": {
+    "label": "종막 하드",
+    "generalGold": 52000,
+    "boundGold": 0
+  },
+  "ACT4_NORMAL": {
+    "label": "4막 노말",
+    "generalGold": 16500,
+    "boundGold": 16500
+  },
+  "ACT4_HARD": {
+    "label": "4막 하드",
+    "generalGold": 42000,
+    "boundGold": 0
+  },
+  "ACT3_NORMAL": {
+    "label": "3막 노말",
+    "generalGold": 10500,
+    "boundGold": 10500
+  },
+  "ACT3_HARD": {
+    "label": "3막 하드",
+    "generalGold": 13500,
+    "boundGold": 13500
+  },
+  "ACT2_NORMAL": {
+    "label": "2막 노말",
+    "generalGold": 8250,
+    "boundGold": 8250
+  },
+  "ACT2_HARD": {
+    "label": "2막 하드",
+    "generalGold": 11500,
+    "boundGold": 11500
+  },
+  "ACT1_HARD": {
+    "label": "1막 하드",
+    "generalGold": 9000,
+    "boundGold": 9000
+  }
 };
 
+const RAIDS = [
+  {
+    "family": "HORIZON",
+    "clearScope": "character",
+    "availableFrom": null,
+    "availableUntil": null,
+    "difficulties": [
+      {
+        "tier": "STEP1",
+        "minItemLevel": 1700,
+        "requiresFlag": null
+      },
+      {
+        "tier": "STEP2",
+        "minItemLevel": 1720,
+        "requiresFlag": null
+      },
+      {
+        "tier": "STEP3",
+        "minItemLevel": 1750,
+        "requiresFlag": null
+      }
+    ]
+  },
+  {
+    "family": "KAZEROS",
+    "clearScope": "roster",
+    "availableFrom": "2026-04-22",
+    "availableUntil": "2026-06-16",
+    "difficulties": [
+      {
+        "tier": "NORMAL",
+        "minItemLevel": 1720,
+        "requiresFlag": null
+      },
+      {
+        "tier": "HARD",
+        "minItemLevel": 1750,
+        "requiresFlag": null
+      },
+      {
+        "tier": "NIGHTMARE",
+        "minItemLevel": 1770,
+        "requiresFlag": null
+      }
+    ]
+  },
+  {
+    "family": "SERKA",
+    "clearScope": "character",
+    "availableFrom": null,
+    "availableUntil": null,
+    "difficulties": [
+      {
+        "tier": "NORMAL",
+        "minItemLevel": 1710,
+        "requiresFlag": null
+      },
+      {
+        "tier": "HARD",
+        "minItemLevel": 1730,
+        "requiresFlag": null
+      },
+      {
+        "tier": "NIGHTMARE",
+        "minItemLevel": 1740,
+        "requiresFlag": "serkaNightmare"
+      }
+    ]
+  },
+  {
+    "family": "FINAL",
+    "clearScope": "character",
+    "availableFrom": null,
+    "availableUntil": null,
+    "difficulties": [
+      {
+        "tier": "NORMAL",
+        "minItemLevel": 1710,
+        "requiresFlag": null
+      },
+      {
+        "tier": "HARD",
+        "minItemLevel": 1730,
+        "requiresFlag": null
+      }
+    ]
+  },
+  {
+    "family": "ACT4",
+    "clearScope": "character",
+    "availableFrom": null,
+    "availableUntil": null,
+    "difficulties": [
+      {
+        "tier": "NORMAL",
+        "minItemLevel": 1700,
+        "requiresFlag": null
+      },
+      {
+        "tier": "HARD",
+        "minItemLevel": 1720,
+        "requiresFlag": null
+      }
+    ]
+  },
+  {
+    "family": "ACT3",
+    "clearScope": "character",
+    "availableFrom": null,
+    "availableUntil": null,
+    "difficulties": [
+      {
+        "tier": "NORMAL",
+        "minItemLevel": 1680,
+        "requiresFlag": null
+      },
+      {
+        "tier": "HARD",
+        "minItemLevel": 1700,
+        "requiresFlag": null
+      }
+    ]
+  },
+  {
+    "family": "ACT2",
+    "clearScope": "character",
+    "availableFrom": null,
+    "availableUntil": null,
+    "difficulties": [
+      {
+        "tier": "NORMAL",
+        "minItemLevel": 1670,
+        "requiresFlag": null
+      },
+      {
+        "tier": "HARD",
+        "minItemLevel": 1690,
+        "requiresFlag": null
+      }
+    ]
+  },
+  {
+    "family": "ACT1",
+    "clearScope": "character",
+    "availableFrom": null,
+    "availableUntil": null,
+    "difficulties": [
+      {
+        "tier": "HARD",
+        "minItemLevel": 1680,
+        "requiresFlag": null
+      }
+    ]
+  }
+];
+
+function isWithinAvailability(raid, now) {
+  const t = now.getTime();
+  const parseKst = (iso) => {
+    const [y, m, d] = iso.split('-').map(Number);
+    return Date.UTC(y, m - 1, d) - 9 * 60 * 60 * 1000;
+  };
+  if (raid.availableFrom && t < parseKst(raid.availableFrom)) return false;
+  if (raid.availableUntil) {
+    const untilMs = parseKst(raid.availableUntil) + 24 * 60 * 60 * 1000;
+    if (t >= untilMs) return false;
+  }
+  return true;
+}
+
+// 캐릭 스코프 레이드 후보 (원정대 스코프는 getRosterRaidsForChar 로 별도 처리).
 function getTargetRaidsForCharacter(ch) {
   const il = ch.itemLevel;
-  const raids = [];
-  if (il >= 1750) raids.push('HORIZON_STEP3');
-  else if (il >= 1720) raids.push('HORIZON_STEP2');
-  else if (il >= 1700) raids.push('HORIZON_STEP1');
-
-  if (il >= 1740 && ch.serkaNightmare) raids.push('SERKA_NIGHTMARE');
-  else if (il >= 1730) raids.push('SERKA_HARD');
-  else if (il >= 1710) raids.push('SERKA_NORMAL');
-
-  if (il >= 1730) raids.push('FINAL_HARD');
-  else if (il >= 1710) raids.push('FINAL_NORMAL');
-
-  if (il >= 1720) raids.push('ACT4_HARD');
-  else if (il >= 1700) raids.push('ACT4_NORMAL');
-
-  if (il < 1710) {
-    if (il >= 1700) raids.push('ACT3_HARD');
-    else if (il >= 1680) raids.push('ACT3_NORMAL');
-    if (il >= 1690) raids.push('ACT2_HARD');
-    else if (il >= 1670) raids.push('ACT2_NORMAL');
-    if (il >= 1680) raids.push('ACT1_HARD');
+  const now = new Date();
+  const horizon = [];
+  const normal = [];
+  for (const raid of RAIDS) {
+    if (!isWithinAvailability(raid, now)) continue;
+    if (raid.clearScope === 'roster') continue;
+    const qualified = raid.difficulties.filter((d) => {
+      if (il < d.minItemLevel) return false;
+      if (d.requiresFlag && !ch[d.requiresFlag]) return false;
+      return true;
+    });
+    if (qualified.length === 0) continue;
+    const chosen = qualified.reduce((hi, d) => d.minItemLevel > hi.minItemLevel ? d : hi);
+    const raidId = raid.family + '_' + chosen.tier;
+    if (raid.family === 'HORIZON') horizon.push(raidId);
+    else normal.push(raidId);
   }
-  const horizon = raids.filter(r => r.startsWith('HORIZON_'));
-  const normal = raids.filter(r => !r.startsWith('HORIZON_'));
   return [...horizon, ...normal.slice(0, 3)];
+}
+
+// 이 캐릭이 대표로 지정된 원정대 스코프 레이드 목록.
+function getRosterRaidsForChar(ch, rosterRaidState) {
+  if (!rosterRaidState) return [];
+  const rosterId = ch.rosterId || ch.discordName;
+  if (!rosterId) return [];
+  const selections = rosterRaidState[rosterId] || {};
+  const now = new Date();
+  const out = [];
+  for (const family in selections) {
+    const sel = selections[family];
+    if (!sel || sel.selectedCharId !== ch.id) continue;
+    const raid = RAIDS.find(r => r.family === family);
+    if (!raid || raid.clearScope !== 'roster') continue;
+    if (!isWithinAvailability(raid, now)) continue;
+    const diff = raid.difficulties.find(d => d.tier === sel.difficulty);
+    if (!diff) continue;
+    if (ch.itemLevel < diff.minItemLevel) continue;
+    if (diff.requiresFlag && !ch[diff.requiresFlag]) continue;
+    out.push(raid.family + '_' + diff.tier);
+  }
+  return out;
+}
+
+function getRaidFamily(raidId) {
+  return raidId.slice(0, raidId.indexOf('_'));
+}
+
+// 귀속 골드 무시 여부. 웹앱 App.tsx computeIgnoreBoundGold 와 동일.
+function computeIgnoreBound(ch, userChars) {
+  if (ch.receiveBoundGold !== undefined) return !ch.receiveBoundGold;
+  const option = ch.goldOption || 'ALL_MAX';
+  if (option === 'GENERAL_MAX') return true;
+  if (option === 'MAIN_ALL_ALT_GENERAL') {
+    const mainChar = userChars.reduce((max, curr) => curr.itemLevel > max.itemLevel ? curr : max, userChars[0]);
+    return ch.id !== mainChar.id;
+  }
+  return false;
+}
+
+// 캐릭 1명 관점에서 원장 기반 주간 top3 계산.
+// 웹앱 src/data/raids.ts getCharTopRaidIds 와 같은 공식이어야 한다.
+// 원정대 레이드는 3회 골드 제한에 포함되지 않으므로 캐릭 스코프와 분리.
+// 반환: { ignoreBound, ledgerEntries, clearedFamilies, activeYields, activeIds,
+//        cGen, cBnd, tGen, tBnd, raidsForChar, raidYieldById }
+function computeCharLedgerView(ch, clears, userChars, rosterRaidState) {
+  const ignoreBound = computeIgnoreBound(ch, userChars);
+  const ledgerEntries = Object.values((clears && clears[ch.id]) || {}).filter(Boolean);
+  const clearedFamilies = new Set(ledgerEntries.map(e => getRaidFamily(e.raidId)));
+
+  // 캐릭 스코프 / 원정대 스코프 분리.
+  const charCandByFamily = new Map();
+  const rosterCandByFamily = new Map();
+
+  for (const e of ledgerEntries) {
+    const fam = getRaidFamily(e.raidId);
+    const isRoster = RAIDS.find(r => r.family === fam)?.clearScope === 'roster';
+    const target = isRoster ? rosterCandByFamily : charCandByFamily;
+    target.set(fam, { id: e.raidId, general: e.generalGold, bound: e.boundGold, isCleared: true });
+  }
+
+  const il = ch.itemLevel;
+  const now = new Date();
+  for (const raid of RAIDS) {
+    if (!isWithinAvailability(raid, now)) continue;
+    if (raid.clearScope === 'roster') continue;
+    const q = raid.difficulties.filter(d => {
+      if (il < d.minItemLevel) return false;
+      if (d.requiresFlag && !ch[d.requiresFlag]) return false;
+      return true;
+    });
+    if (q.length === 0) continue;
+    const chosen = q.reduce((hi, d) => d.minItemLevel > hi.minItemLevel ? d : hi);
+    const id = raid.family + '_' + chosen.tier;
+    const fam = getRaidFamily(id);
+    if (!charCandByFamily.has(fam)) {
+      const meta = RAID_META[id];
+      charCandByFamily.set(fam, { id, general: meta.generalGold, bound: meta.boundGold, isCleared: false });
+    }
+  }
+  const rosterEligible = getRosterRaidsForChar(ch, rosterRaidState);
+  for (const id of rosterEligible) {
+    const fam = getRaidFamily(id);
+    if (!rosterCandByFamily.has(fam)) {
+      const meta = RAID_META[id];
+      rosterCandByFamily.set(fam, { id, general: meta.generalGold, bound: meta.boundGold, isCleared: false });
+    }
+  }
+
+  const eff = (c) => { const isSplit = c.general > 0 && c.bound > 0; return c.general + (isSplit || !ignoreBound ? c.bound : 0); };
+
+  const charTop3 = Array.from(charCandByFamily.values())
+    .map(y => Object.assign({}, y, { effective: eff(y) }))
+    .filter(y => y.effective > 0)
+    .sort((a, b) => b.effective - a.effective)
+    .slice(0, 3);
+
+  const rosterYields = Array.from(rosterCandByFamily.values())
+    .map(y => Object.assign({}, y, { effective: eff(y) }))
+    .filter(y => y.effective > 0);
+
+  const activeYields = [...charTop3, ...rosterYields];
+  const activeIds = new Set(activeYields.map(y => y.id));
+
+  let cGen = 0, cBnd = 0, tGen = 0, tBnd = 0;
+  for (const y of activeYields) {
+    tGen += y.general;
+    if (!ignoreBound) tBnd += y.bound;
+    if (y.isCleared) {
+      cGen += y.general;
+      if (!ignoreBound) cBnd += y.bound;
+    }
+  }
+
+  const raidsForChar = activeYields.map(y => y.id);
+  const raidYieldById = {};
+  for (const y of activeYields) raidYieldById[y.id] = y;
+
+  return { ignoreBound, ledgerEntries, clearedFamilies, activeYields, activeIds, cGen, cBnd, tGen, tBnd, raidsForChar, raidYieldById };
+}
+
+// === GEN:RAID-LEDGER-END ===
+
+// =============================================================================
+// Ledger Firestore 쓰기 헬퍼 (raidData/clears 문서)
+// =============================================================================
+
+function toFirestoreClearEntry(entry) {
+  return {
+    mapValue: {
+      fields: {
+        raidId: { stringValue: entry.raidId },
+        clearedAt: { stringValue: entry.clearedAt },
+        clearedItemLevel: { integerValue: entry.clearedItemLevel },
+        generalGold: { integerValue: entry.generalGold },
+        boundGold: { integerValue: entry.boundGold },
+      }
+    }
+  };
+}
+
+// 특정 캐릭의 특정 레이드 엔트리 upsert. 먼저 기존 캐릭 맵 읽어오고 병합.
+async function writeClearEntryREST(env, clears, charId, entry) {
+  const charMap = { ...(clears[charId] || {}) };
+  charMap[entry.raidId] = entry;
+  const fields = {};
+  for (const [raidId, e] of Object.entries(charMap)) {
+    fields[raidId] = toFirestoreClearEntry(e);
+  }
+  const updateUrl = `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/${env.FIRESTORE_COLLECTION}/clears?key=${env.FIREBASE_API_KEY}&updateMask.fieldPaths=${encodeURIComponent(charId)}`;
+  const payload = { fields: { [charId]: { mapValue: { fields } } } };
+  return fetch(updateUrl, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+}
+
+// 특정 캐릭의 특정 레이드 엔트리 삭제. 나머지 엔트리만 남겨서 PATCH.
+async function deleteClearEntryREST(env, clears, charId, raidId) {
+  const charMap = { ...(clears[charId] || {}) };
+  delete charMap[raidId];
+  const fields = {};
+  for (const [rId, e] of Object.entries(charMap)) {
+    fields[rId] = toFirestoreClearEntry(e);
+  }
+  const updateUrl = `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/${env.FIRESTORE_COLLECTION}/clears?key=${env.FIREBASE_API_KEY}&updateMask.fieldPaths=${encodeURIComponent(charId)}`;
+  const payload = { fields: { [charId]: { mapValue: { fields } } } };
+  return fetch(updateUrl, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+}
+
+function buildClearEntry(ch, raidId) {
+  const meta = RAID_META[raidId];
+  return {
+    raidId,
+    clearedAt: new Date().toISOString(),
+    clearedItemLevel: ch.itemLevel,
+    generalGold: meta.generalGold,
+    boundGold: meta.boundGold,
+  };
 }
 
 function parseFirestoreValue(v) {
@@ -238,6 +659,7 @@ let firebaseCache = {
 const CACHE_TTL_MS = 60 * 1000; 
 
 // 🌟 캐시를 활용한 Firebase 데이터 로드 함수
+// exclusions 컬렉션은 제거 — clears (ledger) 가 대체.
 async function fetchFirebaseWithCache(env) {
   const now = Date.now();
   if (firebaseCache.data && (now - firebaseCache.lastFetchTime < CACHE_TTL_MS)) {
@@ -245,38 +667,43 @@ async function fetchFirebaseWithCache(env) {
   }
 
   const url = `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents`;
-  const [usersRes, excRes, goldRes] = await Promise.all([
+  const [usersRes, clearsRes, goldRes, rosterRaidRes] = await Promise.all([
     fetch(`${url}/users?key=${env.FIREBASE_API_KEY}`),
-    fetch(`${url}/${env.FIRESTORE_COLLECTION}/exclusions?key=${env.FIREBASE_API_KEY}`),
-    fetch(`${url}/${env.FIRESTORE_COLLECTION}/accumulatedGold?key=${env.FIREBASE_API_KEY}`)
+    fetch(`${url}/${env.FIRESTORE_COLLECTION}/clears?key=${env.FIREBASE_API_KEY}`),
+    fetch(`${url}/${env.FIRESTORE_COLLECTION}/accumulatedGold?key=${env.FIREBASE_API_KEY}`),
+    fetch(`${url}/${env.FIRESTORE_COLLECTION}/rosterRaidState?key=${env.FIREBASE_API_KEY}`)
   ]);
-  
+
   const usersData = await usersRes.json();
-  const excData = await excRes.json();
-  const goldData = await goldRes.json(); 
-  
+  const clearsData = await clearsRes.json();
+  const goldData = await goldRes.json();
+  const rosterRaidData = await rosterRaidRes.json();
+
   let allChars = [];
   (usersData.documents || []).forEach(doc => {
     const parsed = parseFirestoreDoc(doc);
-    // 문서 이름의 마지막 부분이 보통 discordId(uid)로 사용됨
-    const docId = doc.name ? doc.name.split('/').pop() : null; 
+    const docId = doc.name ? doc.name.split('/').pop() : null;
 
     if (parsed.characters) {
       const isUserParticipating = parsed.isParticipating !== false;
       parsed.characters.forEach(c => {
         c._isUserParticipating = isUserParticipating;
-        // 🌟 discordId 맵핑 추가 (본인 식별용)
         c.discordId = c.discordId || parsed.discordId || docId;
         c.discordName = c.discordName || parsed.discordName;
+        // rosterId 기본값 주입 (웹앱과 동일 규칙).
+        if (!c.rosterId) c.rosterId = c.discordName;
         allChars.push(c);
       });
     }
   });
-  
-  const exclusions = parseFirestoreDoc(excData);
-  const accumulatedGold = parseFirestoreDoc(goldData); 
 
-  firebaseCache.data = { allChars, exclusions, accumulatedGold };
+  // clears 파싱: 문서가 없으면 빈 객체. { [charId]: { [raidId]: ClearEntry } }
+  const clears = clearsData && clearsData.fields ? parseFirestoreDoc(clearsData) : {};
+  const accumulatedGold = parseFirestoreDoc(goldData);
+  // 원정대 스코프 레이드 상태: { [rosterId]: { [raidFamily]: { selectedCharId, difficulty } } }
+  const rosterRaidState = rosterRaidData && rosterRaidData.fields ? parseFirestoreDoc(rosterRaidData) : {};
+
+  firebaseCache.data = { allChars, clears, accumulatedGold, rosterRaidState };
   firebaseCache.lastFetchTime = now;
 
   return firebaseCache.data;
@@ -483,7 +910,7 @@ export default {
           }), { headers: { 'Content-Type': 'application/json' } });
         }
 
-        // 2. ✨ 체크리스트 드롭다운 및 레이드 완료 버튼 처리
+        // 2. ✨ 체크리스트 드롭다운 및 레이드 완료 버튼 처리 (Ledger 기반)
         if (customId === 'chk_select' || customId.startsWith('chk_btn::')) {
           let charId = '';
           let toggleRaidId = null;
@@ -496,79 +923,30 @@ export default {
             toggleRaidId = parts[2];
           }
 
-          let { allChars, exclusions } = await fetchFirebaseWithCache(env);
+          let { allChars, clears, rosterRaidState } = await fetchFirebaseWithCache(env);
           const ch = allChars.find(c => c.id === charId);
 
           if (!ch) {
             return new Response(JSON.stringify({ type: 4, data: { content: `캐릭터를 찾을 수 없습니다.`, flags: 64 } }), { headers: { 'Content-Type': 'application/json' } });
           }
 
-          // 레이드 버튼 클릭 시 Firebase 토글
+          // 레이드 버튼 클릭 시 Ledger 엔트리 토글.
           if (toggleRaidId) {
-            let currentExcludedIds = exclusions[toggleRaidId] || [];
-            const isDone = currentExcludedIds.includes(ch.id);
-
-            if (isDone) {
-              currentExcludedIds = currentExcludedIds.filter(id => id !== ch.id);
+            const existing = (clears[ch.id] || {})[toggleRaidId];
+            if (existing) {
+              await deleteClearEntryREST(env, clears, ch.id, toggleRaidId);
+              if (clears[ch.id]) delete clears[ch.id][toggleRaidId];
             } else {
-              currentExcludedIds.push(ch.id);
+              const entry = buildClearEntry(ch, toggleRaidId);
+              await writeClearEntryREST(env, clears, ch.id, entry);
+              clears[ch.id] = { ...(clears[ch.id] || {}), [toggleRaidId]: entry };
             }
-
-            const updateUrl = `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/${env.FIRESTORE_COLLECTION}/exclusions?key=${env.FIREBASE_API_KEY}&updateMask.fieldPaths=${toggleRaidId}`;
-            const payload = { fields: { [toggleRaidId]: { arrayValue: currentExcludedIds.length > 0 ? { values: currentExcludedIds.map(id => ({ stringValue: id })) } : {} } } };
-            
-            await fetch(updateUrl, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-            
-            exclusions[toggleRaidId] = currentExcludedIds;
-            firebaseCache.lastFetchTime = 0; 
+            firebaseCache.lastFetchTime = 0;
           }
 
-          // 골드 계산
-          const userChars = allChars.filter(c => c.discordName === ch.discordName).sort((a,b) => b.itemLevel - a.itemLevel);
-          const mainChar = userChars[0];
-          
-          let ignoreBound = false;
-          if (ch.receiveBoundGold !== undefined) {
-            ignoreBound = !ch.receiveBoundGold;
-          } else {
-            let option = ch.goldOption || 'ALL_MAX';
-            if (option === 'GENERAL_MAX') ignoreBound = true;
-            else if (option === 'MAIN_ALL_ALT_GENERAL' && ch.id !== mainChar.id) ignoreBound = true;
-          }
+          const userChars = allChars.filter(c => c.discordName === ch.discordName).sort((a, b) => b.itemLevel - a.itemLevel);
+          const view = computeCharLedgerView(ch, clears, userChars, rosterRaidState);
 
-          const raids = getTargetRaidsForCharacter(ch);
-          let raidYields = raids.map(id => {
-            let meta = RAID_META[id];
-            let isAct2Single = id.startsWith('ACT2_') && (ch.singleRaids || []).includes('ACT2_NORMAL');
-            let isAct3Single = id.startsWith('ACT3_') && (ch.singleRaids || []).includes('ACT3_NORMAL');
-            let isSingle = isAct2Single || isAct3Single;
-
-            let effectiveGold = meta.gold;
-            if (isSingle) {
-              let normalMeta = id.startsWith('ACT2_') ? RAID_META['ACT2_NORMAL'] : RAID_META['ACT3_NORMAL'];
-              effectiveGold = (normalMeta.gold / 2) + (ignoreBound ? 0 : normalMeta.gold / 2);
-            } else if (ignoreBound && meta.goldType === 'BOUND') {
-              effectiveGold = -1;
-            }
-            return { id, ...meta, effectiveGold, isSingle };
-          }).sort((a,b) => b.effectiveGold - a.effectiveGold);
-
-          let top3 = raidYields.filter(y => y.effectiveGold > 0).slice(0,3);
-          let tGen = 0, tBnd = 0, cGen = 0, cBnd = 0;
-
-          top3.forEach(y => {
-            let g = 0, b = 0;
-            if (y.isSingle) {
-              let nMeta = y.id.startsWith('ACT2_') ? RAID_META['ACT2_NORMAL'] : RAID_META['ACT3_NORMAL'];
-              g = nMeta.gold / 2; b = nMeta.gold / 2;
-            } else {
-              if (y.goldType === 'GENERAL') g = y.gold; else b = y.gold;
-            }
-            tGen += g; tBnd += b;
-            if ((exclusions[y.id] || []).includes(ch.id)) { cGen += g; cBnd += b; }
-          });
-
-          // UI 조립
           const options = userChars.slice(0, 25).map(c => ({
               label: c.lostArkName || c.jobCode,
               value: c.id,
@@ -576,34 +954,27 @@ export default {
               default: c.id === ch.id
           }));
 
-          const buttons = raids.map(rId => {
+          // 버튼 목록 = view.raidsForChar (클리어 + 자격, family 중복은 ledger 우선).
+          const buttons = view.raidsForChar.map(rId => {
+              const y = view.raidYieldById[rId];
               const meta = RAID_META[rId];
-              const isAct2Single = rId.startsWith('ACT2_') && (ch.singleRaids || []).includes('ACT2_NORMAL');
-              const isAct3Single = rId.startsWith('ACT3_') && (ch.singleRaids || []).includes('ACT3_NORMAL');
-              const isSingle = isAct2Single || isAct3Single;
-              
-              const isDone = (exclusions[rId] || []).includes(ch.id);
-              const isTop3 = top3.some(t => t.id === rId);
+              const isDone = y?.isCleared === true;
+              const isTop3 = view.activeIds.has(rId);
 
-              // 1. 레이드 기본 이름
-              let baseName = `${meta.label}${isSingle ? '(싱글)' : ''}`;
-
-              // 2. 뒤에 붙을 상태 텍스트
-              let statusText = isDone ? '(클리어)' : '(미완료)';
-
-              // 3. 맨 앞에 체크박스 + 레이드명 + 상태 텍스트 합치기
+              const baseName = meta.label;
+              const statusText = isDone ? '(클리어)' : '(미완료)';
               let label = isDone ? `✅ ${baseName} ${statusText}` : `⬜ ${baseName} ${statusText}`;
-              
-              // 4. 골드 제외 표기
               if (!isTop3) label += ' - 골드제외';
 
               return {
                   type: 2,
                   style: 2,
-                  label: label,
+                  label,
                   custom_id: `chk_btn::${ch.id}::${rId}`
               };
           });
+
+          const tGen = view.tGen, tBnd = view.tBnd, cGen = view.cGen, cBnd = view.cBnd;
 
           // ✨ 순수 JS에서는 타입 선언 없이 빈 배열로 선언하면 됩니다.
           const rows = [];
@@ -649,7 +1020,7 @@ export default {
       const inputVal = String(focusedOpt.value || '').toLowerCase();
       let choices = [];
 
-      const { allChars, exclusions } = await fetchFirebaseWithCache(env);
+      const { allChars, clears, rosterRaidState } = await fetchFirebaseWithCache(env);
 
       if (focusedOpt.name === '유저명') {
         const uniqueUsers = [...new Set(allChars.map(c => c.discordName).filter(Boolean))];
@@ -669,14 +1040,22 @@ export default {
             if (!ch) {
               choices = [{ name: '[안내] 캐릭터를 찾을 수 없습니다', value: 'ERROR' }];
             } else {
-              const raids = getTargetRaidsForCharacter(ch);
-              choices = raids
-                .filter(rId => !(exclusions[rId] || []).includes(ch.id))
+              // Ledger 에 이미 있는 raid + 해당 family 는 제외.
+              const userChars = allChars.filter(c => c.discordName === ch.discordName);
+              const view = computeCharLedgerView(ch, clears, userChars, rosterRaidState);
+              const cleared = new Set(view.ledgerEntries.map(e => e.raidId));
+              const clearedFam = view.clearedFamilies;
+
+              // 캐릭 스코프 + 원정대 스코프(대표로 지정된 경우) 모두 고려.
+              const allEligible = [
+                ...getTargetRaidsForCharacter(ch),
+                ...getRosterRaidsForChar(ch, rosterRaidState),
+              ];
+              choices = allEligible
+                .filter(rId => !cleared.has(rId))
+                .filter(rId => !clearedFam.has(getRaidFamily(rId)))
                 .filter(rId => RAID_META[rId].label.toLowerCase().includes(inputVal))
-                .map(rId => {
-                  const isSingle = (ch.singleRaids || []).includes(rId);
-                  return { name: `${RAID_META[rId].label}${isSingle ? ' (싱글)' : ''}`, value: rId };
-                });
+                .map(rId => ({ name: RAID_META[rId].label, value: rId }));
               if (choices.length === 0) {
                 choices = [{ name: inputVal ? '검색된 남은 레이드가 없습니다' : '모든 숙제를 완료했습니다!', value: 'ERROR' }];
               }
@@ -755,62 +1134,27 @@ export default {
           targetInput = options.find(o => o.name === '유저명')?.value;
         }
 
-        const { allChars, exclusions, accumulatedGold } = await fetchFirebaseWithCache(env);
-        
+        const { allChars, clears, accumulatedGold, rosterRaidState } = await fetchFirebaseWithCache(env);
+
         // ✨ 본인 자동 인식 함수 활용
         const { chars: userChars, resolvedUserName: targetUserName } = resolveTargetUserChars(allChars, targetInput, userId, discordUserName);
-        
+
         if (userChars.length === 0) {
           const errMsg = targetInput ? `[오류] '${targetInput}'님의 캐릭터를 찾을 수 없습니다.` : `[오류] 등록된 캐릭터가 없습니다.`;
-          return new Response(JSON.stringify({ 
-            type: 4, 
-            data: { content: errMsg, flags: 64 } 
+          return new Response(JSON.stringify({
+            type: 4,
+            data: { content: errMsg, flags: 64 }
           }), { headers: { 'Content-Type': 'application/json' } });
         }
 
+        // Ledger 기반 주간 합산 — 각 캐릭의 top3 (획득 + 가능치) 유저 단위로 합계.
         let tGen = 0, tBnd = 0, cGen = 0, cBnd = 0;
-        const mainChar = userChars.reduce((max, curr) => curr.itemLevel > max.itemLevel ? curr : max, userChars[0]);
-
         userChars.forEach(ch => {
-          let ignoreBound = false;
-          if (ch.receiveBoundGold !== undefined) {
-            ignoreBound = !ch.receiveBoundGold;
-          } else {
-            let option = ch.goldOption || 'ALL_MAX';
-            if (option === 'GENERAL_MAX') ignoreBound = true;
-            else if (option === 'MAIN_ALL_ALT_GENERAL' && ch.id !== mainChar.id) ignoreBound = true;
-          }
-          
-          let raidYields = getTargetRaidsForCharacter(ch).map(id => {
-            let meta = RAID_META[id];
-            let isAct2Single = id.startsWith('ACT2_') && (ch.singleRaids || []).includes('ACT2_NORMAL');
-            let isAct3Single = id.startsWith('ACT3_') && (ch.singleRaids || []).includes('ACT3_NORMAL');
-            let isSingle = isAct2Single || isAct3Single;
-
-            let effectiveGold = meta.gold;
-            if (isSingle) {
-              let normalMeta = id.startsWith('ACT2_') ? RAID_META['ACT2_NORMAL'] : RAID_META['ACT3_NORMAL'];
-              effectiveGold = (normalMeta.gold / 2) + (ignoreBound ? 0 : normalMeta.gold / 2);
-            } else if (ignoreBound && meta.goldType === 'BOUND') {
-              effectiveGold = -1; 
-            }
-            return { id, ...meta, effectiveGold, isSingle };
-          }).sort((a, b) => b.effectiveGold - a.effectiveGold);
-
-          raidYields.filter(y => y.effectiveGold > 0).slice(0, 3).forEach(y => {
-            let g = 0, b = 0;
-            if (y.isSingle) {
-              let normalMeta = y.id.startsWith('ACT2_') ? RAID_META['ACT2_NORMAL'] : RAID_META['ACT3_NORMAL'];
-              g = normalMeta.gold / 2; b = normalMeta.gold / 2;
-            } else {
-              if (y.goldType === 'GENERAL') g = y.gold; else b = y.gold;
-            }
-            
-            tGen += g; tBnd += b;
-            
-            const isDone = (exclusions[y.id] || []).includes(ch.id);
-            if (isDone) { cGen += g; cBnd += b; }
-          });
+          const view = computeCharLedgerView(ch, clears, userChars, rosterRaidState);
+          tGen += view.tGen;
+          tBnd += view.tBnd;
+          cGen += view.cGen;
+          cBnd += view.cBnd;
         });
 
         if (commandName === '누적') {
@@ -932,9 +1276,8 @@ export default {
         const companionNames = options.filter(o => o.name.startsWith('동행')).map(o => o.value);
         const allTargetNames = [mainCharName, ...companionNames];
 
-        const { allChars, exclusions } = await fetchFirebaseWithCache(env);
-        let currentExcludedIds = exclusions[raidId] || [];
-        
+        const { allChars, clears, rosterRaidState } = await fetchFirebaseWithCache(env);
+
         const targetChars = allChars.filter(c => allTargetNames.includes(c.lostArkName) || allTargetNames.includes(c.jobCode));
         if (targetChars.length === 0) {
           return new Response(JSON.stringify({ type: 4, data: { content: `[오류] 입력하신 캐릭터를 찾을 수 없습니다.`, flags: 64 } }), { headers: { 'Content-Type': 'application/json' } });
@@ -944,59 +1287,59 @@ export default {
         let resultText = '';
 
         if (allTargetNames.length === 1) {
+          // 단일 캐릭 — 기존 엔트리 있으면 취소, 없으면 완료(ledger 기록).
           const ch = targetChars[0];
-          const isAlreadyDone = currentExcludedIds.includes(ch.id);
+          const existing = (clears[ch.id] || {})[raidId];
           let actionText = '';
-
-          if (isAlreadyDone) {
-            currentExcludedIds = currentExcludedIds.filter(id => id !== ch.id);
-            actionText = '취소(미완료)';
-          } else {
-            currentExcludedIds.push(ch.id);
-            actionText = '완료';
+          try {
+            if (existing) {
+              await deleteClearEntryREST(env, clears, ch.id, raidId);
+              actionText = '취소(미완료)';
+            } else {
+              const entry = buildClearEntry(ch, raidId);
+              await writeClearEntryREST(env, clears, ch.id, entry);
+              actionText = '완료';
+            }
+          } catch (e) {
+            return new Response(JSON.stringify({ type: 4, data: { content: `[오류] 데이터베이스 업데이트에 실패했습니다.`, flags: 64 } }), { headers: { 'Content-Type': 'application/json' } });
           }
           resultText = `**[${ch.lostArkName || ch.jobCode}]**의 **[${meta.label}]** 숙제가 **${actionText}** 처리되었습니다!`;
-        } 
-        else {
-          let addedNames = [];
+        } else {
+          // 다중 캐릭 — 아직 미완료인 캐릭만 ledger 에 추가.
+          const addedNames = [];
           for (const ch of targetChars) {
-            if (!currentExcludedIds.includes(ch.id)) {
-              currentExcludedIds.push(ch.id);
+            const existing = (clears[ch.id] || {})[raidId];
+            if (existing) continue;
+            try {
+              const entry = buildClearEntry(ch, raidId);
+              await writeClearEntryREST(env, clears, ch.id, entry);
+              // 다음 쓰기가 최신 clears 를 반영하도록 로컬 변수도 갱신.
+              clears[ch.id] = { ...(clears[ch.id] || {}), [raidId]: entry };
               addedNames.push(ch.lostArkName || ch.jobCode);
+            } catch (e) {
+              // 한 개 실패해도 나머지는 계속.
             }
           }
-          
           if (addedNames.length === 0) {
             return new Response(JSON.stringify({ type: 4, data: { content: `[안내] 선택하신 캐릭터들은 이미 **[${meta.label}]** 숙제가 완료되어 있습니다.`, flags: 64 } }), { headers: { 'Content-Type': 'application/json' } });
           }
           resultText = `**[${meta.label}] 다중 완료 처리**\n━━━━━━━━━━━━━━━━━━━━━━\n**완료된 캐릭터:**\n${addedNames.join(', ')}\n━━━━━━━━━━━━━━━━━━━━━━\n총 ${addedNames.length}명의 숙제가 완료되었습니다!`;
         }
 
-        const updateUrl = `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/${env.FIRESTORE_COLLECTION}/exclusions?key=${env.FIREBASE_API_KEY}&updateMask.fieldPaths=${raidId}`;
-        const payload = { fields: { [raidId]: { arrayValue: { values: currentExcludedIds.map(id => ({ stringValue: id })) } } } };
-
-        const patchRes = await fetch(updateUrl, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-
-        if (!patchRes.ok) {
-          return new Response(JSON.stringify({ type: 4, data: { content: `[오류] 데이터베이스 업데이트에 실패했습니다.`, flags: 64 } }), { headers: { 'Content-Type': 'application/json' } });
-        }
-
         firebaseCache.lastFetchTime = 0;
-
-        // 완료 현황은 자랑 겸 파티 현황 공유용이므로 공개
         return new Response(JSON.stringify({ type: 4, data: { content: resultText } }), { headers: { 'Content-Type': 'application/json' } });
       }
 
       if (commandName === '숙제') {
         const subCommand = interaction.data.options[0];
-        const { allChars, exclusions } = await fetchFirebaseWithCache(env);
+        const { allChars, clears, rosterRaidState } = await fetchFirebaseWithCache(env);
 
         if (subCommand.name === '원정대') {
           const targetInput = subCommand.options?.[0]?.value;
-          
+
           // ✨ 본인 자동 인식 함수 활용
           const { chars: userChars, resolvedUserName: userName } = resolveTargetUserChars(allChars, targetInput, userId, discordUserName);
-          
+
           if (userChars.length === 0) {
             const errMsg = targetInput ? `[오류] '${targetInput}'님의 캐릭터를 찾을 수 없습니다.` : `[오류] 등록된 본인 캐릭터가 없습니다.`;
             return new Response(JSON.stringify({ type: 4, data: { content: errMsg, flags: 64 } }), { headers: { 'Content-Type': 'application/json' } });
@@ -1004,16 +1347,11 @@ export default {
 
           let desc = '';
           userChars.forEach(ch => {
-            const raids = getTargetRaidsForCharacter(ch);
-            if(raids.length === 0) return;
-            const remainingRaids = raids.filter(rId => !(exclusions[rId] || []).includes(ch.id));
-            if(remainingRaids.length === 0) return;
+            const view = computeCharLedgerView(ch, clears, userChars, rosterRaidState);
+            const remaining = view.raidsForChar.filter(rId => !view.raidYieldById[rId]?.isCleared);
+            if (remaining.length === 0) return;
 
-            const statusStr = remainingRaids.map(rId => {
-              const meta = RAID_META[rId];
-              const isSingle = (ch.singleRaids || []).includes(rId);
-              return isSingle ? `**${meta.label}(싱글)**` : `**${meta.label}**`;
-            }).join(', ');
+            const statusStr = remaining.map(rId => `**${RAID_META[rId].label}**`).join(', ');
             desc += `- [${ch.lostArkName || ch.jobCode}] (Lv.${ch.itemLevel}) : ${statusStr}\n`;
           });
 
@@ -1029,13 +1367,12 @@ export default {
             return new Response(JSON.stringify({ type: 4, data: { content: `[오류] '${charName}' 캐릭터를 찾을 수 없습니다.`, flags: 64 } }), { headers: { 'Content-Type': 'application/json' } });
           }
 
-          const raids = getTargetRaidsForCharacter(ch);
+          const userChars = allChars.filter(c => c.discordName === ch.discordName);
+          const view = computeCharLedgerView(ch, clears, userChars, rosterRaidState);
           let desc = '';
-          raids.forEach(rId => {
-            const meta = RAID_META[rId];
-            const isSingle = (ch.singleRaids || []).includes(rId);
-            const isDone = (exclusions[rId] || []).includes(ch.id);
-            if (!isDone) desc += `- **${meta.label}${isSingle ? '(싱글)' : ''}**\n`;
+          view.raidsForChar.forEach(rId => {
+            const y = view.raidYieldById[rId];
+            if (!y?.isCleared) desc += `- **${RAID_META[rId].label}**\n`;
           });
 
           if (!desc) desc = '이번 주 숙제를 모두 완료했습니다!';
@@ -1046,17 +1383,32 @@ export default {
         if (subCommand.name === '레이드') {
           const raidId = subCommand.options[0].value;
           const meta = RAID_META[raidId];
-          const excludedIds = exclusions[raidId] || [];
-          
+          const targetFamily = getRaidFamily(raidId);
+          const targetRaid = RAIDS.find(r => r.family === targetFamily);
+          const isRosterScope = targetRaid?.clearScope === 'roster';
+
           const remainingByUser = {};
           allChars.forEach(ch => {
-            if (ch.isGuest || ch._isUserParticipating === false || ch.isParticipating === false) return; 
-            
-            const targets = getTargetRaidsForCharacter(ch);
-            if (targets.includes(raidId) && !excludedIds.includes(ch.id)) {
-               if (!remainingByUser[ch.discordName]) remainingByUser[ch.discordName] = [];
-               remainingByUser[ch.discordName].push(`${ch.lostArkName || ch.jobCode} (${ch.itemLevel})`);
+            if (ch.isGuest || ch._isUserParticipating === false || ch.isParticipating === false) return;
+
+            let eligible = false;
+            if (isRosterScope) {
+              // 원정대 레이드 — 이 캐릭이 해당 원정대의 대표로 지정된 경우만.
+              const rosterRaids = getRosterRaidsForChar(ch, rosterRaidState);
+              eligible = rosterRaids.includes(raidId);
+            } else {
+              const targets = getTargetRaidsForCharacter(ch);
+              eligible = targets.includes(raidId);
             }
+            if (!eligible) return;
+
+            // Ledger 기반 완료 판정: 동일 family 의 어떤 tier 라도 클리어했으면 완료 간주.
+            const charClears = clears[ch.id] || {};
+            const clearedFamily = Object.keys(charClears).some(rId2 => charClears[rId2] && getRaidFamily(rId2) === targetFamily);
+            if (clearedFamily) return;
+
+            if (!remainingByUser[ch.discordName]) remainingByUser[ch.discordName] = [];
+            remainingByUser[ch.discordName].push(`${ch.lostArkName || ch.jobCode} (${ch.itemLevel})`);
           });
 
           let desc = '';
@@ -1066,8 +1418,7 @@ export default {
 
           if (!desc) desc = '모든 인원이 완료했습니다!';
           const resultText = `**[${meta.label}] 미완료 캐릭터 목록**\n━━━━━━━━━━━━━━━━━━━━━━\n${desc}`;
-          
-          // 미완료자 구해서 출발하는 용도이므로 공개로 유지 (flags 없음)
+
           return new Response(JSON.stringify({ type: 4, data: { content: resultText } }), { headers: { 'Content-Type': 'application/json' } });
         }
       }
@@ -1284,9 +1635,9 @@ export default {
         const isAdmin = permissions ? (BigInt(permissions) & 8n) === 8n : false;
 
         if (!isAdmin) {
-          return new Response(JSON.stringify({ 
-            type: 4, 
-            data: { content: `[오류] 서버 관리자 권한이 필요한 명령어입니다.`, flags: 64 } 
+          return new Response(JSON.stringify({
+            type: 4,
+            data: { content: `[오류] 서버 관리자 권한이 필요한 명령어입니다.`, flags: 64 }
           }), { headers: { 'Content-Type': 'application/json' } });
         }
 
@@ -1296,20 +1647,19 @@ export default {
         const isResetAll = options.find(o => o.name === '전체')?.value;
 
         if (!targetUserName && !targetCharName && !isResetAll) {
-          return new Response(JSON.stringify({ 
-            type: 4, 
-            data: { content: `[오류] 초기화 대상을 지정해 주세요. (유저명, 캐릭명, 전체 중 택 1)`, flags: 64 } 
+          return new Response(JSON.stringify({
+            type: 4,
+            data: { content: `[오류] 초기화 대상을 지정해 주세요. (유저명, 캐릭명, 전체 중 택 1)`, flags: 64 }
           }), { headers: { 'Content-Type': 'application/json' } });
         }
 
-        const { allChars, exclusions, accumulatedGold } = await fetchFirebaseWithCache(env);
-        let targetIds = [];
+        const { allChars, clears, accumulatedGold, rosterRaidState } = await fetchFirebaseWithCache(env);
         let targetLabel = '';
 
-        // ✨ 사이트 사이드바 '레이드 완료 내역 초기화'와 동일한 로직 적용 ✨
         if (isResetAll) {
           targetLabel = '전체 인원 (서버 전체)';
-          
+
+          // 1) Ledger 기반으로 유저별 이번 주 획득 골드 합산 → accumulatedGold 에 가산.
           const usersMap = {};
           allChars.forEach(c => {
               if (!usersMap[c.discordName]) usersMap[c.discordName] = [];
@@ -1321,86 +1671,49 @@ export default {
 
           for (const [dName, uChars] of Object.entries(usersMap)) {
               let cGen = 0, cBnd = 0;
-              const sortedChars = [...uChars].sort((a,b) => b.itemLevel - a.itemLevel);
-              const mainChar = sortedChars[0];
-
-              sortedChars.forEach(ch => {
-                  let ignoreBound = false;
-                  if (ch.receiveBoundGold !== undefined) {
-                      ignoreBound = !ch.receiveBoundGold;
-                  } else {
-                      let option = ch.goldOption || 'ALL_MAX';
-                      if (option === 'GENERAL_MAX') ignoreBound = true;
-                      else if (option === 'MAIN_ALL_ALT_GENERAL' && ch.id !== mainChar.id) ignoreBound = true;
-                  }
-
-                  let raidYields = getTargetRaidsForCharacter(ch).map(id => {
-                      let meta = RAID_META[id];
-                      let isAct2Single = id.startsWith('ACT2_') && (ch.singleRaids || []).includes('ACT2_NORMAL');
-                      let isAct3Single = id.startsWith('ACT3_') && (ch.singleRaids || []).includes('ACT3_NORMAL');
-                      let isSingle = isAct2Single || isAct3Single;
-
-                      let effectiveGold = meta.gold;
-                      if (isSingle) {
-                          let normalMeta = id.startsWith('ACT2_') ? RAID_META['ACT2_NORMAL'] : RAID_META['ACT3_NORMAL'];
-                          effectiveGold = (normalMeta.gold / 2) + (ignoreBound ? 0 : normalMeta.gold / 2);
-                      } else if (ignoreBound && meta.goldType === 'BOUND') {
-                          effectiveGold = -1;
-                      }
-                      return { id, ...meta, effectiveGold, isSingle };
-                  }).sort((a,b) => b.effectiveGold - a.effectiveGold);
-
-                  let top3 = raidYields.filter(y => y.effectiveGold > 0).slice(0,3);
-                  
-                  top3.forEach(y => {
-                      let g = 0, b = 0;
-                      if (y.isSingle) {
-                          let nMeta = y.id.startsWith('ACT2_') ? RAID_META['ACT2_NORMAL'] : RAID_META['ACT3_NORMAL'];
-                          g = nMeta.gold / 2; b = nMeta.gold / 2;
-                      } else {
-                          if (y.goldType === 'GENERAL') g = y.gold; else b = y.gold;
-                      }
-                      
-                      // 이번 주 완료한 레이드라면 합산
-                      if ((exclusions[y.id] || []).includes(ch.id)) {
-                          cGen += g; 
-                          cBnd += b;
-                      }
-                  });
-              });
-
+              for (const ch of uChars) {
+                  const view = computeCharLedgerView(ch, clears, uChars, rosterRaidState);
+                  cGen += view.cGen;
+                  cBnd += view.cBnd;
+              }
               if (cGen > 0 || cBnd > 0) {
                   const userGold = newGoldData[dName] || { general: 0, bound: 0 };
                   newGoldData[dName] = {
-                      general: userGold.general + cGen,
-                      bound: userGold.bound + cBnd
+                      general: (userGold.general || 0) + cGen,
+                      bound: (userGold.bound || 0) + cBnd
                   };
                   goldUpdated = true;
               }
           }
 
-          // 누적 골드 DB 업데이트
+          // 누적 골드 DB 업데이트.
           if (goldUpdated) {
               const goldPayloadFields = {};
               for (const [dName, val] of Object.entries(newGoldData)) {
                   goldPayloadFields[dName] = {
-                      mapValue: {
-                          fields: {
-                              general: { integerValue: val.general || 0 },
-                              bound: { integerValue: val.bound || 0 }
-                          }
-                      }
+                      mapValue: { fields: {
+                          general: { integerValue: val.general || 0 },
+                          bound: { integerValue: val.bound || 0 }
+                      } }
                   };
               }
               const updateGoldUrl = `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/${env.FIRESTORE_COLLECTION}/accumulatedGold?key=${env.FIREBASE_API_KEY}`;
-              await fetch(updateGoldUrl, { 
-                  method: 'PATCH', 
-                  headers: { 'Content-Type': 'application/json' }, 
-                  body: JSON.stringify({ fields: goldPayloadFields }) 
+              await fetch(updateGoldUrl, {
+                  method: 'PATCH',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ fields: goldPayloadFields })
               });
           }
 
-          // 캐릭터 스왑(swaps) 초기화 로직 추가
+          // 2) Ledger 컬렉션 전체 비우기.
+          const clearsUrl = `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/${env.FIRESTORE_COLLECTION}/clears?key=${env.FIREBASE_API_KEY}`;
+          await fetch(clearsUrl, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ fields: {} })
+          });
+
+          // 3) 스왑 초기화.
           const resetSwapsUrl = `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/${env.FIRESTORE_COLLECTION}/swaps?key=${env.FIREBASE_API_KEY}&updateMask.fieldPaths=swaps`;
           await fetch(resetSwapsUrl, {
               method: 'PATCH',
@@ -1408,67 +1721,70 @@ export default {
               body: JSON.stringify({ fields: { swaps: { arrayValue: { values: [] } } } })
           });
 
-        } else if (targetCharName) {
+          firebaseCache.lastFetchTime = 0;
+          return new Response(JSON.stringify({
+              type: 4,
+              data: {
+                  content: `**레이드 완료 내역 초기화 완료**\n━━━━━━━━━━━━━━━━━━━━━━\n대상: **${targetLabel}**\n상태: Ledger 전체가 초기화되고, 이번 주 획득 골드는 누적 골드에 안전하게 합산되었습니다.`,
+                  flags: 64
+              }
+          }), { headers: { 'Content-Type': 'application/json' } });
+        }
+
+        // 부분 초기화 (특정 캐릭 / 특정 유저) — 해당 charId 들의 ledger 엔트리만 삭제.
+        let targetIds = [];
+        if (targetCharName) {
           const ch = allChars.find(c => c.lostArkName === targetCharName || c.jobCode === targetCharName);
           if (!ch) return new Response(JSON.stringify({ type: 4, data: { content: `[오류] '${targetCharName}' 캐릭터를 찾을 수 없습니다.`, flags: 64 } }), { headers: { 'Content-Type': 'application/json' } });
           targetIds.push(ch.id);
           targetLabel = `캐릭터 [${ch.lostArkName || ch.jobCode}]`;
         } else if (targetUserName) {
-          const userChars = allChars.filter(c => c.discordName === targetUserName);
-          if (userChars.length === 0) return new Response(JSON.stringify({ type: 4, data: { content: `[오류] '${targetUserName}'님의 캐릭터를 찾을 수 없습니다.`, flags: 64 } }), { headers: { 'Content-Type': 'application/json' } });
-          targetIds = userChars.map(c => c.id);
+          const userCharsForReset = allChars.filter(c => c.discordName === targetUserName);
+          if (userCharsForReset.length === 0) return new Response(JSON.stringify({ type: 4, data: { content: `[오류] '${targetUserName}'님의 캐릭터를 찾을 수 없습니다.`, flags: 64 } }), { headers: { 'Content-Type': 'application/json' } });
+          targetIds = userCharsForReset.map(c => c.id);
           targetLabel = `유저 [${targetUserName}]님의 모든 캐릭터`;
         }
 
-        const payloadFields = {};
+        // 해당 charId 들의 ledger 엔트리 제거 — 각 charId 를 빈 맵으로 덮어씀.
+        const fieldsToClear = {};
         let updateMaskPaths = [];
-
-        for (const raidId of Object.keys(RAID_META)) {
-          let currentList = exclusions[raidId] || [];
-          let newList = [];
-
-          if (!isResetAll) {
-            newList = currentList.filter(id => !targetIds.includes(id));
-          }
-
-          if (currentList.length !== newList.length || (isResetAll && currentList.length > 0)) {
-            payloadFields[raidId] = { 
-              arrayValue: newList.length > 0 ? { values: newList.map(id => ({ stringValue: id })) } : {} 
-            };
-            updateMaskPaths.push(`updateMask.fieldPaths=${raidId}`);
+        for (const charId of targetIds) {
+          if (clears[charId] && Object.keys(clears[charId]).length > 0) {
+            fieldsToClear[charId] = { mapValue: { fields: {} } };
+            updateMaskPaths.push(`updateMask.fieldPaths=${encodeURIComponent(charId)}`);
           }
         }
 
         if (updateMaskPaths.length === 0) {
-          return new Response(JSON.stringify({ 
-            type: 4, 
-            data: { content: `[안내] **${targetLabel}**의 완료된 레이드 내역이 없어 이미 초기화된 상태입니다.`, flags: 64 } 
+          return new Response(JSON.stringify({
+            type: 4,
+            data: { content: `[안내] **${targetLabel}**의 완료된 레이드 내역이 없어 이미 초기화된 상태입니다.`, flags: 64 }
           }), { headers: { 'Content-Type': 'application/json' } });
         }
 
-        const updateUrl = `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/${env.FIRESTORE_COLLECTION}/exclusions?key=${env.FIREBASE_API_KEY}&${updateMaskPaths.join('&')}`;
-        
-        const patchRes = await fetch(updateUrl, { 
-          method: 'PATCH', 
-          headers: { 'Content-Type': 'application/json' }, 
-          body: JSON.stringify({ fields: payloadFields }) 
+        const updateUrl = `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/${env.FIRESTORE_COLLECTION}/clears?key=${env.FIREBASE_API_KEY}&${updateMaskPaths.join('&')}`;
+        const patchRes = await fetch(updateUrl, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ fields: fieldsToClear })
         });
 
         if (!patchRes.ok) {
-          return new Response(JSON.stringify({ 
-            type: 4, 
-            data: { content: `[오류] 초기화 중 데이터베이스 업데이트에 실패했습니다.`, flags: 64 } 
+          return new Response(JSON.stringify({
+            type: 4,
+            data: { content: `[오류] 초기화 중 데이터베이스 업데이트에 실패했습니다.`, flags: 64 }
           }), { headers: { 'Content-Type': 'application/json' } });
         }
 
         firebaseCache.lastFetchTime = 0;
 
-        let resultText = `**레이드 완료 내역 초기화 완료**\n━━━━━━━━━━━━━━━━━━━━━━\n대상: **${targetLabel}**\n상태: 모든 숙제(레이드) 내역이 성공적으로 초기화되었습니다.`;
-        if (isResetAll) {
-            resultText += `\n*(이번 주 획득한 골드는 누적 골드에 안전하게 합산되었습니다)*`;
-        }
-
-        return new Response(JSON.stringify({ type: 4, data: { content: resultText, flags: 64 } }), { headers: { 'Content-Type': 'application/json' } });
+        return new Response(JSON.stringify({
+            type: 4,
+            data: {
+                content: `**레이드 완료 내역 초기화 완료**\n━━━━━━━━━━━━━━━━━━━━━━\n대상: **${targetLabel}**\n상태: 해당 캐릭터(들)의 이번 주 숙제 내역이 초기화되었습니다.`,
+                flags: 64
+            }
+        }), { headers: { 'Content-Type': 'application/json' } });
       }
 
     }

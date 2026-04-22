@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getFirestore } from 'firebase/firestore';
+import { initializeFirestore } from 'firebase/firestore';
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -11,4 +11,5 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app);
+// undefined 필드(rosterLabel 등 선택적 필드) 를 자동 무시 — 기존 optional 필드와 동일하게 처리.
+export const db = initializeFirestore(app, { ignoreUndefinedProperties: true });

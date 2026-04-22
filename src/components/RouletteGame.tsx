@@ -28,8 +28,7 @@ export const RouletteGame: React.FC<Props> = ({ allUserNames = [] }) => {
   const [rotation, setRotation] = useState(0);
   const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-
-  
+  const discordSentRef = useRef(false);
 
   useEffect(() => {
     setNames((prev) => {
@@ -50,15 +49,15 @@ export const RouletteGame: React.FC<Props> = ({ allUserNames = [] }) => {
     [names, playerCount],
   );
 
-  // 👇 이곳에 추가합니다.
   useEffect(() => {
-    if (winner) {
+    if (winner && !discordSentRef.current) {
+      discordSentRef.current = true;
       const participants = activeNames.join(', ');
       sendDiscordNotification(
         `**룰렛 게임 결과**\n참여자: ${participants}\n🎉 **${winner}** 님이 당첨되셨습니다! 축하드립니다!`
       );
     }
-  }, [winner, activeNames]);
+  }, [winner]);
 
   useEffect(() => {
     drawRoulette();

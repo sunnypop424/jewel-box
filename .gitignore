@@ -15,6 +15,7 @@ dist-ssr
 .env
 .env.*
 register.js
+_cloudflareworker.js
 
 # Editor directories and files
 .vscode/*

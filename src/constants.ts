@@ -1,4 +1,5 @@
-import type { RaidId } from './types';
+// RAID_META 는 레이드 레지스트리로 이동 — 기존 import 경로 호환을 위해 재수출.
+export { RAID_META } from './data/raids';
 
 export const JOB_OPTIONS = [
   '디스트로이어',
@@ -36,30 +37,3 @@ export const ROLE_OPTIONS = [
   { value: 'DPS' as const, label: '딜러' },
   { value: 'SUPPORT' as const, label: '서포터' }
 ];
-
-export const RAID_META: Record<
-  RaidId,
-  { 
-    label: string; 
-    difficulty: 'HARD' | 'NORMAL' | 'NIGHTMARE' | 'STEP1' | 'STEP2' | 'STEP3'; 
-    colorClass: string; 
-    gold: number; 
-    goldType: 'GENERAL' | 'BOUND' 
-  }
-> = {
-  ACT1_HARD: { label: '1막 하드', difficulty: 'HARD', colorClass: 'bg-amber-500', gold: 18000, goldType: 'GENERAL' },
-  ACT2_NORMAL: { label: '2막 노말', difficulty: 'NORMAL', colorClass: 'bg-sky-400', gold: 16500, goldType: 'GENERAL' },
-  ACT3_NORMAL: { label: '3막 노말', difficulty: 'NORMAL', colorClass: 'bg-sky-400', gold: 21000, goldType: 'GENERAL' },
-  ACT2_HARD: { label: '2막 하드', difficulty: 'HARD', colorClass: 'bg-amber-600', gold: 23000, goldType: 'GENERAL' },
-  ACT3_HARD: { label: '3막 하드', difficulty: 'HARD', colorClass: 'bg-orange-400', gold: 27000, goldType: 'GENERAL' },
-  ACT4_NORMAL: { label: '4막 노말', difficulty: 'NORMAL', colorClass: 'bg-sky-400', gold: 33000, goldType: 'GENERAL' },
-  ACT4_HARD: { label: '4막 하드', difficulty: 'HARD', colorClass: 'bg-amber-500', gold: 42000, goldType: 'GENERAL' },
-  SERKA_NORMAL: { label: '세르카 노말', difficulty: 'NORMAL', colorClass: 'bg-violet-300', gold: 35000, goldType: 'GENERAL' },
-  SERKA_HARD: { label: '세르카 하드', difficulty: 'HARD', colorClass: 'bg-violet-500', gold: 44000, goldType: 'GENERAL' },
-  SERKA_NIGHTMARE: { label: '세르카 나이트메어', difficulty: 'NIGHTMARE', colorClass: 'bg-violet-700', gold: 54000, goldType: 'GENERAL' },
-  FINAL_NORMAL: { label: '종막 노말', difficulty: 'NORMAL', colorClass: 'bg-emerald-400', gold: 40000, goldType: 'GENERAL' },
-  FINAL_HARD: { label: '종막 하드', difficulty: 'HARD', colorClass: 'bg-red-500', gold: 52000, goldType: 'GENERAL' },
-  HORIZON_STEP1: { label: '지평의 성당 1단계', difficulty: 'STEP1', colorClass: 'bg-orange-400', gold: 30000, goldType: 'BOUND' },
-  HORIZON_STEP2: { label: '지평의 성당 2단계', difficulty: 'STEP2', colorClass: 'bg-orange-500', gold: 40000, goldType: 'BOUND' },
-  HORIZON_STEP3: { label: '지평의 성당 3단계', difficulty: 'STEP3', colorClass: 'bg-orange-600', gold: 50000, goldType: 'BOUND' }
-};
