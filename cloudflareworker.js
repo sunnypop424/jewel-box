@@ -440,11 +440,12 @@ function computeCharLedgerView(ch, clears, userChars, rosterRaidState) {
 
   let cGen = 0, cBnd = 0, tGen = 0, tBnd = 0;
   for (const y of activeYields) {
+    const isSplit = y.general > 0 && y.bound > 0;
     tGen += y.general;
-    if (!ignoreBound) tBnd += y.bound;
+    if (!ignoreBound || isSplit) tBnd += y.bound;
     if (y.isCleared) {
       cGen += y.general;
-      if (!ignoreBound) cBnd += y.bound;
+      if (!ignoreBound || isSplit) cBnd += y.bound;
     }
   }
 
