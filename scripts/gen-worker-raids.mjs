@@ -97,6 +97,9 @@ function isWithinAvailability(raid, now) {
 }
 
 // 캐릭 스코프 레이드 후보 (원정대 스코프는 getRosterRaidsForChar 로 별도 처리).
+// 웹앱 src/data/raids.ts getEligibleRaids 와 동일 규칙:
+//   - ch.singleRaids 에 해당 family 의 *_SINGLE 이 있고 자격 충족 시 SINGLE 선택.
+//   - 그 외에는 SINGLE 제외한 qualified 중 minItemLevel 최댓값 선택.
 function getTargetRaidsForCharacter(ch) {
   const il = ch.itemLevel;
   const now = new Date();
@@ -105,7 +108,21 @@ function getTargetRaidsForCharacter(ch) {
   for (const raid of RAIDS) {
     if (!isWithinAvailability(raid, now)) continue;
     if (raid.clearScope === 'roster') continue;
+
+    const singleId = (ch.singleRaids || []).find(
+      r => getRaidFamily(r) === raid.family && r.endsWith('_SINGLE')
+    );
+    if (singleId) {
+      const singleDiff = raid.difficulties.find(d => d.tier === 'SINGLE');
+      if (singleDiff && il >= singleDiff.minItemLevel) {
+        if (raid.family === 'HORIZON') horizon.push(singleId);
+        else normal.push(singleId);
+      }
+      continue;
+    }
+
     const qualified = raid.difficulties.filter((d) => {
+      if (d.tier === 'SINGLE') return false;
       if (il < d.minItemLevel) return false;
       if (d.requiresFlag && !ch[d.requiresFlag]) return false;
       return true;
@@ -184,7 +201,24 @@ function computeCharLedgerView(ch, clears, userChars, rosterRaidState) {
   for (const raid of RAIDS) {
     if (!isWithinAvailability(raid, now)) continue;
     if (raid.clearScope === 'roster') continue;
+
+    const singleId = (ch.singleRaids || []).find(
+      r => getRaidFamily(r) === raid.family && r.endsWith('_SINGLE')
+    );
+    if (singleId) {
+      const singleDiff = raid.difficulties.find(d => d.tier === 'SINGLE');
+      if (singleDiff && il >= singleDiff.minItemLevel) {
+        const fam = getRaidFamily(singleId);
+        if (!charCandByFamily.has(fam)) {
+          const meta = RAID_META[singleId];
+          charCandByFamily.set(fam, { id: singleId, general: meta.generalGold, bound: meta.boundGold, isCleared: false });
+        }
+      }
+      continue;
+    }
+
     const q = raid.difficulties.filter(d => {
+      if (d.tier === 'SINGLE') return false;
       if (il < d.minItemLevel) return false;
       if (d.requiresFlag && !ch[d.requiresFlag]) return false;
       return true;

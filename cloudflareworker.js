@@ -92,6 +92,11 @@ const RAID_META = {
     "generalGold": 13500,
     "boundGold": 13500
   },
+  "ACT3_SINGLE": {
+    "label": "3막 싱글",
+    "generalGold": 10500,
+    "boundGold": 10500
+  },
   "ACT2_NORMAL": {
     "label": "2막 노말",
     "generalGold": 8250,
@@ -102,10 +107,20 @@ const RAID_META = {
     "generalGold": 11500,
     "boundGold": 11500
   },
+  "ACT2_SINGLE": {
+    "label": "2막 싱글",
+    "generalGold": 8250,
+    "boundGold": 8250
+  },
   "ACT1_HARD": {
     "label": "1막 하드",
     "generalGold": 9000,
     "boundGold": 9000
+  },
+  "ACT1_SINGLE": {
+    "label": "1막 싱글",
+    "generalGold": 5750,
+    "boundGold": 5750
   }
 };
 
@@ -230,6 +245,11 @@ const RAIDS = [
         "tier": "HARD",
         "minItemLevel": 1700,
         "requiresFlag": null
+      },
+      {
+        "tier": "SINGLE",
+        "minItemLevel": 1680,
+        "requiresFlag": null
       }
     ]
   },
@@ -248,6 +268,11 @@ const RAIDS = [
         "tier": "HARD",
         "minItemLevel": 1690,
         "requiresFlag": null
+      },
+      {
+        "tier": "SINGLE",
+        "minItemLevel": 1670,
+        "requiresFlag": null
       }
     ]
   },
@@ -260,6 +285,11 @@ const RAIDS = [
       {
         "tier": "HARD",
         "minItemLevel": 1680,
+        "requiresFlag": null
+      },
+      {
+        "tier": "SINGLE",
+        "minItemLevel": 1660,
         "requiresFlag": null
       }
     ]
@@ -281,6 +311,9 @@ function isWithinAvailability(raid, now) {
 }
 
 // 캐릭 스코프 레이드 후보 (원정대 스코프는 getRosterRaidsForChar 로 별도 처리).
+// 웹앱 src/data/raids.ts getEligibleRaids 와 동일 규칙:
+//   - ch.singleRaids 에 해당 family 의 *_SINGLE 이 있고 자격 충족 시 SINGLE 선택.
+//   - 그 외에는 SINGLE 제외한 qualified 중 minItemLevel 최댓값 선택.
 function getTargetRaidsForCharacter(ch) {
   const il = ch.itemLevel;
   const now = new Date();
@@ -343,7 +376,6 @@ function getRosterRaidsForChar(ch, rosterRaidState) {
 function getRaidFamily(raidId) {
   return raidId.slice(0, raidId.indexOf('_'));
 }
-
 
 // 귀속 골드 무시 여부. 웹앱 App.tsx computeIgnoreBoundGold 와 동일.
 function computeIgnoreBound(ch, userChars) {
@@ -476,6 +508,14 @@ function toFirestoreClearEntry(entry) {
   };
 }
 
+// Firestore field path 에서 유효 식별자(`^[_a-zA-Z][_a-zA-Z0-9]*$`)가 아닌 이름은
+// 백틱으로 감싸야 한다. 캐릭터 ID 는 `{discordName}-{idx}-{timestamp}` 형식으로
+// 하이픈(과 때로는 한글)을 포함하므로 반드시 이스케이프 필요.
+function escapeFirestoreFieldPath(name) {
+  if (/^[_a-zA-Z][_a-zA-Z0-9]*$/.test(name)) return name;
+  return '`' + String(name).replace(/\\/g, '\\\\').replace(/`/g, '\\`') + '`';
+}
+
 // 특정 캐릭의 특정 레이드 엔트리 upsert. 먼저 기존 캐릭 맵 읽어오고 병합.
 async function writeClearEntryREST(env, clears, charId, entry) {
   const charMap = { ...(clears[charId] || {}) };
@@ -484,9 +524,15 @@ async function writeClearEntryREST(env, clears, charId, entry) {
   for (const [raidId, e] of Object.entries(charMap)) {
     fields[raidId] = toFirestoreClearEntry(e);
   }
-  const updateUrl = `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/${env.FIRESTORE_COLLECTION}/clears?key=${env.FIREBASE_API_KEY}&updateMask.fieldPaths=${encodeURIComponent(charId)}`;
+  const maskPath = escapeFirestoreFieldPath(charId);
+  const updateUrl = `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/${env.FIRESTORE_COLLECTION}/clears?key=${env.FIREBASE_API_KEY}&updateMask.fieldPaths=${encodeURIComponent(maskPath)}`;
   const payload = { fields: { [charId]: { mapValue: { fields } } } };
-  return fetch(updateUrl, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+  const res = await fetch(updateUrl, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`Firestore PATCH clears failed (${res.status}): ${body}`);
+  }
+  return res;
 }
 
 // 특정 캐릭의 특정 레이드 엔트리 삭제. 나머지 엔트리만 남겨서 PATCH.
@@ -497,9 +543,15 @@ async function deleteClearEntryREST(env, clears, charId, raidId) {
   for (const [rId, e] of Object.entries(charMap)) {
     fields[rId] = toFirestoreClearEntry(e);
   }
-  const updateUrl = `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/${env.FIRESTORE_COLLECTION}/clears?key=${env.FIREBASE_API_KEY}&updateMask.fieldPaths=${encodeURIComponent(charId)}`;
+  const maskPath = escapeFirestoreFieldPath(charId);
+  const updateUrl = `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/${env.FIRESTORE_COLLECTION}/clears?key=${env.FIREBASE_API_KEY}&updateMask.fieldPaths=${encodeURIComponent(maskPath)}`;
   const payload = { fields: { [charId]: { mapValue: { fields } } } };
-  return fetch(updateUrl, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+  const res = await fetch(updateUrl, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`Firestore PATCH clears (delete) failed (${res.status}): ${body}`);
+  }
+  return res;
 }
 
 function buildClearEntry(ch, raidId) {
@@ -1079,11 +1131,9 @@ export default {
               const cleared = new Set(view.ledgerEntries.map(e => e.raidId));
               const clearedFam = view.clearedFamilies;
 
-              // 캐릭 스코프 + 원정대 스코프(대표로 지정된 경우) 모두 고려.
-              const allEligible = [
-                ...getTargetRaidsForCharacter(ch),
-                ...getRosterRaidsForChar(ch, rosterRaidState),
-              ];
+              // view.raidsForChar = 골드 기반 top3(캐릭 스코프) + 원정대 스코프.
+              // 귀속골드 포함/제외 옵션을 존중하므로 웹앱 버튼 UI 와 동일한 목록.
+              const allEligible = view.raidsForChar;
               choices = allEligible
                 .filter(rId => !cleared.has(rId))
                 .filter(rId => !clearedFam.has(getRaidFamily(rId)))
