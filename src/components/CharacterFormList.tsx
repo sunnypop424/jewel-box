@@ -164,7 +164,7 @@ export const CharacterFormList: React.FC<Props> = ({
 }) => {
     // ✨ Hook 
     
-    const { confirm } = useConfirm();
+    const { confirm, ConfirmModal } = useConfirm();
 
     const [localDiscord, setLocalDiscord] = useState(discordName);
     const [localDiscordId, setLocalDiscordId] = useState('');
@@ -781,6 +781,7 @@ export const CharacterFormList: React.FC<Props> = ({
                 </button>
             </div>
 
+            <ConfirmModal />
         </div>
     );
 };
