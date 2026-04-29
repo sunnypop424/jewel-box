@@ -1,6 +1,6 @@
-import { collection, doc, getDocs, getDoc, setDoc, updateDoc, addDoc, deleteDoc, query, where, orderBy, arrayUnion, deleteField } from 'firebase/firestore';
+import { collection, doc, getDocs, getDoc, setDoc, updateDoc, addDoc, deleteDoc, query, where, orderBy, arrayUnion, deleteField, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
-import type { Character, RaidSettingsMap, RaidSwap, RaidId, RaidExclusionMap, ClearEntry, WeeklyClears, RosterRaidState, RosterRaidSelection } from '../types';
+import type { Character, RaidSettingsMap, RaidSwap, RaidId, RaidExclusionMap, ClearEntry, WeeklyClears, RosterRaidState, RosterRaidSelection, Mission, NewMission } from '../types';
 import type { RaidFamily } from '../data/raids';
 import { getRaidFamily, ALL_RAID_IDS } from '../data/raids';
 
@@ -269,4 +269,77 @@ export async function updatePersonalSchedule(
 // 일정 삭제
 export async function deletePersonalSchedule(id: string): Promise<void> {
   await deleteDoc(doc(SCHEDULES_COLLECTION, id));
+}
+
+// =============================================================================
+// 미션 보드 (Jewel Bet) — missions 컬렉션
+// -----------------------------------------------------------------------------
+// 각 문서 = 하나의 미션. 모든 유저가 보드를 공유하고 onSnapshot 으로 실시간 동기화.
+// =============================================================================
+
+const MISSIONS_COLLECTION = collection(db, 'missions');
+
+export type MissionUnsubscribe = () => void;
+
+// 보드 페이지에서 mount 시 구독, unmount 시 반환된 함수 호출.
+export function subscribeMissions(
+  onChange: (missions: Mission[]) => void,
+  onError?: (err: Error) => void,
+): MissionUnsubscribe {
+  const q = query(MISSIONS_COLLECTION, orderBy('createdAt', 'desc'));
+  return onSnapshot(
+    q,
+    (snap) => {
+      const list = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Mission, 'id'>) }));
+      onChange(list);
+    },
+    (err) => onError?.(err as Error),
+  );
+}
+
+// 미션 생성. 타입에 따라 초기 상태를 자동 결정.
+// - DIRECT: 생성 즉시 SETTLED, winner = target, winnerSelectedBy = 'AUTO'
+// - POOL_*: OPEN
+export async function createMission(data: NewMission): Promise<Mission> {
+  const now = new Date().toISOString();
+  const isDirect = data.type === 'DIRECT';
+  const initialStatus: Mission['status'] = isDirect ? 'SETTLED' : 'OPEN';
+
+  const payload: Omit<Mission, 'id'> = {
+    ...data,
+    status: initialStatus,
+    paidByIssuer: false,
+    receivedByWinner: false,
+    createdAt: now,
+    updatedAt: now,
+    ...(isDirect && data.target
+      ? { winner: data.target, winnerSelectedBy: 'AUTO' as const, resolvedAt: now }
+      : {}),
+  };
+
+  // Firestore는 undefined 필드를 허용하지 않으므로 제거.
+  const cleaned: Record<string, unknown> = {};
+  Object.entries(payload).forEach(([k, v]) => {
+    if (v !== undefined) cleaned[k] = v;
+  });
+
+  const docRef = await addDoc(MISSIONS_COLLECTION, cleaned);
+  return { id: docRef.id, ...payload };
+}
+
+// 미션 부분 업데이트. id/createdAt/issuer/type 은 변경 불가.
+export async function updateMission(
+  id: string,
+  patch: Partial<Omit<Mission, 'id' | 'createdAt' | 'issuer' | 'type'>>,
+): Promise<void> {
+  const cleaned: Record<string, unknown> = { updatedAt: new Date().toISOString() };
+  Object.entries(patch).forEach(([k, v]) => {
+    if (v !== undefined) cleaned[k] = v;
+  });
+  await updateDoc(doc(MISSIONS_COLLECTION, id), cleaned);
+}
+
+// 미션 삭제 (영구).
+export async function deleteMission(id: string): Promise<void> {
+  await deleteDoc(doc(MISSIONS_COLLECTION, id));
 }

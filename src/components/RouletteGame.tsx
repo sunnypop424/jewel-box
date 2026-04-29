@@ -4,6 +4,10 @@ import { sendDiscordNotification } from '../utils/discord';
 
 interface Props {
   allUserNames?: string[];
+  // 미션 보드에서 후보를 사전 주입하기 위한 옵션. 제공 시 인원 수/이름이 자동 채워짐.
+  initialNames?: string[];
+  // winner 결정 시 호출. 제공된 경우 자체 디스코드 알림은 생략(미션 보드의 워커 알림과 중복 방지).
+  onWinnerDetermined?: (winner: string) => void;
 }
 
 const COLORS = [
@@ -20,9 +24,10 @@ const COLORS = [
 const TAU = Math.PI * 2;
 const POINTER_ANGLE = -Math.PI / 2; // 12시 방향
 
-export const RouletteGame: React.FC<Props> = ({ allUserNames = [] }) => {
-  const [names, setNames] = useState<string[]>(['', '']);
-  const [playerCount, setPlayerCount] = useState(2);
+export const RouletteGame: React.FC<Props> = ({ allUserNames = [], initialNames, onWinnerDetermined }) => {
+  const seededInitial = initialNames && initialNames.length >= 2 ? initialNames.slice(0, 8) : null;
+  const [names, setNames] = useState<string[]>(seededInitial ?? ['', '']);
+  const [playerCount, setPlayerCount] = useState(seededInitial ? seededInitial.length : 2);
   const [isSpinning, setIsSpinning] = useState(false);
   const [winner, setWinner] = useState<string | null>(null);
   const [rotation, setRotation] = useState(0);
@@ -52,10 +57,15 @@ export const RouletteGame: React.FC<Props> = ({ allUserNames = [] }) => {
   useEffect(() => {
     if (winner && !discordSentRef.current) {
       discordSentRef.current = true;
-      const participants = activeNames.join(', ');
-      sendDiscordNotification(
-        `**룰렛 게임 결과**\n참여자: ${participants}\n🎉 **${winner}** 님이 당첨되셨습니다! 축하드립니다!`
-      );
+      if (onWinnerDetermined) {
+        // 미션 보드 모드: 자체 디스코드 알림 대신 콜백으로 위임 (워커가 미션 정산 알림을 보냄).
+        onWinnerDetermined(winner);
+      } else {
+        const participants = activeNames.join(', ');
+        sendDiscordNotification(
+          `**룰렛 게임 결과**\n참여자: ${participants}\n🎉 **${winner}** 님이 당첨되셨습니다! 축하드립니다!`
+        );
+      }
     }
   }, [winner]);
 

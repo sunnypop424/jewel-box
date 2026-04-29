@@ -693,6 +693,163 @@ async function deleteScheduleMessageById(env, messageId) {
   }
 }
 
+// 미션 정산 채널에 정산 대기 메시지를 게시. 채널 미설정 시 "ok:true, messageId:null" 로 응답하여
+// 클라이언트 흐름을 막지 않습니다.
+// 메시지에는 송금/수령 토글 버튼이 함께 게시되어, 디스코드 안에서도 정산 체크가 가능합니다.
+async function postMissionSettledMessage(env, { missionId, issuer, winner, goldAmount, title, type }) {
+  const botToken = env.DISCORD_BOT_TOKEN;
+  const channelId = env.DISCORD_MISSION_CHANNEL_ID;
+  if (!botToken || !channelId) return { ok: true, messageId: null, skipped: 'CHANNEL_NOT_SET' };
+  if (!missionId) return { ok: false, reason: 'MISSION_ID_MISSING', messageId: null };
+
+  const initialMission = {
+    issuer, winner, goldAmount, title, type,
+    paidByIssuer: false, receivedByWinner: false,
+  };
+  const { content, components } = buildMissionMessageBody(initialMission, missionId);
+
+  try {
+    const res = await fetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bot ${botToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content, components })
+    });
+    if (!res.ok) return { ok: false, reason: `HTTP_${res.status}`, messageId: null };
+    const data = await res.json();
+    return { ok: true, messageId: data?.id || null };
+  } catch (e) {
+    return { ok: false, reason: e.message, messageId: null };
+  }
+}
+
+// 미션 정산 채널의 메시지 삭제. 404는 정상 처리.
+async function deleteMissionMessageById(env, messageId) {
+  if (!messageId) return { ok: true, skipped: true };
+  const botToken = env.DISCORD_BOT_TOKEN;
+  const channelId = env.DISCORD_MISSION_CHANNEL_ID;
+  if (!botToken || !channelId) return { ok: true, skipped: 'CHANNEL_NOT_SET' };
+
+  try {
+    const res = await fetch(`https://discord.com/api/v10/channels/${channelId}/messages/${messageId}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bot ${botToken}` }
+    });
+    if (res.status === 404) return { ok: true, alreadyGone: true };
+    return { ok: res.ok };
+  } catch (e) {
+    return { ok: false, reason: e.message };
+  }
+}
+
+// POOL 미션이 title 없이 등록될 수 있으므로 룰/기준 라벨로 폴백.
+// 클라이언트의 src/utils/missionTitle.ts 와 동일 규칙을 유지.
+function deriveMissionDisplayTitle(mission) {
+  const userTitle = (mission.title || '').trim();
+  if (userTitle) return userTitle;
+
+  if (mission.type === 'POOL_LUCK') {
+    if (mission.poolLuckRule === 'CUSTOM') {
+      return (mission.customCriterion || '').trim() || '미션';
+    }
+    if (mission.poolLuckRule === 'RANDOM') return '랜덤(룰렛)';
+    if (mission.poolLuckRule === 'LOWEST_HP') return '잔혈';
+    if (mission.poolLuckRule === 'MAIN_MVP') return '메인 MVP';
+  }
+  if (mission.type === 'POOL_COMPETE') {
+    if (mission.competeCriterion === 'CUSTOM') {
+      return (mission.customCriterion || '').trim() || '미션';
+    }
+    if (mission.competeCriterion === 'TOP_DPS') return '딜 1등';
+  }
+  return '미션';
+}
+
+// 미션 정산 메시지 본문(content + buttons) 렌더링.
+// 송금/수령 상태에 따라 ☐/☑ 마크와 버튼 색이 바뀐다.
+function buildMissionMessageBody(mission, missionId) {
+  const typeLabel = mission.type === 'DIRECT' ? '1:1' : mission.type === 'POOL_LUCK' ? '랜덤' : '경쟁';
+  const amountStr = Number(mission.goldAmount || 0).toLocaleString();
+  const paid = !!mission.paidByIssuer;
+  const received = !!mission.receivedByWinner;
+  const paidMark = paid ? '☑' : '☐';
+  const receivedMark = received ? '☑' : '☐';
+  const displayTitle = deriveMissionDisplayTitle(mission);
+
+  const content =
+    `## 미션 정산 대기 (${typeLabel})\n` +
+    `- 미션: **${displayTitle}**\n` +
+    `- 보낼 사람: **${mission.issuer}** ${paidMark} 송금 완료\n` +
+    `- 받을 사람: **${mission.winner}** ${receivedMark} 수령 확인\n` +
+    `- 금액: **${amountStr} G**\n` +
+    `각자 본인 항목을 버튼으로 체크해 주세요. 둘 다 체크되면 자동으로 정산 처리됩니다.`;
+
+  const components = [{
+    type: 1,
+    components: [
+      {
+        type: 2,
+        // 3=success(녹색), 2=secondary(회색)
+        style: paid ? 3 : 2,
+        label: paid ? '✓ 송금 완료' : '💸 송금 완료',
+        custom_id: `mission_paid::${missionId}`,
+      },
+      {
+        type: 2,
+        style: received ? 3 : 2,
+        label: received ? '✓ 수령 확인' : '🏆 수령 확인',
+        custom_id: `mission_received::${missionId}`,
+      },
+    ]
+  }];
+
+  return { content, components };
+}
+
+// Firestore REST: missions/{missionId} 단일 문서 조회. 없으면 null.
+async function fetchMissionByIdREST(env, missionId) {
+  const url = `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/missions/${missionId}?key=${env.FIREBASE_API_KEY}`;
+  const res = await fetch(url);
+  if (!res.ok) return null;
+  const data = await res.json();
+  return parseFirestoreDoc(data);
+}
+
+// Firestore REST: missions/{missionId} 부분 업데이트.
+// fields 는 Firestore Value 포맷이어야 함 (예: { paidByIssuer: { booleanValue: true } }).
+async function updateMissionFieldsREST(env, missionId, fields) {
+  const fieldNames = Object.keys(fields);
+  if (fieldNames.length === 0) return true;
+  const maskParam = fieldNames.map(n => `updateMask.fieldPaths=${encodeURIComponent(n)}`).join('&');
+  const url = `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/missions/${missionId}?key=${env.FIREBASE_API_KEY}&${maskParam}`;
+  const res = await fetch(url, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fields }),
+  });
+  return res.ok;
+}
+
+// 미션 메시지의 content/components 를 최신 상태로 PATCH.
+// 메시지가 이미 사라졌으면(404) 조용히 ok:false 반환.
+async function refreshMissionMessage(env, mission, missionId) {
+  const botToken = env.DISCORD_BOT_TOKEN;
+  const channelId = env.DISCORD_MISSION_CHANNEL_ID;
+  if (!botToken || !channelId || !mission.discordMessageId) return { ok: false, reason: 'NO_TARGET' };
+
+  const { content, components } = buildMissionMessageBody(mission, missionId);
+  try {
+    const res = await fetch(`https://discord.com/api/v10/channels/${channelId}/messages/${mission.discordMessageId}`, {
+      method: 'PATCH',
+      headers: { 'Authorization': `Bot ${botToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content, components }),
+    });
+    if (res.status === 404) return { ok: false, alreadyGone: true };
+    return { ok: res.ok };
+  } catch (e) {
+    return { ok: false, reason: e.message };
+  }
+}
+
 // Firestore REST API: personalSchedules 컬렉션 전체 조회
 async function fetchPersonalSchedules(env) {
   const url = `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/personalSchedules?key=${env.FIREBASE_API_KEY}&pageSize=1000`;
@@ -911,6 +1068,65 @@ export default {
       }
     }
 
+    // 🌟 [웹 앱 -> 미션 보드 정산 알림 API]
+    // create:  정산 대기 메시지 게시 → { messageId } 반환
+    // delete:  기존 메시지 삭제 (정산 완료/무효/실패 시)
+    // refresh: missionId 로 Firestore 읽어 메시지 본문/버튼을 최신 상태로 PATCH
+    //          (웹에서 토글했을 때 디스코드 메시지의 ☐/☑ 마크 동기화용)
+    if (url.pathname === '/api/discord-mission' && request.method === 'POST') {
+      try {
+        const body = await request.json();
+        const action = body.action || 'create';
+
+        if (action === 'delete') {
+          if (!body.messageId) {
+            return new Response(JSON.stringify({ error: 'messageId 누락' }), { status: 400, headers: corsHeaders });
+          }
+          const result = await deleteMissionMessageById(env, body.messageId);
+          return new Response(JSON.stringify({ success: !!result.ok }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
+        if (action === 'refresh') {
+          if (!body.missionId) {
+            return new Response(JSON.stringify({ error: 'missionId 누락' }), { status: 400, headers: corsHeaders });
+          }
+          const mission = await fetchMissionByIdREST(env, body.missionId);
+          if (!mission || !mission.discordMessageId) {
+            return new Response(JSON.stringify({ success: false, reason: 'NO_MESSAGE' }), {
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+          }
+          const result = await refreshMissionMessage(env, mission, body.missionId);
+          return new Response(JSON.stringify({ success: !!result.ok }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
+        // action === 'create'
+        if (!body.issuer || !body.winner || !body.title) {
+          return new Response(JSON.stringify({ error: '필수 파라미터 누락' }), { status: 400, headers: corsHeaders });
+        }
+        const result = await postMissionSettledMessage(env, {
+          missionId: body.missionId,
+          issuer: body.issuer,
+          winner: body.winner,
+          goldAmount: body.goldAmount,
+          title: body.title,
+          type: body.type,
+        });
+        if (!result.ok) {
+          return new Response(JSON.stringify({ error: result.reason || 'DISCORD_FAIL' }), { status: 500, headers: corsHeaders });
+        }
+        return new Response(JSON.stringify({ success: true, messageId: result.messageId }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      } catch (err) {
+        return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: corsHeaders });
+      }
+    }
+
     // 🌟 [웹 앱 -> 디스코드 미니게임 결과 발송 API]
     if (url.pathname === '/api/discord-minigame' && request.method === 'POST') {
       try {
@@ -1078,9 +1294,114 @@ export default {
           }), { headers: { 'Content-Type': 'application/json' } });
         }
 
+        // 3. 💎 미션 정산 버튼 (송금/수령 토글)
+        if (customId.startsWith('mission_paid::') || customId.startsWith('mission_received::')) {
+          const isPaid = customId.startsWith('mission_paid::');
+          const missionId = customId.split('::')[1];
+
+          const mission = await fetchMissionByIdREST(env, missionId);
+          if (!mission) {
+            return new Response(JSON.stringify({
+              type: 4,
+              data: { content: '[안내] 미션을 찾을 수 없습니다. 이미 삭제되었을 수 있습니다.', flags: 64 }
+            }), { headers: { 'Content-Type': 'application/json' } });
+          }
+
+          if (mission.status !== 'SETTLED') {
+            return new Response(JSON.stringify({
+              type: 4,
+              data: { content: `[안내] 이 미션은 정산 대기 상태가 아닙니다. (현재: ${mission.status})`, flags: 64 }
+            }), { headers: { 'Content-Type': 'application/json' } });
+          }
+
+          // 클릭한 사람이 송금/수령 권한자인지 확인.
+          const member = interaction.member;
+          const user = member ? member.user : interaction.user;
+          const userId = user.id;
+          const discordUserName = (member && member.nick) ? member.nick : (user.global_name || user.username);
+
+          const targetName = isPaid ? mission.issuer : mission.winner;
+          const { allChars } = await fetchFirebaseWithCache(env);
+          const clickerChar = allChars.find(c => c.discordId === userId);
+          const clickerName = clickerChar?.discordName || discordUserName;
+
+          if (clickerName !== targetName) {
+            return new Response(JSON.stringify({
+              type: 4,
+              data: {
+                content: `[권한 없음] ${isPaid ? '송금 완료' : '수령 확인'} 체크는 **${targetName}** 님만 누를 수 있습니다.`,
+                flags: 64,
+              }
+            }), { headers: { 'Content-Type': 'application/json' } });
+          }
+
+          // 토글 결정: 현재 값을 뒤집는다.
+          const currentVal = isPaid ? !!mission.paidByIssuer : !!mission.receivedByWinner;
+          const newVal = !currentVal;
+          const otherVal = isPaid ? !!mission.receivedByWinner : !!mission.paidByIssuer;
+          const willComplete = newVal && otherVal;
+
+          const nowIso = new Date().toISOString();
+
+          if (willComplete) {
+            // 양쪽 모두 체크 → COMPLETED 전이 + 메시지 삭제
+            await updateMissionFieldsREST(env, missionId, {
+              paidByIssuer: { booleanValue: true },
+              receivedByWinner: { booleanValue: true },
+              status: { stringValue: 'COMPLETED' },
+              completedAt: { stringValue: nowIso },
+              updatedAt: { stringValue: nowIso },
+            });
+
+            // 메시지는 응답 후 백그라운드에서 삭제 (UPDATE_MESSAGE 가 잠깐 보이도록 1.5초 지연)
+            const messageIdToDelete = mission.discordMessageId;
+            if (messageIdToDelete) {
+              ctx.waitUntil((async () => {
+                await new Promise(r => setTimeout(r, 1500));
+                await deleteMissionMessageById(env, messageIdToDelete);
+              })());
+            }
+
+            // 양쪽 ☑ 표시 + 버튼 제거된 메시지로 잠시 보였다가 사라짐
+            const completedMission = {
+              ...mission,
+              paidByIssuer: true,
+              receivedByWinner: true,
+            };
+            const { content } = buildMissionMessageBody(completedMission, missionId);
+            const finalContent = `${content}\n\n✅ **정산 완료! 메시지를 곧 삭제합니다.**`;
+
+            return new Response(JSON.stringify({
+              type: InteractionResponseType.UPDATE_MESSAGE,
+              data: { content: finalContent, components: [] }
+            }), { headers: { 'Content-Type': 'application/json' } });
+          }
+
+          // 단일 토글
+          const fieldUpdate = isPaid
+            ? { paidByIssuer: { booleanValue: newVal } }
+            : { receivedByWinner: { booleanValue: newVal } };
+          await updateMissionFieldsREST(env, missionId, {
+            ...fieldUpdate,
+            updatedAt: { stringValue: nowIso },
+          });
+
+          const updatedMission = {
+            ...mission,
+            paidByIssuer: isPaid ? newVal : mission.paidByIssuer,
+            receivedByWinner: !isPaid ? newVal : mission.receivedByWinner,
+          };
+          const { content, components } = buildMissionMessageBody(updatedMission, missionId);
+
+          return new Response(JSON.stringify({
+            type: InteractionResponseType.UPDATE_MESSAGE,
+            data: { content, components }
+          }), { headers: { 'Content-Type': 'application/json' } });
+        }
+
       } catch (err) {
         return new Response(JSON.stringify({
-          type: 4, 
+          type: 4,
           data: { content: `버튼 처리 중 에러가 발생했습니다: ${err.message}`, flags: 64 }
         }), { headers: { 'Content-Type': 'application/json' } });
       }

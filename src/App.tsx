@@ -10,6 +10,7 @@ import { RaidSequenceView } from './components/RaidSequenceView';
 import { UserRaidProgressPanel } from './components/UserRaidProgressPanel';
 import { AbsenteeDashboard } from './components/AbsenteeDashboard';
 import { ScheduleCalendar } from './components/ScheduleCalendar';
+import { MissionBoard } from './components/MissionBoard';
 import {
     fetchCharacters, saveCharacters, fetchRaidSettings, setRaidSetting,
     fetchSwaps, addSwap, resetSwaps,
@@ -24,7 +25,7 @@ import { RouletteGame } from './components/RouletteGame';
 import { PinballGame } from './components/PinballGame';
 import { AuctionCalculatorModal } from './components/AuctionCalculatorModal';
 import { GatheringModal } from './components/GatheringModal';
-import { Swords, Sun, Moon, UserCog, LayoutDashboard, ClipboardList, ChartGantt, Menu, X, Users, ChevronDown, Orbit, Megaphone, UserRoundMinus, CalendarDays } from 'lucide-react';
+import { Swords, Sun, Moon, UserCog, LayoutDashboard, ClipboardList, ChartGantt, Menu, X, Users, ChevronDown, Orbit, Megaphone, UserRoundMinus, CalendarDays, Coins } from 'lucide-react';
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 
 // ✨ Hook 추가
@@ -582,6 +583,9 @@ const App: React.FC = () => {
         if (location.pathname === '/calendar') {
             return { title: '일정 공유 캘린더', Icon: CalendarDays };
         }
+        if (location.pathname === '/missions') {
+            return { title: '미션 보드', Icon: Coins };
+        }
         return { title: '개인별 진행 현황', Icon: LayoutDashboard };
     }, [location.pathname]);
 
@@ -665,6 +669,10 @@ const App: React.FC = () => {
 
                         <button onClick={() => handleNavClick('/calendar')} className={navButtonClass(isActive('/calendar'))}>
                             <CalendarDays size={18} /> 일정 공유 캘린더
+                        </button>
+
+                        <button onClick={() => handleNavClick('/missions')} className={navButtonClass(isActive('/missions'))}>
+                            <Coins size={18} /> 미션 보드
                         </button>
 
                         <div className="my-3 h-px bg-zinc-100 dark:bg-zinc-800" />
@@ -1010,6 +1018,18 @@ const App: React.FC = () => {
                                         currentUser={localSquad.discordName}
                                         allUserNames={allUserNames}
                                     />
+                                </section>
+                            } />
+
+                            <Route path="/missions" element={
+                                <section className="flex flex-col gap-6">
+                                    <div className="hidden flex-col gap-3 sm:flex-row sm:items-center sm:justify-between md:flex md:h-[38px]">
+                                        <h2 className="flex items-center gap-2 text-xl font-bold text-zinc-900 dark:text-zinc-100">
+                                            <Coins className="text-indigo-500" /> 미션 보드
+                                        </h2>
+                                    </div>
+
+                                    <MissionBoard allUserNames={allUserNames} />
                                 </section>
                             } />
                         </Routes>

@@ -80,3 +80,68 @@ export interface RaidSwap {
   charId2: string;
   timestamp?: string;
 }
+
+// 미션 보드 (Jewel Bet) — 공대원 간 골드 미션 트래킹.
+// 누적 골드 시스템과는 분리. 시스템이 골드를 옮기지 않고 송금/수령 체크박스로만 추적.
+export type MissionType = 'DIRECT' | 'POOL_LUCK' | 'POOL_COMPETE';
+
+export type MissionStatus =
+  | 'OPEN'        // 진행 중 (판정 대기)
+  | 'RESOLVING'   // 성공 판정 후 수령자 결정 중
+  | 'SETTLED'     // 수령자 확정, 정산 트래킹 중
+  | 'COMPLETED'   // 송금+수령 모두 체크
+  | 'FAILED'      // 미션 실패
+  | 'VOIDED';     // 무효 (사유 필수)
+
+export type PoolLuckRule = 'RANDOM' | 'LOWEST_HP' | 'MAIN_MVP' | 'CUSTOM';
+
+export type CompeteCriterion = 'TOP_DPS' | 'CUSTOM';
+
+export type WinnerSelectedBy = 'AUTO' | 'ROULETTE' | 'ISSUER_PICK';
+
+export interface Mission {
+  id: string;                            // Firestore doc id
+  issuer: string;                        // 미션 건 사람 (UI에서 직접 선택)
+  type: MissionType;
+  title: string;
+  goldAmount: number;                    // 양수
+  description?: string;
+
+  target?: string;                       // DIRECT 전용 (단일 이름)
+  poolMembers?: string[];                // POOL_* 전용 (자유 입력 후보군)
+
+  poolLuckRule?: PoolLuckRule;           // POOL_LUCK 전용
+  competeCriterion?: CompeteCriterion;   // POOL_COMPETE 전용
+  customCriterion?: string;              // CUSTOM 시 라벨
+
+  status: MissionStatus;
+  winner?: string;
+  winnerSelectedBy?: WinnerSelectedBy;
+  voidReason?: string;
+
+  paidByIssuer?: boolean;
+  receivedByWinner?: boolean;
+
+  createdAt: string;
+  updatedAt: string;
+  resolvedAt?: string;
+  completedAt?: string;
+  discordMessageId?: string;             // SETTLED 알림 메시지 ID (정산 완료 시 삭제용)
+}
+
+// 미션 생성 시 입력 받는 필드. 상태/타임스탬프/체크박스 필드는 createMission이 자동 채움.
+export type NewMission = Omit<
+  Mission,
+  | 'id'
+  | 'status'
+  | 'createdAt'
+  | 'updatedAt'
+  | 'winner'
+  | 'winnerSelectedBy'
+  | 'paidByIssuer'
+  | 'receivedByWinner'
+  | 'resolvedAt'
+  | 'completedAt'
+  | 'discordMessageId'
+  | 'voidReason'
+>;
