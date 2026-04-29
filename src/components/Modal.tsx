@@ -56,7 +56,7 @@ export const Modal: React.FC<ModalProps> = ({
             : 'translate-y-8 scale-95 opacity-0'    // 닫혔을 때 (아래로 쳐짐, 약간 축소)
         }`}
       >
-        <div className="flex items-center justify-between border-b border-zinc-100 bg-white/50 px-4 py-3 backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/50 sm:px-6 sm:py-4">
+        <div className="flex items-center justify-between rounded-t-[1.75rem] border-b border-zinc-100 bg-white/50 px-4 py-3 backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/50 sm:rounded-t-3xl sm:px-6 sm:py-4">
           <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">
             {title ?? '정보'}
           </h2>
