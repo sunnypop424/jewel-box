@@ -1,34 +1,23 @@
 import React, { useMemo, useState } from 'react';
 import type { Character, RaidSchedule, RaidRun, RaidId, RaidExclusionMap, RaidSettingsMap } from '../types';
 import { RAID_META } from '../constants';
-import { Shield, Swords, Users, User, ChevronDown, CircleDashed, CheckCircle2, ArrowLeftRight, RotateCcw, Check, UserCheck, UserX, Filter, Trash } from 'lucide-react';
+import { Shield, Swords, Users, ChevronDown, CircleDashed, CheckCircle2, RotateCcw, Check, UserCheck, UserX, Filter } from 'lucide-react';
 import { getDifficultyStyle } from '../utils/difficultyStyle';
-import { SwapModal } from './SwapModal';
 
-// ✨ Hook 추가
-import { toast } from 'sonner';
 import { useConfirm } from '../hooks/useConfirm';
-import type { BalanceMode } from '../raidLogic';
 
 interface Props {
   schedule: RaidSchedule | null;
   isLoading?: boolean;
   exclusions?: RaidExclusionMap;
   onExcludeCharacter?: (raidId: RaidId, characterId: string, isCurrentlyExcluded: boolean) => void | Promise<void>;
-  balanceMode?: BalanceMode;
   raidSettings?: RaidSettingsMap;
   isRaidSettingsLoading?: boolean;
   onToggleSupportShortage?: (raidId: RaidId, next: boolean) => void;
   raidCandidates?: Partial<Record<RaidId, Character[]>>;
-  onSwapCharacter?: (raidId: RaidId, charId1: string, charId2: string) => void | Promise<void>;
-  allCharacters?: Character[];
-  onExcludeRun?: (raidId: RaidId, charIds: string[]) => void | Promise<void>;
-  isSwapping?: boolean;
   allUserNames?: string[];
   inactiveUsers?: Set<string>;
   onToggleUser?: (name: string) => void;
-  onOpenGuestAdd?: (raidId: RaidId) => void;
-  onRemoveGuest?: (raidId: RaidId, guestId: string) => void;
 }
 
 
@@ -37,33 +26,18 @@ export const RaidScheduleView: React.FC<Props> = ({
   isLoading = false,
   exclusions,
   onExcludeCharacter,
-  balanceMode = 'overall',
   raidSettings,
   isRaidSettingsLoading = false,
   onToggleSupportShortage,
   raidCandidates,
-  onSwapCharacter,
-  allCharacters = [],
-  onExcludeRun,
-  isSwapping = false,
   allUserNames = [],
   inactiveUsers = new Set(),
   onToggleUser,
-  onOpenGuestAdd,
-  onRemoveGuest,
 }) => {
-  
+
   const { confirm, ConfirmModal } = useConfirm();
 
   const [raidOpenState, setRaidOpenState] = useState<Record<string, boolean>>({});
-  const [runOpenState, setRunOpenState] = useState<Record<string, boolean>>({});
-
-  const [swapTarget, setSwapTarget] = useState<{
-    raidId: RaidId;
-    char: Character;
-  } | null>(null);
-
-  const [completingKey, setCompletingKey] = useState<string | null>(null);
 
   const candidatesFallback = useMemo(() => {
     const map: Partial<Record<RaidId, Character[]>> = {};
@@ -144,21 +118,12 @@ export const RaidScheduleView: React.FC<Props> = ({
     });
   };
 
-  const toggleRun = (raidId: string, runIndex: number) => {
-    const key = `${raidId}-${runIndex}`;
-    setRunOpenState((prev) => ({ ...prev, [key]: !(prev[key] ?? true) }));
-  };
-
   const handleExcludeClick = async (
     raidId: RaidId,
     characterId: string,
     isCurrentlyExcluded: boolean
   ) => {
     if (!onExcludeCharacter) return;
-    if (isSwapping) {
-      toast.error('캐릭터 변경을 반영하고 있습니다. 잠시 후 다시 시도해 주세요.');
-      return;
-    }
     if (!isCurrentlyExcluded) {
       const ok = await confirm('이 캐릭터를 완료 처리하시겠습니까?');
       if (!ok) return;
@@ -346,17 +311,6 @@ export const RaidScheduleView: React.FC<Props> = ({
                   </div>
                 )}
 
-                {onOpenGuestAdd && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onOpenGuestAdd(raidId as RaidId);
-                    }}
-                    className="w-full rounded-md bg-indigo-50 px-2 py-1.5 text-center text-xs font-semibold text-indigo-600 transition-colors hover:bg-indigo-100 dark:bg-indigo-900/40 dark:text-indigo-300 sm:ml-2 sm:w-auto sm:py-1 whitespace-nowrap"
-                  >
-                    + 게스트 추가
-                  </button>
-                )}
               </div>
 
               <div className="flex w-full items-center justify-between gap-2 text-xs text-zinc-500 dark:text-zinc-400 sm:w-auto sm:shrink-0 sm:justify-end">
@@ -382,7 +336,7 @@ export const RaidScheduleView: React.FC<Props> = ({
                             e.target.checked
                           )
                         }
-                        disabled={isRaidSettingsLoading || isSwapping}
+                        disabled={isRaidSettingsLoading}
                         className="h-3 w-3 text-amber-600 rounded border-zinc-300 focus:ring-amber-500"
                       />
                       <span className="dark:text-zinc-300">랏폿</span>
@@ -398,6 +352,17 @@ export const RaidScheduleView: React.FC<Props> = ({
 
             {isRaidOpen && (
               <div className="divide-y divide-zinc-100 dark:divide-zinc-800 bg-white dark:bg-zinc-900">
+                <RaidPartnershipBreakdown
+                  candidates={
+                    raidCandidates?.[raidId] ??
+                    candidatesFallback[raidId] ??
+                    []
+                  }
+                  runs={runs}
+                  excludedIds={excludedIdsForRaid}
+                  allUserNames={allUserNames}
+                  inactiveUsers={inactiveUsers}
+                />
                 <RaidStatusBoard
                   raidId={raidId as RaidId}
                   raidLabel={meta.label}
@@ -411,278 +376,117 @@ export const RaidScheduleView: React.FC<Props> = ({
                   onExclude={(m: Character, isCompleted: boolean) =>
                     handleExcludeClick(raidId as RaidId, m.id, isCompleted)
                   }
-                  canExclude={Boolean(onExcludeCharacter) && !isSwapping}
+                  canExclude={Boolean(onExcludeCharacter)}
                   getUserCardClass={getUserCardClass}
                   userColorMap={userColorMap}
                 />
-                <div className="grid gap-4 p-4 sm:p-6 md:grid-cols-2 lg:grid-cols-3 lg:gap-6">
-                  {runs.map((run: RaidRun) => {
-                    const runKey = `${raidId}-${run.runIndex}`;
-                    const isRunOpen = runOpenState[runKey] ?? true;
-
-                    const visibleMembers = run.parties.flatMap((p) =>
-                      p.members.filter((m) => !excludedIdsForRaid.includes(m.id))
-                    );
-
-                    const realMembers = visibleMembers.filter(m => !m.isGuest);
-
-                    const dpsMembers = realMembers.filter((m) => m.role === 'DPS');
-                    const supMembers = realMembers.filter((m) => m.role === 'SUPPORT');
-
-                    const overallAvg =
-                      realMembers.length > 0
-                        ? Math.round(realMembers.reduce((sum, m) => sum + m.combatPower, 0) / realMembers.length)
-                        : 0;
-
-                    const dpsAvg =
-                      dpsMembers.length > 0
-                        ? Math.round(dpsMembers.reduce((sum, m) => sum + m.combatPower, 0) / dpsMembers.length)
-                        : 0;
-
-                    const supAvg =
-                      supMembers.length > 0
-                        ? Math.round(supMembers.reduce((sum, m) => sum + m.combatPower, 0) / supMembers.length)
-                        : 0;
-
-                    const completeBtnKey = `${raidId}-${run.runIndex}`;
-                    const isCompleting = completingKey === completeBtnKey;
-
-                    return (
-                      <div key={run.runIndex}>
-                        <div className="flex flex-col gap-3 rounded-xl bg-zinc-50 px-3 py-3 dark:bg-zinc-900/60 sm:flex-row sm:items-center sm:justify-between sm:py-2">
-                          <button
-                            onClick={() => toggleRun(raidId as string, run.runIndex)}
-                            className="flex flex-1 items-center gap-2 text-left"
-                          >
-                            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-zinc-100 text-xs font-bold text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
-                              {run.runIndex}
-                            </span>
-                            <span className="text-sm font-semibold dark:text-zinc-200">
-                              공격대
-                            </span>
-                          </button>
-
-                          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:gap-3">
-                            {balanceMode === 'role' ? (
-                              <div className="flex gap-2 text-[10px] font-medium text-zinc-500 dark:text-zinc-400">
-                                <span className="flex items-center gap-1">
-                                  <Swords size={10} /> {dpsAvg.toLocaleString()}
-                                </span>
-                                <span className="flex items-center gap-1">
-                                  <Shield size={10} /> {supAvg.toLocaleString()}
-                                </span>
-                              </div>
-                            ) : (
-                              <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
-                                CP {overallAvg.toLocaleString()}
-                              </span>
-                            )}
-
-                            {onExcludeRun && visibleMembers.length > 0 && (
-                              <button
-                                disabled={isSwapping || isCompleting}
-                                onClick={async (e) => {
-                                  e.stopPropagation();
-
-                                  if (isSwapping) {
-                                    toast.error('캐릭터 변경을 반영하고 있습니다. 잠시 후 다시 시도해 주세요.');
-                                    return;
-                                  }
-                                  if (isCompleting) return;
-
-                                  const ok = await confirm(
-                                    `${meta.label} ${run.runIndex} 공격대를 완료 처리하시겠습니까?`
-                                  );
-                                  if (!ok) return;
-
-                                  const ids = Array.from(
-                                    new Set(
-                                      visibleMembers
-                                        .map((m) => String(m?.id ?? '').trim())
-                                        .filter(Boolean)
-                                    )
-                                  );
-
-                                  try {
-                                    setCompletingKey(completeBtnKey);
-                                    await onExcludeRun(raidId as RaidId, ids);
-                                  } finally {
-                                    setCompletingKey(null);
-                                  }
-                                }}
-                                className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-bold border border-emerald-200 text-emerald-700 bg-white hover:bg-emerald-50 dark:border-emerald-900/50 dark:text-emerald-200 dark:bg-transparent dark:hover:bg-emerald-950/40 disabled:cursor-not-allowed disabled:opacity-40 whitespace-nowrap"
-                              >
-                                <CheckCircle2 className="h-3.5 w-3.5" />
-                                {isCompleting ? '처리하고 있습니다.' : '레이드 완료'}
-                              </button>
-                            )}
-
-                            <ChevronDown
-                              size={14}
-                              onClick={() => toggleRun(raidId as string, run.runIndex)}
-                              className={`cursor-pointer text-zinc-400 transition-transform ${
-                                isRunOpen ? '' : '-rotate-90'
-                              }`}
-                            />
-                          </div>
-                        </div>
-
-                        {isRunOpen && (
-                          <div className="mt-4 grid gap-4 lg:grid-cols-2">
-                            {run.parties.map((party) => {
-                              const pMembers = party.members.filter(
-                                (m) => !excludedIdsForRaid.includes(m.id)
-                              );
-                              const emptySlots = Math.max(0, 4 - pMembers.length);
-
-                              return (
-                                <div
-                                  key={party.partyIndex}
-                                  className="flex flex-col rounded-2xl border border-zinc-200 bg-zinc-50/50 p-3 dark:border-zinc-800 dark:bg-zinc-950/20"
-                                >
-                                  <div className="mb-3 flex items-center justify-between px-1 text-xs font-bold text-zinc-500 dark:text-zinc-400">
-                                    <div className="flex items-center gap-1.5">
-                                      <Users size={14} />
-                                      <span>PARTY {party.partyIndex}</span>
-                                    </div>
-                                    <span className="text-[10px] text-zinc-400">
-                                      {pMembers.length}/4
-                                    </span>
-                                  </div>
-
-                                  <div className="flex flex-col gap-2">
-                                    {pMembers.map((m) => (
-                                      <div
-                                        key={m.id}
-                                        className="flex items-center justify-between rounded-xl bg-white p-2.5 shadow-sm ring-1 ring-zinc-900/5 dark:bg-zinc-900 dark:ring-zinc-800"
-                                      >
-                                        <div className="flex min-w-0 items-center gap-3">
-                                          <div
-                                            className={`flex h-8 w-8 items-center justify-center rounded-lg ${
-                                              m.isGuest
-                                                ? 'bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400'
-                                                : m.role === 'SUPPORT'
-                                                ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400'
-                                                : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400'
-                                            }`}
-                                          >
-                                            {m.role === 'SUPPORT' ? (
-                                              <Shield size={16} />
-                                            ) : (
-                                              <Swords size={16} />
-                                            )}
-                                          </div>
-                                          <div>
-                                            <div className="flex items-center gap-1.5">
-                                              <span className="text-sm font-bold dark:text-zinc-100">
-                                                {m.jobCode}
-                                              </span>
-                                            </div>
-                                            <div className="min-w-0 truncate text-[11px] font-medium text-zinc-500 dark:text-zinc-400">
-                                              {m.isGuest ? '임시 게스트' : m.lostArkName}
-                                            </div>
-                                          </div>
-                                        </div>
-
-                                        <div className="flex w-full items-center justify-between gap-2 sm:w-auto sm:justify-end">
-                                          {!m.isGuest && (
-                                            <div className="text-right">
-                                              <div className="text-xs font-bold dark:text-zinc-300">
-                                                Lv.{m.itemLevel}
-                                              </div>
-                                              <div className="text-[10px] text-zinc-400">
-                                                CP {m.combatPower.toLocaleString()}
-                                              </div>
-                                            </div>
-                                          )}
-
-                                          {m.isGuest ? (
-                                            <button
-                                              onClick={() =>
-                                                onRemoveGuest?.(raidId as RaidId, m.id)
-                                              }
-                                              className="inline-flex items-center gap-1 rounded bg-rose-50 px-2 py-1 text-xs font-bold text-rose-600 shadow-sm ring-1 ring-rose-200 hover:bg-rose-100 dark:bg-rose-950/30 dark:text-rose-400 dark:ring-rose-900/50"
-                                            >
-                                              <Trash size={12} />
-                                              삭제
-                                            </button>
-                                          ) : (
-                                            onSwapCharacter && (
-                                              <button
-                                                disabled={isSwapping}
-                                                onClick={() => {
-                                                  if (isSwapping) {
-                                                    toast.error('캐릭터 변경을 반영하고 있습니다. 잠시 후 다시 시도해 주세요.');
-                                                    return;
-                                                  }
-                                                  setSwapTarget({
-                                                    raidId: raidId as RaidId,
-                                                    char: m,
-                                                  });
-                                                }}
-                                                className="inline-flex items-center gap-1 rounded bg-white px-2 py-1 text-xs font-bold text-zinc-600 shadow-sm ring-1 ring-zinc-200 hover:bg-amber-50 hover:text-amber-700 hover:ring-amber-200 dark:bg-zinc-800 dark:text-zinc-400 dark:ring-zinc-700 dark:hover:bg-amber-900/30 dark:hover:text-amber-300 dark:hover:ring-amber-800 disabled:opacity-50 disabled:cursor-not-allowed"
-                                                title="다른 캐릭터로 변경"
-                                              >
-                                                <ArrowLeftRight size={12} />
-                                                변경
-                                              </button>
-                                            )
-                                          )}
-                                        </div>
-                                      </div>
-                                    ))}
-
-                                    {Array.from({ length: emptySlots }).map((_, i) => (
-                                      <div
-                                        key={`empty-${run.runIndex}-${party.partyIndex}-${i}`}
-                                        className="flex items-center justify-center gap-2 rounded-xl border border-dashed border-zinc-200 py-3 text-xs text-zinc-400 dark:border-zinc-800 dark:text-zinc-600"
-                                      >
-                                        <User size={14} className="opacity-50 min-h-[30.5px]" /> 빈 자리
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
               </div>
             )}
           </div>
         );
       })}
 
-      {swapTarget && (
-        <SwapModal
-          isOpen={!!swapTarget}
-          onClose={() => {
-            if (isSwapping) return;
-            setSwapTarget(null);
-          }}
-          target={swapTarget}
-          allCharacters={allCharacters}
-          onConfirm={async (targetCharId: string) => {
-            if (!onSwapCharacter) return;
-            if (isSwapping) return;
-
-            await onSwapCharacter(
-              swapTarget.raidId,
-              swapTarget.char.id,
-              targetCharId
-            );
-            setSwapTarget(null);
-          }}
-        />
-      )}
-      
       <ConfirmModal />
     </div>
   );
 };
+
+function RaidPartnershipBreakdown(props: {
+  candidates: Character[];
+  runs: RaidRun[];
+  excludedIds: string[];
+  allUserNames: string[];
+  inactiveUsers: Set<string>;
+}) {
+  const { candidates, runs, excludedIds, allUserNames, inactiveUsers } = props;
+
+  const breakdown = useMemo(() => {
+    const excludedSet = new Set(excludedIds);
+    const placedRunIndex = new Map<string, number>();
+    const runUserSets: Set<string>[] = runs.map(() => new Set<string>());
+
+    runs.forEach((run, i) => {
+      run.parties.forEach((p) =>
+        p.members.forEach((m) => {
+          if (excludedSet.has(m.id)) return;
+          placedRunIndex.set(m.id, i);
+          if (m.discordName) runUserSets[i].add(m.discordName);
+        })
+      );
+    });
+
+    const uniqueCandidates = Array.from(
+      new Map(candidates.map((c) => [c.id, c])).values()
+    );
+    const map = new Map<string, { together: number; alone: number }>();
+    allUserNames.forEach((n) => map.set(n, { together: 0, alone: 0 }));
+
+    uniqueCandidates.forEach((c) => {
+      if (excludedSet.has(c.id) || c.isGuest) return;
+      const entry = map.get(c.discordName) ?? { together: 0, alone: 0 };
+      const idx = placedRunIndex.get(c.id);
+      if (idx === undefined) entry.alone++;
+      else if (runUserSets[idx].size > 1) entry.together++;
+      else entry.alone++;
+      map.set(c.discordName, entry);
+    });
+    return map;
+  }, [candidates, runs, excludedIds, allUserNames]);
+
+  const visibleUsers = allUserNames.filter((name) => {
+    if (inactiveUsers.has(name)) return false;
+    const entry = breakdown.get(name);
+    if (!entry) return false;
+    return entry.together + entry.alone > 0;
+  });
+
+  if (visibleUsers.length === 0) return null;
+
+  return (
+    <div className="flex flex-col gap-3 px-4 pt-4 sm:px-6 sm:pt-6">
+      <div className="flex items-center gap-2 text-sm font-bold text-zinc-600 dark:text-zinc-400">
+        <Users className="h-4 w-4" />
+        <span>유저별 함께 / 혼자 현황</span>
+      </div>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+        {visibleUsers.map((name) => {
+          const entry = breakdown.get(name) ?? { together: 0, alone: 0 };
+          return (
+            <div
+              key={name}
+              className="rounded-xl bg-white shadow-sm ring-1 ring-zinc-200 dark:bg-zinc-900 dark:ring-zinc-800"
+            >
+              <div className="px-3 pt-2 pb-1.5">
+                <span className="text-sm font-bold text-zinc-900 dark:text-zinc-100">
+                  {name}
+                </span>
+              </div>
+              <div className="flex items-center justify-around border-t border-zinc-100 px-3 py-2 dark:border-zinc-800">
+                <div className="flex items-baseline gap-1.5">
+                  <span className="text-base font-bold tabular-nums text-blue-600 dark:text-blue-300">
+                    {entry.together}
+                  </span>
+                  <span className="text-[10px] font-medium text-zinc-500 dark:text-zinc-400">
+                    함께
+                  </span>
+                </div>
+                <div className="h-4 w-px bg-zinc-200 dark:bg-zinc-700" />
+                <div className="flex items-baseline gap-1.5">
+                  <span className="text-base font-bold tabular-nums text-amber-600 dark:text-amber-300">
+                    {entry.alone}
+                  </span>
+                  <span className="text-[10px] font-medium text-zinc-500 dark:text-zinc-400">
+                    혼자
+                  </span>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 function RaidStatusBoard(props: {
   raidId: RaidId;

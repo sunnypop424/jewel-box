@@ -6,15 +6,14 @@ import { RAID_META } from './constants';
 import { buildRaidCandidatesMap, buildRaidSchedule, calculateHoldbacksSpecific, type BalanceMode } from './raidLogic';
 import { CharacterFormList } from './components/CharacterFormList';
 import { RaidScheduleView } from './components/RaidScheduleView';
-import { RaidSequenceView } from './components/RaidSequenceView';
 import { UserRaidProgressPanel } from './components/UserRaidProgressPanel';
 import { AbsenteeDashboard } from './components/AbsenteeDashboard';
 import { ScheduleCalendar } from './components/ScheduleCalendar';
 import { MissionBoard } from './components/MissionBoard';
 import {
     fetchCharacters, saveCharacters, fetchRaidSettings, setRaidSetting,
-    fetchSwaps, addSwap, resetSwaps,
-    fetchClears, writeClearEntry, writeClearEntriesBulk, deleteClearEntry, resetClears, deriveExclusionsFromClears,
+    fetchSwaps, resetSwaps,
+    fetchClears, writeClearEntry, deleteClearEntry, resetClears, deriveExclusionsFromClears,
     fetchRosterRaidState, writeRosterRaidSelection, deleteRosterRaidSelection,
     fetchAccumulatedGold, updateAccumulatedGoldMulti, resetAccumulatedGold, type AccumulatedGoldMap,
 } from './api/firebaseApi';
@@ -25,7 +24,7 @@ import { RouletteGame } from './components/RouletteGame';
 import { PinballGame } from './components/PinballGame';
 import { AuctionCalculatorModal } from './components/AuctionCalculatorModal';
 import { GatheringModal } from './components/GatheringModal';
-import { Swords, Sun, Moon, UserCog, LayoutDashboard, ClipboardList, ChartGantt, Menu, X, Users, ChevronDown, Orbit, Megaphone, UserRoundMinus, CalendarDays, Coins } from 'lucide-react';
+import { Swords, Sun, Moon, UserCog, LayoutDashboard, ClipboardList, Menu, X, Users, ChevronDown, Orbit, Megaphone, UserRoundMinus, CalendarDays, Coins } from 'lucide-react';
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 
 // ✨ Hook 추가
@@ -123,7 +122,6 @@ const App: React.FC = () => {
     const [loadingRaidSettings, setLoadingRaidSettings] = useState(false);
 
     const [raidSwaps, setRaidSwaps] = useState<RaidSwap[]>([]);
-    const [isSwapping, setIsSwapping] = useState(false);
     const balanceMode = 'speed' as BalanceMode;
 
     const [raidGuests, setRaidGuests] = useState<Partial<Record<RaidId, Character[]>>>({});
@@ -293,14 +291,6 @@ const App: React.FC = () => {
         }));
     };
 
-    const handleRemoveGuest = (raidId: RaidId, guestId: string) => {
-        setRaidGuests(prev => ({
-            ...prev, [raidId]: (prev[raidId] || []).filter(g => g.id !== guestId)
-        }));
-    };
-
-    const handleOpenGuestModal = (raidId: RaidId) => { setGuestModalData({ isOpen: true, raidId }); };
-
     const handleAddGuestAndClose = (role: 'DPS' | 'SUPPORT', jobCode: string) => {
         if (guestModalData.raidId) handleAddGuest(guestModalData.raidId, role, jobCode);
         setGuestModalData({ isOpen: false, raidId: null });
@@ -337,7 +327,6 @@ const App: React.FC = () => {
     // 클리어 토글 — 체크 시 ledger 엔트리 생성(골드 스냅샷), 해제 시 삭제.
     const handleExcludeCharacterFromRaid = async (raidId: RaidId, charId: string, isCurrentlyExcluded: boolean = false) => {
         try {
-            if (isSwapping) return;
             if (isCurrentlyExcluded) {
                 await deleteClearEntry(charId, raidId);
             } else {
@@ -356,37 +345,6 @@ const App: React.FC = () => {
             await refreshClears();
         } catch (e) {
             toast.error('상태 변경에 실패했습니다.');
-        }
-    };
-
-    // 공격대 일괄 완료 — 여러 캐릭을 동시에 ledger 에 추가.
-    const handleExcludeRun = async (raidId: RaidId, charIds: string[]) => {
-        try {
-            if (isSwapping) return;
-            const uniqIds = Array.from(new Set((charIds ?? []).map((id) => String(id ?? '').trim()).filter(Boolean)));
-            if (uniqIds.length === 0) return;
-
-            const meta = RAID_META[raidId];
-            const now = new Date().toISOString();
-            const entries = uniqIds
-                .map(id => effectiveCharacters.find(c => c.id === id))
-                .filter((c): c is Character => !!c)
-                .map(char => ({
-                    charId: char.id,
-                    entry: {
-                        raidId,
-                        clearedAt: now,
-                        clearedItemLevel: char.itemLevel,
-                        generalGold: meta.generalGold,
-                        boundGold: meta.boundGold,
-                    } as ClearEntry,
-                }));
-
-            if (entries.length > 0) await writeClearEntriesBulk(entries);
-            await refreshClears();
-            toast.success('공격대가 완료 처리되었습니다.');
-        } catch (e) {
-            toast.error('공격대 완료 처리에 실패했습니다.');
         }
     };
 
@@ -446,19 +404,6 @@ const App: React.FC = () => {
                 console.error(e);
                 toast.error('누적 골드 초기화에 실패했습니다.');
             }
-        }
-    };
-
-    const handleSwapCharacter = async (raidId: RaidId, charId1: string, charId2: string) => {
-        try {
-            setIsSwapping(true);
-            const nextSwaps = await addSwap(raidId, charId1, charId2);
-            setRaidSwaps(nextSwaps);
-            toast.success('캐릭터 교체가 완료되었습니다.');
-        } catch (e) {
-            toast.error('캐릭터 교체에 실패했습니다.');
-        } finally {
-            setIsSwapping(false);
         }
     };
 
@@ -574,9 +519,6 @@ const App: React.FC = () => {
         if (location.pathname === '/schedule') {
             return { title: '레이드 배정 결과', Icon: ClipboardList };
         }
-        if (location.pathname === '/sequence') {
-            return { title: '레이드 진행 순서', Icon: ChartGantt };
-        }
         if (location.pathname === '/absentee') {
             return { title: '결석 대응 현황', Icon: UserRoundMinus };
         }
@@ -659,10 +601,6 @@ const App: React.FC = () => {
                             <ClipboardList size={18} /> 레이드 배정 결과
                         </button>
 
-                        <button onClick={() => handleNavClick('/sequence')} className={navButtonClass(isActive('/sequence'))}>
-                            <ChartGantt size={18} /> 레이드 진행 순서
-                        </button>
-
                         <button onClick={() => handleNavClick('/absentee')} className={navButtonClass(isActive('/absentee'))}>
                             <UserRoundMinus size={18} /> 결석 대응 현황
                         </button>
@@ -710,10 +648,10 @@ const App: React.FC = () => {
                                 <button onClick={() => setIsModalOpen(true)} className={subMenuButtonClass}>
                                     내 원정대 관리
                                 </button>
-                                <button onClick={handleRefresh} disabled={loading || saving || isSwapping} className={subMenuButtonClass}>
+                                <button onClick={handleRefresh} disabled={loading || saving} className={subMenuButtonClass}>
                                     전체 전투력 업데이트
                                 </button>
-                                <button onClick={handleResetExclusions} disabled={loadingClears || isSwapping} className={`${subMenuButtonClass} text-rose-600 dark:text-rose-400`}>
+                                <button onClick={handleResetExclusions} disabled={loadingClears} className={`${subMenuButtonClass} text-rose-600 dark:text-rose-400`}>
                                     레이드 완료 내역 초기화
                                 </button>
                             </div>
@@ -947,45 +885,15 @@ const App: React.FC = () => {
                                             isLoading={loading}
                                             exclusions={raidExclusions}
                                             onExcludeCharacter={handleExcludeCharacterFromRaid}
-                                            balanceMode={balanceMode}
                                             raidSettings={raidSettings}
                                             isRaidSettingsLoading={loadingRaidSettings}
                                             onToggleSupportShortage={handleToggleSupportShortage}
                                             raidCandidates={raidCandidates}
-                                            onSwapCharacter={handleSwapCharacter}
-                                            onExcludeRun={handleExcludeRun}
-                                            allCharacters={effectiveCharacters}
-                                            isSwapping={isSwapping}
                                             allUserNames={allUserNames}
                                             inactiveUsers={inactiveUsers}
                                             onToggleUser={handleToggleUserActive}
-                                            onOpenGuestAdd={handleOpenGuestModal}
-                                            onRemoveGuest={handleRemoveGuest}
                                         />
                                     )}
-                                </section>
-                            } />
-
-                            <Route path="/sequence" element={
-                                <section className="flex flex-col gap-6">
-                                    <div className="hidden flex-col gap-3 sm:flex-row sm:items-center sm:justify-between md:flex md:h-[38px]">
-                                        <h2 className="flex items-center gap-2 text-xl font-bold text-zinc-900 dark:text-zinc-100">
-                                            <ChartGantt className="text-indigo-500" /> 레이드 진행 순서
-                                        </h2>
-                                    </div>
-
-                                    <RaidSequenceView
-                                        schedule={schedule}
-                                        balanceMode={balanceMode}
-                                        onSwapCharacter={handleSwapCharacter}
-                                        allCharacters={effectiveCharacters}
-                                        onExcludeRun={handleExcludeRun}
-                                        isSwapping={isSwapping}
-                                        updatedBy={localSquad.discordName || 'User'}
-                                        allUserNames={allUserNames}
-                                        inactiveUsers={inactiveUsers}
-                                        onToggleUser={handleToggleUserActive}
-                                    />
                                 </section>
                             } />
 
