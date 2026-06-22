@@ -23,12 +23,14 @@ export function NumInput({
   value,
   onChange,
   disabled,
+  readOnly,
   placeholder,
   className = '',
 }: {
   value: number;
   onChange: (v: number) => void;
   disabled?: boolean;
+  readOnly?: boolean;
   placeholder?: string;
   className?: string;
 }) {
@@ -39,33 +41,38 @@ export function NumInput({
   }, [value, focused]);
 
   // 값이 0이고 placeholder가 있으면 빈칸으로 두어 placeholder(필요 수량)를 노출
-  const display = focused
-    ? text
-    : value
-      ? numFmt(value)
-      : placeholder != null
-        ? ''
-        : '0';
+  // 단, readonly(보유 전체)일 땐 값을 그대로 보여준다.
+  const display =
+    focused && !readOnly
+      ? text
+      : value
+        ? numFmt(value)
+        : placeholder != null
+          ? ''
+          : '0';
 
   return (
     <input
       type="text"
       inputMode="decimal"
       disabled={disabled}
+      readOnly={readOnly}
       placeholder={placeholder}
       value={display}
       onFocus={() => {
+        if (readOnly) return;
         setFocused(true);
         setText(value ? String(value) : '');
       }}
       onBlur={() => setFocused(false)}
       onChange={(e) => {
+        if (readOnly) return;
         const t = e.target.value;
         setText(t);
         const n = parseFloat(t.replace(/,/g, ''));
         onChange(isNaN(n) ? 0 : n);
       }}
-      className={`h-9 rounded-lg border border-zinc-200 bg-zinc-50 px-2 text-right text-sm text-zinc-900 outline-none transition-colors focus:border-indigo-500 disabled:cursor-not-allowed disabled:bg-zinc-100 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:disabled:bg-zinc-800 ${className}`}
+      className={`h-9 rounded-lg border border-zinc-200 bg-zinc-50 px-2 text-right text-sm text-zinc-900 outline-none focus:border-indigo-500 read-only:cursor-default read-only:bg-zinc-100 read-only:text-zinc-400 disabled:cursor-not-allowed disabled:bg-zinc-100 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:read-only:bg-zinc-800 dark:read-only:text-zinc-500 dark:disabled:bg-zinc-800 ${className}`}
     />
   );
 }
@@ -148,6 +155,57 @@ const MATERIAL_LABELS: Record<string, string> = {
 };
 
 export const materialLabel = (name: string) => MATERIAL_LABELS[name] ?? name;
+
+// 모바일 해상도용 줄임말. 없으면 전체 라벨로 폴백.
+const SHORT_LABELS: Record<string, string> = {
+  파괴강석: '파강석',
+  수호강석: '수강석',
+  정제된파괴강석: '정제파강',
+  정제된수호강석: '정제수강',
+  운명의파괴석: '운파석',
+  운명의수호석: '운수석',
+  운명의파괴석결정: '운파결',
+  운명의수호석결정: '운수결',
+  파결: '파결',
+  수결: '수결',
+  명돌: '명돌',
+  위명돌: '위명돌',
+  경명돌: '경명돌',
+  찬명돌: '찬명돌',
+  운돌: '운돌',
+  위운돌: '위운돌',
+  중급오레하: '중오레하',
+  상급오레하: '상오레하',
+  최상급오레하: '최상오레하',
+  아비도스: '아비도스',
+  상급아비도스: '상아비도스',
+  파편: '명파편',
+  운명파편: '운파편',
+  은총: '은총',
+  축복: '축복',
+  가호: '가호',
+  빙하: '빙하',
+  용암: '용암',
+  장인의재봉술1단계: '재봉1',
+  장인의재봉술2단계: '재봉2',
+  장인의재봉술3단계: '재봉3',
+  장인의재봉술4단계: '재봉4',
+  장인의야금술1단계: '야금1',
+  장인의야금술2단계: '야금2',
+  장인의야금술3단계: '야금3',
+  장인의야금술4단계: '야금4',
+};
+export const materialShortLabel = (name: string) => SHORT_LABELS[name] ?? materialLabel(name);
+
+// 모바일: 줄임말, sm 이상: 전체 라벨
+function MaterialName({ name }: { name: string }) {
+  return (
+    <>
+      <span className="sm:hidden">{materialShortLabel(name)}</span>
+      <span className="hidden sm:inline">{materialLabel(name)}</span>
+    </>
+  );
+}
 
 // 재료 분류(필수/추가) + 고정 정렬 순서 — 세 페이지 공통.
 // 추가 재료 = 숨결 + 책, 그 외는 필수 재료.
@@ -369,7 +427,7 @@ function MaterialPriceGroup({
         <span className="uppercase tracking-wider">{title}</span>
         <span className="flex gap-2">
           <span className="w-[5.5rem] text-right">개당 가격</span>
-          <span className="w-[4.5rem] text-right">보유</span>
+          <span className="w-[5.5rem] text-right">보유</span>
         </span>
       </div>
       <div className="flex flex-col divide-y divide-zinc-100 dark:divide-zinc-800/70">
@@ -378,7 +436,7 @@ function MaterialPriceGroup({
           return (
             <div
               key={name}
-              className="grid grid-cols-[auto_auto_1fr_5.5rem_4.5rem] items-center gap-2 py-1.5"
+              className="grid grid-cols-[auto_auto_1fr_5.5rem_5.5rem] items-center gap-2 py-1.5"
             >
               <input
                 type="checkbox"
@@ -394,7 +452,7 @@ function MaterialPriceGroup({
                     : 'text-zinc-400 line-through dark:text-zinc-600'
                 }`}
               >
-                {materialLabel(name)}
+                <MaterialName name={name} />
               </span>
               <NumInput
                 value={priceMap[name] ?? 0}
@@ -402,10 +460,11 @@ function MaterialPriceGroup({
                 className="w-full"
               />
               <NumInput
-                value={owned[name] ?? 0}
+                // 체크 해제 = 전부 보유 → 필요 수량(placeholder)을 값으로 보여주고 readonly
+                value={inc ? owned[name] ?? 0 : Math.round(required)}
                 onChange={(v) => onOwned(name, v)}
-                disabled={!inc}
-                placeholder={required > 0 ? String(Math.round(required)) : '0'}
+                readOnly={!inc}
+                placeholder={required > 0 ? Math.round(required).toLocaleString('ko-KR') : '0'}
                 className="w-full"
               />
             </div>
@@ -458,7 +517,7 @@ function MaterialAggGroup({ title, rows }: { title: string; rows: MatBillRow[] }
               <MaterialIcon name={m.name} size={20} />
               <span className="flex min-w-0 flex-col leading-tight">
                 <span className="truncate text-sm font-medium text-zinc-700 dark:text-zinc-200">
-                  {materialLabel(m.name)}
+                  <MaterialName name={m.name} />
                 </span>
                 <span className="text-[10px] tabular-nums text-zinc-400">
                   {Math.round(m.required).toLocaleString('ko-KR')} →{' '}

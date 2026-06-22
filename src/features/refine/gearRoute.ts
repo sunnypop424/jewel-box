@@ -27,6 +27,8 @@ export interface RouteStep {
   gold: number;
   materials: Record<string, number>;
   label: string;
+  // 상급 재련: 턴별 숨결·책 (상급 재련 페이지의 일반턴/선조턴/강화선조턴)
+  advBreaths?: { normal: string[]; bonus: string[]; enhanced?: string[] };
 }
 
 export interface PieceRoute {
@@ -100,7 +102,11 @@ function advStageCost(
   bucketIndex: number,
   priceMap: Record<string, number>,
   mochalik: boolean
-): { gold: number; materials: Record<string, number> } | null {
+): {
+  gold: number;
+  materials: Record<string, number>;
+  breaths: { normal: string[]; bonus: string[]; enhanced?: string[] };
+} | null {
   let table;
   try {
     table = getAdvancedRefineTable(type, `t4_${bucketIndex}` as AdvancedRefineTarget, mochalik);
@@ -122,7 +128,15 @@ function advStageCost(
   }
   const materials: Record<string, number> = {};
   for (const e of entries) materials[e.name] = (materials[e.name] ?? 0) + e.count;
-  return { gold: advPrice, materials };
+  return {
+    gold: advPrice,
+    materials,
+    breaths: {
+      normal: best.normalBreathNames,
+      bonus: best.bonusBreathNames,
+      enhanced: best.hasEnhancedBonus ? best.enhancedBonusBreathNames : undefined,
+    },
+  };
 }
 
 const keyOf = (g: RouteGrade, n: number, a: number) => `${g}|${n}|${a}`;
@@ -175,7 +189,14 @@ function dijkstra(
     }
     return v;
   };
-  const advCache = new Map<number, { gold: number; materials: Record<string, number> } | null>();
+  const advCache = new Map<
+    number,
+    {
+      gold: number;
+      materials: Record<string, number>;
+      breaths: { normal: string[]; bonus: string[]; enhanced?: string[] };
+    } | null
+  >();
   const advEdge = (advStage: number) => {
     const b = Math.floor((advStage - 1) / 10);
     let v = advCache.get(b);
@@ -227,7 +248,7 @@ function dijkstra(
       if (e) {
         relax(keyOf(grade, normal, adv + 1), e.gold, {
           kind: 'advanced', grade, fromNormal: normal, toNormal: normal,
-          fromAdv: adv, toAdv: adv + 1, gold: e.gold, materials: e.materials,
+          fromAdv: adv, toAdv: adv + 1, gold: e.gold, materials: e.materials, advBreaths: e.breaths,
           label: `상급 ${adv}→${adv + 1}`,
         });
       }

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Hammer, ChevronDown } from 'lucide-react';
+import { Hammer, Calculator, ChevronDown } from 'lucide-react';
 import { toast } from 'sonner';
 import { getRefineTable, getTargetList } from './refineData';
 import { optimize, fixed, expectedMaterials } from './refine';
@@ -317,7 +317,7 @@ export function RefinePage() {
             disabled={!table}
             className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-5 py-3.5 text-sm font-bold text-white shadow-sm shadow-indigo-500/30 transition-colors hover:bg-indigo-500 disabled:opacity-50"
           >
-            <Hammer size={16} /> 계산하기
+            <Calculator size={16} /> 계산하기
           </button>
         </div>
 

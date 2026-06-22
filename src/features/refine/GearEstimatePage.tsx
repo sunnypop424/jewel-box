@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Wrench, Search, Loader2, ChevronDown } from 'lucide-react';
+import { Wrench, Calculator, Search, Loader2, ChevronDown } from 'lucide-react';
 import { toast } from 'sonner';
 import { fetchMarketPrices, getPriceObj, emptyPriceMap } from './marketPrice';
 import { getRefineTable, getTargetList } from './refineData';
@@ -11,13 +11,14 @@ import { estimateGear } from './gearEstimate';
 import type { EstimateResult } from './gearEstimate';
 import { estimateByItemLevel, ARMOR_PRIORITY } from './gearRoute';
 import type { ItemLevelEstimateResult, PieceRoute } from './gearRoute';
-import { GRADE_SPEC, SUCCESSIONS, itemLevelOf, isRouteGrade } from './gearRouteData';
-import type { RouteGrade } from './gearRouteData';
+import { GRADE_SPEC, itemLevelOf, isRouteGrade } from './gearRouteData';
 import {
   cardClass,
   subtitleClass,
   inputClass,
   gold,
+  MaterialIcon,
+  isExtraMaterial,
   Select,
   Checkbox,
   NumInput,
@@ -131,66 +132,65 @@ function relevantMaterials(
   return [...set].sort((a, b) => materialSortIndex(a) - materialSortIndex(b));
 }
 
-// 현재 등급에서 계승으로 도달 가능한 등급들 (목표 IL 모드 시세 입력용)
-function reachableGrades(start: string): RouteGrade[] {
-  if (!isRouteGrade(start)) return [];
-  const seen = new Set<RouteGrade>([start]);
-  let added = true;
-  while (added) {
-    added = false;
-    for (const e of SUCCESSIONS)
-      if (seen.has(e.from) && !seen.has(e.to)) {
-        seen.add(e.to);
-        added = true;
-      }
-  }
-  return [...seen];
-}
-
-// 목표 IL 모드: 도달 가능한 등급 전체 트랙에서 쓰일 수 있는 재료 키 (시세 수정용)
-function relevantMaterialsForIlvl(
-  rows: Row[],
-  applyResearch: boolean,
-  applyMochalik: boolean
-): string[] {
-  const set = new Set<string>();
-  for (const r of rows) {
-    for (const g of reachableGrades(r.grade)) {
-      const spec = GRADE_SPEC[g];
-      const valid = new Set(getTargetList(r.type, g));
-      for (let lvl = 1; lvl <= spec.normalMax; lvl++) {
-        if (!valid.has(lvl)) continue;
-        const t = getRefineTable(r.type, g, lvl, applyResearch, applyMochalik);
-        if (t) {
-          Object.keys(t.amount).forEach((k) => set.add(k));
-          Object.keys(t.breath).forEach((k) => set.add(k));
-        }
-      }
-      if (spec.hasAdvanced) {
-        for (let b = 0; b <= 3; b++) {
-          try {
-            const t = getAdvancedRefineTable(r.type, `t4_${b}` as AdvancedRefineTarget, applyMochalik);
-            Object.keys(t.amount).forEach((k) => set.add(k));
-            Object.keys(t.breath).forEach((k) => set.add(k));
-            if (t.book) set.add(t.book);
-          } catch {
-            /* 버킷 없음 */
-          }
-        }
-      }
-    }
-  }
-  set.delete('골드');
-  return [...set].sort((a, b) => materialSortIndex(a) - materialSortIndex(b));
-}
-
 // 루트를 등급 구간별로 묶어 표시 (Dijkstra가 만든 번갈아 순서 → 등급별 일반/상급 묶음).
 // 각 등급 구간 안에서 일반(전체 범위)·상급(전체 범위)을 한 줄씩, 비용·결과 IL과 함께.
+// 추가재료(숨결·책) 한 종류 — turns는 상급 재련에서만 (일반턴/선조턴 등)
+interface SegExtra {
+  name: string;
+  turns?: string;
+}
 interface RouteSeg {
   label: string;
   gold: number;
   il: number;
+  extras: SegExtra[];
 }
+
+// 일반 재련: 단계들이 쓰는 추가재료(숨결·책) 종류만 추출 (턴 개념 없음)
+const normalExtras = (steps: PieceRoute['steps']): SegExtra[] => {
+  const set = new Set<string>();
+  for (const st of steps)
+    for (const [m, c] of Object.entries(st.materials))
+      if (c > 0 && isExtraMaterial(m)) set.add(m);
+  return [...set]
+    .sort((a, b) => materialSortIndex(a) - materialSortIndex(b))
+    .map((name) => ({ name }));
+};
+
+// 상급 재련: 재료별로 어떤 턴에 넣는지 (모든턴 / N턴 제외 / 특정 턴) 라벨링
+const advExtras = (steps: PieceRoute['steps']): SegExtra[] => {
+  const sets = { normal: new Set<string>(), bonus: new Set<string>(), enhanced: new Set<string>() };
+  let hasEnhanced = false;
+  for (const st of steps) {
+    const b = st.advBreaths;
+    if (!b) continue;
+    b.normal.forEach((n) => sets.normal.add(n));
+    b.bonus.forEach((n) => sets.bonus.add(n));
+    if (b.enhanced) {
+      hasEnhanced = true;
+      b.enhanced.forEach((n) => sets.enhanced.add(n));
+    }
+  }
+  const turns: { set: Set<string>; label: string }[] = [
+    { set: sets.normal, label: '일반턴' },
+    { set: sets.bonus, label: '선조턴' },
+    ...(hasEnhanced ? [{ set: sets.enhanced, label: '강화선조턴' }] : []),
+  ];
+  const names = new Set<string>();
+  turns.forEach((t) => t.set.forEach((n) => names.add(n)));
+  return [...names]
+    .sort((a, b) => materialSortIndex(a) - materialSortIndex(b))
+    .map((name) => {
+      const usedIn = turns.filter((t) => t.set.has(name));
+      let label: string;
+      if (usedIn.length === turns.length) label = '모든턴';
+      else if (usedIn.length === turns.length - 1)
+        label = `${turns.find((t) => !t.set.has(name))!.label} 제외`;
+      else label = usedIn.map((t) => t.label).join('·');
+      return { name, turns: label };
+    });
+};
+
 function routeSegments(route: PieceRoute): RouteSeg[] {
   const segs: RouteSeg[] = [];
   let phase: PieceRoute['steps'] = [];
@@ -209,6 +209,7 @@ function routeSegments(route: PieceRoute): RouteSeg[] {
         label: `${label} 일반 재련 ${startNormal}→${finalNormal}강`,
         gold: normals.reduce((g, s) => g + s.gold, 0),
         il: itemLevelOf(grade, finalNormal, startAdv),
+        extras: normalExtras(normals),
       });
     }
     if (advs.length) {
@@ -216,6 +217,7 @@ function routeSegments(route: PieceRoute): RouteSeg[] {
         label: `${label} 상급 재련 ${startAdv}→${finalAdv}단계`,
         gold: advs.reduce((g, s) => g + s.gold, 0),
         il: itemLevelOf(grade, finalNormal, finalAdv),
+        extras: advExtras(advs),
       });
     }
     phase = [];
@@ -223,13 +225,31 @@ function routeSegments(route: PieceRoute): RouteSeg[] {
   for (const s of route.steps) {
     if (s.kind === 'succession') {
       flush();
-      segs.push({ label: s.label, gold: 0, il: itemLevelOf(s.grade, s.toNormal, s.toAdv) });
+      segs.push({
+        label: s.label, gold: 0, il: itemLevelOf(s.grade, s.toNormal, s.toAdv),
+        extras: [],
+      });
     } else {
       phase = [...phase, s];
     }
   }
   flush();
   return segs;
+}
+
+// 추가재료(숨결·책) 나열 — 상급 재련은 재료별 턴 라벨(모든턴/N턴 제외)도 표시
+function ExtraMaterials({ extras }: { extras: SegExtra[] }) {
+  return (
+    <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+      <span className="text-zinc-400">추가재료</span>
+      {extras.map((e) => (
+        <span key={e.name} className="inline-flex items-center gap-1">
+          <MaterialIcon name={e.name} size={18} />
+          {e.turns && <span className="text-[11px] text-zinc-400">{e.turns}</span>}
+        </span>
+      ))}
+    </span>
+  );
 }
 
 // 견적 계산 시점의 입력 스냅샷 (결과·집계는 이 스냅샷 기준으로 고정)
@@ -246,6 +266,13 @@ type CalcSnap = {
 
 const btnBase =
   'inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-lg px-4 text-sm font-bold transition-colors disabled:opacity-50';
+
+// 입력 옆 '적용' 버튼 (목표 확정 → 왼쪽 재료 목록 갱신)
+const applyBtn =
+  'inline-flex h-8 shrink-0 items-center justify-center rounded-lg bg-indigo-600 px-3 text-xs font-bold text-white transition-colors hover:bg-indigo-500';
+
+// 적용 전 안정적인 빈 목록 (useMemo 의존성이 매 렌더 변하지 않도록)
+const EMPTY_MATS: string[] = [];
 
 export function GearEstimatePage() {
   const [charName, setCharName] = useState('');
@@ -268,6 +295,8 @@ export function GearEstimatePage() {
   const [balanced, setBalanced] = useState(false);
   const [role, setRole] = useState<'dealer' | 'support'>('dealer');
   const [aggOpen, setAggOpen] = useState(false);
+  // '적용'으로 확정된 재료 목록 (null = 아직 적용 전)
+  const [appliedMats, setAppliedMats] = useState<string[] | null>(null);
 
   const [result, setResult] = useState<EstimateResult | ItemLevelEstimateResult | null>(null);
   const [calcSnap, setCalcSnap] = useState<CalcSnap | null>(null);
@@ -299,6 +328,7 @@ export function GearEstimatePage() {
       setRows(pieces.map(pieceToRow));
       setSource('api');
       setResult(null);
+      setAppliedMats(null);
       toast.success(`${name} 장비 정보를 불러왔습니다.`);
     } catch (e) {
       console.error('[장비 조회 실패]', e);
@@ -373,8 +403,13 @@ export function GearEstimatePage() {
       balanced,
     };
     setCalcSnap(snap);
+    const sortMats = (ms: string[]) =>
+      ms.filter((m) => m !== '골드').sort((a, b) => materialSortIndex(a) - materialSortIndex(b));
+    // 계산은 적용의 상위 동작 — 좌측 재료 목록도 함께 확정해 빈 채로 남지 않도록.
     if (mode === 'target-ilvl') {
-      setResult(computeIlvlRoute(snap, role));
+      const res = computeIlvlRoute(snap, role);
+      setResult(res);
+      setAppliedMats(sortMats(Object.keys(res.materials)));
       return;
     }
     const targets: Record<string, { targetNormal: number; targetAdv: number; jangin: number }> = {};
@@ -382,21 +417,36 @@ export function GearEstimatePage() {
       targets[r.slot] = { targetNormal: r.targetNormal, targetAdv: r.targetAdv, jangin: r.jangin };
     });
     setResult(estimateGear(snap.rows, targets, snap.priceMap, snap.applyResearch, snap.applyMochalik));
+    setAppliedMats(relevantMaterials(snap.rows, snap.applyResearch, snap.applyMochalik));
   };
 
   const onModeChange = (m: 'per-part' | 'target-ilvl') => {
     setMode(m);
     setResult(null);
+    setAppliedMats(null);
+  };
+
+  // '적용': 현재 목표 입력을 확정해 왼쪽 재료 목록을 갱신 (비용 결과는 '견적 계산'에서)
+  const applyTargets = () => {
+    if (mode === 'per-part') {
+      setAppliedMats(relevantMaterials(rows, applyResearch, applyMochalik));
+      return;
+    }
+    // target-ilvl: 실제 최적 루트가 쓰는 재료만 (견적 계산과 동일한 computeIlvlRoute 재사용)
+    const snap: CalcSnap = {
+      priceMap, owned, includeMap, rows, targetIlvl, applyResearch, applyMochalik, balanced,
+    };
+    const res = computeIlvlRoute(snap, role);
+    setAppliedMats(
+      Object.keys(res.materials)
+        .filter((m) => m !== '골드')
+        .sort((a, b) => materialSortIndex(a) - materialSortIndex(b))
+    );
   };
 
   const currentLocked = source === 'api';
-  const priceMats = useMemo(
-    () =>
-      mode === 'target-ilvl'
-        ? relevantMaterialsForIlvl(rows, applyResearch, applyMochalik)
-        : relevantMaterials(rows, applyResearch, applyMochalik),
-    [mode, rows, applyResearch, applyMochalik]
-  );
+  // 왼쪽 재료 목록은 '적용'으로 확정된 것만 (라이브/전체 열거 아님)
+  const priceMats = appliedMats ?? EMPTY_MATS;
 
   // 목표 IL 모드 결과 (루트 표시용)
   const ilvlResult = result && 'routes' in result ? (result as ItemLevelEstimateResult) : null;
@@ -486,6 +536,24 @@ export function GearEstimatePage() {
     [result]
   );
 
+  // 결과는 계산 시점 스냅샷 기준 — 이후 입력이 바뀌면 결과가 오래된 것임을 표시
+  const stale = useMemo(() => {
+    if (!result || !calcSnap) return false;
+    return (
+      JSON.stringify(rows) !== JSON.stringify(calcSnap.rows) ||
+      targetIlvl !== calcSnap.targetIlvl ||
+      applyResearch !== calcSnap.applyResearch ||
+      applyMochalik !== calcSnap.applyMochalik ||
+      balanced !== calcSnap.balanced ||
+      JSON.stringify(priceMap) !== JSON.stringify(calcSnap.priceMap) ||
+      JSON.stringify(owned) !== JSON.stringify(calcSnap.owned) ||
+      JSON.stringify(includeMap) !== JSON.stringify(calcSnap.includeMap)
+    );
+  }, [
+    result, calcSnap, rows, targetIlvl, applyResearch, applyMochalik, balanced,
+    priceMap, owned, includeMap,
+  ]);
+
   return (
     <section className="flex flex-col gap-6">
       <div className="hidden flex-col gap-3 sm:flex-row sm:items-center sm:justify-between md:flex md:h-[38px]">
@@ -494,11 +562,11 @@ export function GearEstimatePage() {
         </h2>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,440px)_minmax(0,1fr)] lg:items-start">
-        {/* 좌측 (440px): 검색 · 재료별 집계 · 재료 시세 */}
-        <div className="flex flex-col gap-6">
+      <div className="flex flex-col gap-6 lg:grid lg:grid-cols-[minmax(0,440px)_minmax(0,1fr)] lg:items-start">
+        {/* 좌측 (440px): 검색 · 재료별 집계 · 재료 시세 — 모바일에선 contents로 풀어 카드별 order 적용 */}
+        <div className="contents lg:flex lg:flex-col lg:gap-6">
           {/* 캐릭터 조회 */}
-          <div className={cardClass}>
+          <div className={`${cardClass} order-1`}>
             <div className={subtitleClass}>캐릭터 조회</div>
             <div className="flex flex-col gap-2">
               <input
@@ -523,6 +591,7 @@ export function GearEstimatePage() {
                     setRows(manualRows());
                     setSource('manual');
                     setResult(null);
+                    setAppliedMats(null);
                   }}
                   className={`${btnBase} flex-1 bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700`}
                 >
@@ -538,6 +607,7 @@ export function GearEstimatePage() {
                       setRows(presetRows(p.grade, p.cn, p.ca, p.tn, p.ta));
                       setSource('manual');
                       setResult(null);
+                      setAppliedMats(null);
                     }}
                     className="rounded-lg bg-zinc-100 px-2.5 py-1 text-xs font-bold text-zinc-600 transition-colors hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
                   >
@@ -550,7 +620,7 @@ export function GearEstimatePage() {
 
           {/* 재료 가격 · 보유 (입력) */}
           {rows.length > 0 && (
-            <div className={cardClass}>
+            <div className={`${cardClass} order-3`}>
               <div className="relative mb-3">
                 <span className={`${subtitleClass} mb-0`}>재료 가격 · 보유</span>
                 <div className="absolute right-0 top-1/2 -translate-y-1/2">
@@ -559,7 +629,7 @@ export function GearEstimatePage() {
               </div>
               {priceNeeds.length === 0 ? (
                 <p className="py-2 text-xs text-zinc-400">
-                  목표 단계를 설정하면 재료의 가격·보유를 입력할 수 있습니다.
+                  목표를 입력하고 적용을 누르면 필요한 재료가 표시됩니다.
                 </p>
               ) : (
                 <MaterialPriceSection
@@ -577,7 +647,7 @@ export function GearEstimatePage() {
 
           {/* 재료별 집계 (결과) — 접힘/펼침, 기본 접힘 */}
           {result && bill && (
-            <div className={cardClass}>
+            <div className={`${cardClass} order-7`}>
               <button
                 onClick={() => setAggOpen((v) => !v)}
                 className="relative block w-full text-left"
@@ -602,10 +672,10 @@ export function GearEstimatePage() {
           )}
         </div>
 
-        {/* 우측 (1fr): 부위별 강화 단계 · 골드 관련 테이블 */}
-        <div className="flex flex-col gap-6">
+        {/* 우측 (1fr): 부위별 강화 단계 · 골드 관련 테이블 — 모바일에선 contents로 풀어 카드별 order 적용 */}
+        <div className="contents lg:flex lg:flex-col lg:gap-6">
           {rows.length === 0 ? (
-            <div className={`${cardClass} flex min-h-[260px] flex-col items-center justify-center gap-3 text-center`}>
+            <div className={`${cardClass} order-2 flex min-h-[260px] flex-col items-center justify-center gap-3 text-center`}>
               <div className="rounded-full bg-zinc-100 p-4 dark:bg-zinc-800">
                 <Wrench size={28} className="text-zinc-400" />
               </div>
@@ -618,11 +688,12 @@ export function GearEstimatePage() {
           ) : (
             <>
               {/* 부위별 강화 단계 */}
-              <div className={cardClass}>
+              <div className={`${cardClass} order-2`}>
                 <div className="mb-3 flex flex-col gap-2">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="relative flex flex-wrap items-center justify-between gap-2">
                     <span className={`${subtitleClass} mb-0`}>부위별 강화 단계</span>
-                    <div className="inline-flex rounded-lg bg-zinc-100 p-0.5 dark:bg-zinc-800">
+                    {/* 모바일: 토글을 absolute로 띄워 제목 줄 세로 중앙에 정렬 */}
+                    <div className="absolute right-0 top-1/2 inline-flex -translate-y-1/2 rounded-lg bg-zinc-100 p-0.5 dark:bg-zinc-800 sm:static sm:translate-y-0">
                       {(
                         [
                           ['per-part', '부위별 목표'],
@@ -644,16 +715,19 @@ export function GearEstimatePage() {
                     </div>
                   </div>
                   {mode === 'per-part' ? (
-                    <div className="flex items-center justify-end gap-1.5 text-xs font-medium text-zinc-500 dark:text-zinc-400">
-                      <span>일괄 목표</span>
+                    <div className="flex flex-wrap items-center justify-end gap-x-1.5 gap-y-1.5 text-xs font-medium text-zinc-500 dark:text-zinc-400">
+                      <span>일괄</span>
+                      <span>일반 재련</span>
                       <NumInput value={bulkNormal} onChange={onBulkNormal} className="w-12" />
-                      <span>일반</span>
+                      <span>상급 재련</span>
                       <NumInput value={bulkAdv} onChange={onBulkAdv} className="w-12" />
-                      <span>상급</span>
+                      <button type="button" onClick={applyTargets} className={applyBtn}>
+                        적용
+                      </button>
                     </div>
                   ) : (
                     <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1.5 text-xs font-medium text-zinc-500 dark:text-zinc-400">
-                      <span>목표 캐릭터 평균 아이템 레벨</span>
+                      <span>목표 평균 레벨</span>
                       <NumInput value={targetIlvl} onChange={setTargetIlvl} className="w-20" />
                       <Checkbox
                         checked={balanced}
@@ -663,6 +737,9 @@ export function GearEstimatePage() {
                         }}
                         label="균등 강화"
                       />
+                      <button type="button" onClick={applyTargets} className={applyBtn}>
+                        적용
+                      </button>
                     </div>
                   )}
                 </div>
@@ -671,8 +748,127 @@ export function GearEstimatePage() {
                     현재 수치는 조회값(수정 불가) · 목표만 입력
                   </p>
                 )}
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[640px] border-separate border-spacing-0 text-sm">
+                {/* 모바일: 부위별 카드 (표 가로 스크롤 방지) */}
+                <div className="flex flex-col gap-3 sm:hidden">
+                  {rows.map((r) => {
+                    const adv = hasAdvanced(r.grade);
+                    const il = isRouteGrade(r.grade)
+                      ? itemLevelOf(r.grade, r.currentNormal, r.currentAdv)
+                      : r.itemLevel;
+                    return (
+                      <div
+                        key={r.slot}
+                        className="rounded-xl border border-zinc-100 bg-zinc-50/60 p-3 dark:border-zinc-800 dark:bg-zinc-800/30"
+                      >
+                        <div className="mb-2 flex items-center justify-between gap-2">
+                          <span className="text-sm font-bold text-zinc-700 dark:text-zinc-200">
+                            {r.slotLabel}
+                          </span>
+                          {mode === 'target-ilvl' && (
+                            <span className="text-xs text-zinc-400">
+                              아이템 레벨{' '}
+                              <b className="text-zinc-600 dark:text-zinc-300">{il ?? '—'}</b>
+                            </span>
+                          )}
+                        </div>
+                        <Select
+                          value={r.grade}
+                          onChange={(v) => setRow(r.slot, { grade: v, advTier: advTierOf(v) })}
+                          options={GRADE_OPTIONS}
+                        />
+                        {mode === 'target-ilvl' ? (
+                          <div className={`mt-2 grid gap-2 ${adv ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                            <label className="flex flex-col gap-1 text-[11px] font-bold text-zinc-400">
+                              현재 일반
+                              <NumInput
+                                value={r.currentNormal}
+                                onChange={(v) => setRow(r.slot, { currentNormal: v })}
+                                disabled={currentLocked}
+                                className="w-full"
+                              />
+                            </label>
+                            {adv && (
+                              <label className="flex flex-col gap-1 text-[11px] font-bold text-zinc-400">
+                                현재 상급
+                                <NumInput
+                                  value={r.currentAdv}
+                                  onChange={(v) => setRow(r.slot, { currentAdv: v })}
+                                  disabled={currentLocked}
+                                  className="w-full"
+                                />
+                              </label>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="mt-2 flex flex-col gap-2">
+                            <div className="rounded-lg border border-zinc-200 bg-white p-2 dark:border-zinc-700 dark:bg-zinc-900/40">
+                              <div className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-indigo-500/80">
+                                일반 재련
+                              </div>
+                              <div className="grid grid-cols-3 gap-2">
+                                <label className="flex flex-col gap-1 text-[11px] text-zinc-400">
+                                  현재
+                                  <NumInput
+                                    value={r.currentNormal}
+                                    onChange={(v) => setRow(r.slot, { currentNormal: v })}
+                                    disabled={currentLocked}
+                                    className="w-full"
+                                  />
+                                </label>
+                                <label className="flex flex-col gap-1 text-[11px] text-zinc-400">
+                                  목표
+                                  <NumInput
+                                    value={r.targetNormal}
+                                    onChange={(v) => setRow(r.slot, { targetNormal: v })}
+                                    className="w-full"
+                                  />
+                                </label>
+                                <label className="flex flex-col gap-1 text-[11px] text-zinc-400">
+                                  장기(%)
+                                  <NumInput
+                                    value={r.jangin}
+                                    onChange={(v) => setRow(r.slot, { jangin: v })}
+                                    className="w-full"
+                                  />
+                                </label>
+                              </div>
+                            </div>
+                            {adv && (
+                              <div className="rounded-lg border border-zinc-200 bg-white p-2 dark:border-zinc-700 dark:bg-zinc-900/40">
+                                <div className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-indigo-500/80">
+                                  상급 재련
+                                </div>
+                                <div className="grid grid-cols-2 gap-2">
+                                  <label className="flex flex-col gap-1 text-[11px] text-zinc-400">
+                                    현재
+                                    <NumInput
+                                      value={r.currentAdv}
+                                      onChange={(v) => setRow(r.slot, { currentAdv: v })}
+                                      disabled={currentLocked}
+                                      className="w-full"
+                                    />
+                                  </label>
+                                  <label className="flex flex-col gap-1 text-[11px] text-zinc-400">
+                                    목표
+                                    <NumInput
+                                      value={r.targetAdv}
+                                      onChange={(v) => setRow(r.slot, { targetAdv: v })}
+                                      className="w-full"
+                                    />
+                                  </label>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* 데스크톱(sm+): 표 */}
+                <div className="hidden overflow-x-auto sm:block">
+                  <table className="w-full border-separate border-spacing-0 text-sm sm:min-w-[720px]">
                     {mode === 'target-ilvl' ? (
                       <thead>
                         <tr className="text-[11px] font-bold text-zinc-400">
@@ -698,7 +894,7 @@ export function GearEstimatePage() {
                         <tr className="text-[11px] font-bold text-zinc-400">
                           <th className="px-1 py-1">현재</th>
                           <th className="px-1 py-1">목표</th>
-                          <th className="px-1 py-1">기운(%)</th>
+                          <th className="px-1 py-1">장기(%)</th>
                           <th className="px-1 py-1">현재</th>
                           <th className="px-1 py-1">목표</th>
                         </tr>
@@ -716,7 +912,7 @@ export function GearEstimatePage() {
                               {r.slotLabel}
                             </td>
                             <td className="px-2 py-1.5">
-                              <div className="w-32">
+                              <div className="w-28 sm:w-52">
                                 <Select
                                   value={r.grade}
                                   onChange={(v) => setRow(r.slot, { grade: v, advTier: advTierOf(v) })}
@@ -729,7 +925,7 @@ export function GearEstimatePage() {
                                 value={r.currentNormal}
                                 onChange={(v) => setRow(r.slot, { currentNormal: v })}
                                 disabled={currentLocked}
-                                className="mx-auto w-14"
+                                className="mx-auto block w-11 sm:w-14"
                               />
                             </td>
                             {mode === 'per-part' && (
@@ -738,14 +934,14 @@ export function GearEstimatePage() {
                                   <NumInput
                                     value={r.targetNormal}
                                     onChange={(v) => setRow(r.slot, { targetNormal: v })}
-                                    className="mx-auto w-14"
+                                    className="mx-auto block w-11 sm:w-14"
                                   />
                                 </td>
                                 <td className="px-1 py-1.5">
                                   <NumInput
                                     value={r.jangin}
                                     onChange={(v) => setRow(r.slot, { jangin: v })}
-                                    className="mx-auto w-14"
+                                    className="mx-auto block w-11 sm:w-14"
                                   />
                                 </td>
                               </>
@@ -756,7 +952,7 @@ export function GearEstimatePage() {
                                   value={r.currentAdv}
                                   onChange={(v) => setRow(r.slot, { currentAdv: v })}
                                   disabled={currentLocked}
-                                  className="mx-auto w-14"
+                                  className="mx-auto block w-11 sm:w-14"
                                 />
                               ) : (
                                 <span className="block text-center text-zinc-300 dark:text-zinc-600">—</span>
@@ -768,7 +964,7 @@ export function GearEstimatePage() {
                                   <NumInput
                                     value={r.targetAdv}
                                     onChange={(v) => setRow(r.slot, { targetAdv: v })}
-                                    className="mx-auto w-14"
+                                    className="mx-auto block w-11 sm:w-14"
                                   />
                                 ) : (
                                   <span className="block text-center text-zinc-300 dark:text-zinc-600">—</span>
@@ -799,21 +995,29 @@ export function GearEstimatePage() {
                     label="모챌익 적용 (일반·상급)"
                   />
                 </div>
+              </div>
 
+              {/* 견적 계산 — 부위별 강화 단계 아래, 결과 위 (PC 우측 컬럼 동선) */}
+              <div className="order-4 flex flex-col gap-1.5">
                 <button
                   onClick={calculate}
-                  className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-5 py-3 text-sm font-bold text-white shadow-sm shadow-indigo-500/30 transition-colors hover:bg-indigo-500"
+                  className={`inline-flex w-full items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-bold text-white shadow-sm transition-colors ${
+                    stale
+                      ? 'animate-pulse bg-amber-500 shadow-amber-500/30 hover:bg-amber-400'
+                      : 'bg-indigo-600 shadow-indigo-500/30 hover:bg-indigo-500'
+                  }`}
                 >
-                  <Wrench size={16} /> 견적 계산
+                  <Calculator size={16} /> 계산하기
                 </button>
-                <p className="mt-2 text-xs text-zinc-400">
-                  {mode === 'target-ilvl'
-                    ? '평균 기대비용 기준입니다. 낮은 등급 장비를 올린 뒤 상위 장비로 계승(전환)하는 편이 더 쌀 수 있어, 계승까지 따져 가장 저렴한 강화 경로를 찾아줍니다. 반영되는 계승: 낙인→결단/업화, 업화 25강+상급 40강→전율. (결단 장비는 20강이 최대라 그 이상은 업화로 계승하는 비용이 포함됩니다.)'
-                    : '평균 기대비용 기준. 장인의 기운은 부위별 현재 진행 단계에 적용됩니다.'}
-                </p>
+                {stale && (
+                  <p className="text-center text-[11px] font-medium text-amber-600 dark:text-amber-400">
+                    입력이 바뀌었습니다. 다시 계산해 주세요.
+                  </p>
+                )}
               </div>
 
               {/* 골드 관련 테이블 (결과) */}
+              <div className="order-5 flex flex-col gap-6">
               {result && bill ? (
                 <>
                   {/* 요약: 총 비용 + 평균 */}
@@ -913,20 +1117,28 @@ export function GearEstimatePage() {
                                   {segs.map((s, idx) => (
                                     <li
                                       key={idx}
-                                      className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-zinc-100 pt-2 text-xs first:border-0 first:pt-0 dark:border-zinc-800"
+                                      className="flex items-start gap-2 border-t border-zinc-100 pt-2 text-xs first:border-0 first:pt-0 dark:border-zinc-800"
                                     >
-                                      <span className="flex min-w-0 items-center gap-2 font-medium text-zinc-700 dark:text-zinc-200">
-                                        <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-[10px] font-bold text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-400">
-                                          {idx + 1}
-                                        </span>
-                                        {s.label}
+                                      <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-[10px] font-bold text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-400">
+                                        {idx + 1}
                                       </span>
-                                      <span className="flex shrink-0 items-center gap-3">
-                                        <span className="text-zinc-400">달성 아이템 레벨 {s.il}</span>
-                                        <span className="w-24 text-right font-semibold tabular-nums text-zinc-600 dark:text-zinc-300">
-                                          {gold(s.gold)}
-                                        </span>
-                                      </span>
+                                      {/* 번호 오른쪽 열로 들여쓰기.
+                                          모바일: 강화내용 / 추가재료 / (달성 IL + 골드) 3줄.
+                                          sm+: [강화내용·추가재료] 좌, [달성 IL·골드] 우. */}
+                                      <div className="flex min-w-0 flex-1 flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+                                        <div className="flex min-w-0 flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
+                                          <span className="font-medium text-zinc-700 dark:text-zinc-200">
+                                            {s.label}
+                                          </span>
+                                          {s.extras.length > 0 && <ExtraMaterials extras={s.extras} />}
+                                        </div>
+                                        <div className="flex shrink-0 items-center justify-between gap-3 sm:justify-start">
+                                          <span className="text-zinc-400">달성 아이템 레벨 {s.il}</span>
+                                          <span className="w-24 text-right font-semibold tabular-nums text-zinc-600 dark:text-zinc-300">
+                                            {gold(s.gold)}
+                                          </span>
+                                        </div>
+                                      </div>
                                     </li>
                                   ))}
                                 </ol>
@@ -941,7 +1153,7 @@ export function GearEstimatePage() {
                   {/* 부위별 소계 */}
                   <div className={cardClass}>
                     <div className={subtitleClass}>부위별 소계</div>
-                  <table className="w-full border-collapse text-sm">
+                  <table className="w-full border-collapse text-xs sm:text-sm">
                     <thead>
                       <tr className="border-b border-zinc-200 text-left text-xs font-bold text-zinc-400 dark:border-zinc-700">
                         <th className="px-2 py-2">부위</th>
@@ -979,12 +1191,18 @@ export function GearEstimatePage() {
                   </div>
                 </>
               ) : (
-                <div className={`${cardClass} flex min-h-[120px] items-center justify-center text-center`}>
+                <div className={`${cardClass} flex min-h-[120px] flex-col items-center justify-center gap-1.5 text-center`}>
                   <p className="text-sm text-zinc-400">
-                    견적 계산을 누르면 비용이 표시됩니다.
+                    계산하기를 누르면 비용이 표시됩니다.
+                  </p>
+                  <p className="text-xs text-zinc-400">
+                    {mode === 'target-ilvl'
+                      ? '평균 기대비용 기준. 계승(전환)까지 따져 가장 저렴한 경로를 찾습니다.'
+                      : '평균 기대비용 기준. 장인의 기운은 부위별 현재 진행 단계에 적용됩니다.'}
                   </p>
                 </div>
               )}
+              </div>
             </>
           )}
         </div>
