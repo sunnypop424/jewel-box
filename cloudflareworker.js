@@ -673,6 +673,90 @@ async function postScheduleCreateMessage(env, { discordName, date, reason }) {
   }
 }
 
+// ========================================================
+// 주간 자동 공지 (전용 채널: DISCORD_NOTICE_CHANNEL_ID)
+//   - 화요일 21시(KST): 리셋 전 재료/티켓 체크리스트 (정적)
+//   - 수요일 10시(KST): 이번 주 가디언 토벌 (8주 고정 로테이션)
+// ========================================================
+
+// 8주 고정 로테이션. 아게오로스 다음 주차에 드렉탈라스로 복귀.
+// 주차 경계 = 수요일 점검. 괄호값(화구/암구/...) = 추천 카드.
+const GUARDIAN_ROTATION = [
+  { name: '드렉탈라스', card: '화구' },
+  { name: '소나벨', card: '암구' },
+  { name: '베스칼', card: '화구' },
+  { name: '루멘칼리고', card: '암구' },
+  { name: '가르가디스', card: '토구' },
+  { name: '스콜라키아', card: '토구' },
+  { name: '크라티오스', card: '뇌구' },
+  { name: '아게오로스', card: '세구' },
+];
+const GUARDIAN_ANCHOR_WED_UTC = Date.UTC(2026, 5, 3); // 2026-06-03(수) = 드렉탈라스 주차 시작
+
+// UTC 자정 타임스탬프 → "M/D (요일)" (요일은 한글 한 글자)
+function formatMonthDayWithDow(utcMidnight) {
+  const dt = new Date(utcMidnight);
+  const dow = ['일', '월', '화', '수', '목', '금', '토'][dt.getUTCDay()];
+  return `${dt.getUTCMonth() + 1}/${dt.getUTCDate()} (${dow})`;
+}
+
+// 가장 최근 수요일(KST)을 주차 시작으로 잡고, 앵커와의 주 차이로 로테이션 인덱스를 구한다.
+function getCurrentGuardianWeek() {
+  const kst = new Date(Date.now() + 9 * 60 * 60 * 1000);
+  const todayUtcMid = Date.UTC(kst.getUTCFullYear(), kst.getUTCMonth(), kst.getUTCDate());
+  const dow = kst.getUTCDay(); // 0=일 .. 3=수
+  const daysSinceWed = (dow - 3 + 7) % 7; // 이번 주차의 수요일까지 되돌리기
+  const DAY = 24 * 60 * 60 * 1000;
+  const weekStart = todayUtcMid - daysSinceWed * DAY; // 이번 주차 시작(수)
+  const weekEnd = weekStart + 6 * DAY; // 주차 끝(화)
+  const weeks = Math.round((weekStart - GUARDIAN_ANCHOR_WED_UTC) / (7 * DAY));
+  const len = GUARDIAN_ROTATION.length;
+  const idx = ((weeks % len) + len) % len; // 음수(앵커 이전)도 정상 처리
+  return { guardian: GUARDIAN_ROTATION[idx], weekStart, weekEnd };
+}
+
+// 수요일 10시(KST): 이번 주 가디언 토벌 공지
+async function postWeeklyGuardianAnnouncement(env) {
+  const botToken = env.DISCORD_BOT_TOKEN;
+  const channelId = env.DISCORD_NOTICE_CHANNEL_ID;
+  if (!botToken || !channelId) return;
+
+  const { guardian, weekStart, weekEnd } = getCurrentGuardianWeek();
+  const content =
+    `🛡️ 이번주 가디언 토벌 (${formatMonthDayWithDow(weekStart)} ~ ${formatMonthDayWithDow(weekEnd)})\n\n` +
+    `· 가디언: **${guardian.name}**\n` +
+    `· 추천 카드: **${guardian.card}**`;
+
+  await fetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
+    method: 'POST',
+    headers: { 'Authorization': `Bot ${botToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content })
+  });
+}
+
+// 화요일 21시(KST): 수요일 점검 리셋 전 재료/티켓 체크리스트
+async function postWeeklyMaterialReminder(env) {
+  const botToken = env.DISCORD_BOT_TOKEN;
+  const channelId = env.DISCORD_NOTICE_CHANNEL_ID;
+  if (!botToken || !channelId) return;
+
+  const content =
+    `🔔 주간 리셋 전 체크리스트 (수요일 점검 전까지!)\n\n` +
+    `· 싱글 상점: 재련재료, 융화재료\n` +
+    `· 세르카 재료 주간 교환\n` +
+    `· 길드 혈석 상점: 실링, 강화재료, 큐브 티켓\n` +
+    `· 림레이크 텀벙게 4티 보석\n` +
+    `· 영지 지원 상자\n` +
+    `· 카제로스 익스트림 재료 교환\n\n` +
+    `천상 티켓 전부 쓰기! — 아제나 천상티켓 / 필보 천상티켓 잊지 말고 다 쓰세요.`;
+
+  await fetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
+    method: 'POST',
+    headers: { 'Authorization': `Bot ${botToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content })
+  });
+}
+
 // 이전에 게시한 등록 메시지를 삭제합니다. messageId 가 없으면 아무 것도 하지 않음.
 // 이미 삭제된 메시지(404)는 정상(성공)으로 간주.
 async function deleteScheduleMessageById(env, messageId) {
@@ -2195,6 +2279,20 @@ export default {
     return new Response('OK');
   },
   async scheduled(event, env, ctx) {
+    // 주간 자동 공지 — cron 의 UTC 시(時)로 구분 (요일 숫자 규칙 혼동 방지)
+    //   01:00 UTC = 수 10:00 KST → 가디언 공지
+    //   12:00 UTC = 화 21:00 KST → 재료 리마인더
+    // 대시보드 cron 은 'Next run' 미리보기가 올바른 요일(수/화)을 가리키도록 맞출 것.
+    const cron = event?.cron;
+    if (cron) {
+      const hourField = cron.split(/\s+/)[1];
+      if (hourField === '1') {
+        try { await postWeeklyGuardianAnnouncement(env); } catch (e) { console.error('가디언 공지 실패:', e); }
+      } else if (hourField === '12') {
+        try { await postWeeklyMaterialReminder(env); } catch (e) { console.error('재료 리마인더 실패:', e); }
+      }
+    }
+
     try {
       const botToken = env.DISCORD_BOT_TOKEN;
       const channelId = env.DISCORD_CHANNEL_ID;

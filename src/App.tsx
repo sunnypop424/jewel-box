@@ -19,12 +19,13 @@ import {
 } from './api/firebaseApi';
 import { syncCharactersWithLostArkAPI, fetchProfile } from './api/lostArkApi';
 import { Modal } from './components/Modal';
-import { LadderGame } from './components/LadderGame';
 import { RouletteGame } from './components/RouletteGame';
-import { PinballGame } from './components/PinballGame';
 import { AuctionCalculatorModal } from './components/AuctionCalculatorModal';
 import { GatheringModal } from './components/GatheringModal';
-import { Swords, Sun, Moon, UserCog, LayoutDashboard, ClipboardList, Menu, X, Users, ChevronDown, Orbit, Megaphone, UserRoundMinus, CalendarDays, Coins } from 'lucide-react';
+import { RefinePage } from './features/refine/RefinePage';
+import { AdvancedRefinePage } from './features/refine/AdvancedRefinePage';
+import { GearEstimatePage } from './features/refine/GearEstimatePage';
+import { Swords, Sun, Moon, UserCog, LayoutDashboard, ClipboardList, Menu, X, Users, ChevronDown, Orbit, Megaphone, UserRoundMinus, CalendarDays, Coins, Hammer, Sparkles, Wrench } from 'lucide-react';
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 
 // ✨ Hook 추가
@@ -103,9 +104,7 @@ const App: React.FC = () => {
     const [saving, setSaving] = useState(false);
 
     const [isModalOpen, setIsModalOpen] = useState(false);
-    const [isLadderModalOpen, setIsLadderModalOpen] = useState(false);
     const [isRouletteModalOpen, setIsRouletteModalOpen] = useState(false);
-    const [isPinballModalOpen, setIsPinballModalOpen] = useState(false);
     const [isCalcOpen, setIsCalcOpen] = useState(false);
     const [isGatheringModalOpen, setIsGatheringModalOpen] = useState(false);
 
@@ -528,6 +527,15 @@ const App: React.FC = () => {
         if (location.pathname === '/missions') {
             return { title: '미션 보드', Icon: Coins };
         }
+        if (location.pathname === '/refine') {
+            return { title: '재련 최적화', Icon: Hammer };
+        }
+        if (location.pathname === '/advanced-refine') {
+            return { title: '상급 재련 최적화', Icon: Sparkles };
+        }
+        if (location.pathname === '/gear-estimate') {
+            return { title: '장비 강화 견적', Icon: Wrench };
+        }
         return { title: '개인별 진행 현황', Icon: LayoutDashboard };
     }, [location.pathname]);
 
@@ -627,9 +635,7 @@ const App: React.FC = () => {
 
                         {isGameMenuOpen && (
                             <div className="ml-3 flex flex-col gap-1 border-l border-zinc-200 pl-3 dark:border-zinc-800">
-                                <button onClick={() => setIsLadderModalOpen(true)} className={subMenuButtonClass}>경매 사다리 타기</button>
                                 <button onClick={() => setIsRouletteModalOpen(true)} className={subMenuButtonClass}>경매 룰렛</button>
-                                <button onClick={() => setIsPinballModalOpen(true)} className={subMenuButtonClass}>마블 레이스</button>
                             </div>
                         )}
 
@@ -674,6 +680,15 @@ const App: React.FC = () => {
                                 </button>
                                 <button onClick={() => setIsCalcOpen(true)} className={subMenuButtonClass}>
                                     경매 입찰 계산기
+                                </button>
+                                <button onClick={() => handleNavClick('/refine')} className={subMenuButtonClass}>
+                                    재련 최적화
+                                </button>
+                                <button onClick={() => handleNavClick('/advanced-refine')} className={subMenuButtonClass}>
+                                    상급 재련 최적화
+                                </button>
+                                <button onClick={() => handleNavClick('/gear-estimate')} className={subMenuButtonClass}>
+                                    장비 강화 견적
                                 </button>
                             </div>
                         )}
@@ -940,6 +955,10 @@ const App: React.FC = () => {
                                     <MissionBoard allUserNames={allUserNames} />
                                 </section>
                             } />
+
+                            <Route path="/refine" element={<RefinePage />} />
+                            <Route path="/advanced-refine" element={<AdvancedRefinePage />} />
+                            <Route path="/gear-estimate" element={<GearEstimatePage />} />
                         </Routes>
                     </div>
                 </div>
@@ -959,16 +978,8 @@ const App: React.FC = () => {
                     />
                 </Modal>
 
-                <Modal open={isLadderModalOpen} title="경매 아이템 사다리 타기" onClose={() => setIsLadderModalOpen(false)} maxWidth="max-w-5xl">
-                    <LadderGame onClose={() => setIsLadderModalOpen(false)} allUserNames={allUserNames} />
-                </Modal>
-
                 <Modal open={isRouletteModalOpen} title="경매 아이템 룰렛" onClose={() => setIsRouletteModalOpen(false)} maxWidth="max-w-4xl">
                     <RouletteGame allUserNames={allUserNames} />
-                </Modal>
-
-                <Modal open={isPinballModalOpen} title="경매 아이템 마블 레이스" onClose={() => setIsPinballModalOpen(false)} maxWidth="max-w-4xl">
-                    <PinballGame onClose={() => setIsPinballModalOpen(false)} allUserNames={allUserNames} />
                 </Modal>
 
                 <GuestAddModal
