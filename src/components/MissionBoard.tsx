@@ -30,6 +30,12 @@ const FILTERS: { key: FilterKey; label: string; statuses: MissionStatus[] }[] = 
   { key: 'ALL', label: '전체', statuses: ['OPEN', 'RESOLVING', 'SETTLED', 'COMPLETED', 'FAILED', 'NO_WINNER', 'VOIDED'] },
 ];
 
+// 디스코드 메시지 중복 게시 방지용 가드.
+// 컴포넌트 useRef 가 아니라 모듈 스코프에 둔다 — StrictMode 의 재마운트(개발 모드)나 리렌더 사이에도
+// 유지되어야 같은 미션을 두 번 게시하지 않는다. (useRef 는 재마운트 시 새로 생성되어 중복 게시의 원인)
+const postedSettledIds = new Set<string>();
+const postedContestIds = new Set<string>();
+
 export const MissionBoard: React.FC<Props> = ({ allUserNames }) => {
   const { confirm, ConfirmModal } = useConfirm();
 
@@ -73,15 +79,13 @@ export const MissionBoard: React.FC<Props> = ({ allUserNames }) => {
   };
 
   // SETTLED 인데 discordMessageId 가 없는 미션 → 한번만 알림 발송 후 messageId 저장.
-  // 여러 클라이언트가 동시에 시도할 수 있지만, Firestore 의 onSnapshot 으로 동기화되며 중복 발송은 워커 측에서
-  // 알림이 이미 게시된 미션은 messageId 가 곧 채워지므로 race window 가 짧다.
-  // 완벽한 멱등성은 transaction 으로 가능하지만 여기서는 race 를 허용 (캐주얼 도구).
-  const sendingRef = React.useRef<Set<string>>(new Set());
+  // postedSettledIds(모듈 스코프)로 중복 게시를 막는다. 성공 시 id 를 남겨 스냅샷 반영 지연 구간에도
+  // 재게시되지 않게 하고, 실패 시에만 제거해 재시도를 허용한다.
   useEffect(() => {
     const candidates = missions.filter((m) => m.status === 'SETTLED' && !m.discordMessageId && m.winner);
     candidates.forEach(async (m) => {
-      if (sendingRef.current.has(m.id)) return;
-      sendingRef.current.add(m.id);
+      if (postedSettledIds.has(m.id)) return;
+      postedSettledIds.add(m.id);
       const messageId = await postMissionSettledMessage({
         missionId: m.id,
         issuer: m.issuer,
@@ -93,21 +97,20 @@ export const MissionBoard: React.FC<Props> = ({ allUserNames }) => {
       });
       if (messageId) {
         await updateMission(m.id, { discordMessageId: messageId });
+      } else {
+        postedSettledIds.delete(m.id); // 실패 시 재시도 허용
       }
-      // 실패해도 sendingRef 에서 제거하여 재시도는 가능하도록.
-      sendingRef.current.delete(m.id);
     });
   }, [missions]);
 
   // CONTEST 인데 OPEN 이고 discordMessageId 가 없는 미션 → 참여 모집 메시지를 한번만 게시.
-  const contestSendingRef = React.useRef<Set<string>>(new Set());
   useEffect(() => {
     const candidates = missions.filter(
       (m) => m.type === 'CONTEST' && m.status === 'OPEN' && !m.discordMessageId,
     );
     candidates.forEach(async (m) => {
-      if (contestSendingRef.current.has(m.id)) return;
-      contestSendingRef.current.add(m.id);
+      if (postedContestIds.has(m.id)) return;
+      postedContestIds.add(m.id);
       const messageId = await postContestOpenMessage({
         missionId: m.id,
         issuer: m.issuer,
@@ -117,8 +120,9 @@ export const MissionBoard: React.FC<Props> = ({ allUserNames }) => {
       });
       if (messageId) {
         await updateMission(m.id, { discordMessageId: messageId });
+      } else {
+        postedContestIds.delete(m.id); // 실패 시 재시도 허용
       }
-      contestSendingRef.current.delete(m.id);
     });
   }, [missions]);
 
