@@ -703,8 +703,9 @@ function formatMonthDayWithDow(utcMidnight) {
 }
 
 // 가장 최근 수요일(KST)을 주차 시작으로 잡고, 앵커와의 주 차이로 로테이션 인덱스를 구한다.
-function getCurrentGuardianWeek() {
-  const kst = new Date(Date.now() + 9 * 60 * 60 * 1000);
+// nowMs 를 넘기면 그 시점 기준으로 계산(예: /가토 내일 → Date.now() + 1일).
+function getCurrentGuardianWeek(nowMs = Date.now()) {
+  const kst = new Date(nowMs + 9 * 60 * 60 * 1000);
   const todayUtcMid = Date.UTC(kst.getUTCFullYear(), kst.getUTCMonth(), kst.getUTCDate());
   const dow = kst.getUTCDay(); // 0=일 .. 3=수
   const daysSinceWed = (dow - 3 + 7) % 7; // 이번 주차의 수요일까지 되돌리기
@@ -749,7 +750,6 @@ async function postWeeklyMaterialReminder(env) {
     `· 길드 혈석 상점: 실링, 강화재료, 큐브 티켓\n` +
     `· 림레이크 텀벙게 4티 보석\n` +
     `· 영지 지원 상자\n` +
-    `· 카제로스 익스트림 재료 교환\n\n` +
     `천상 티켓 전부 쓰기! — 아제나 천상티켓 / 필보 천상티켓 잊지 말고 다 쓰세요.`;
 
   await fetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
@@ -2053,6 +2053,24 @@ export default {
         const usePreemptive = Math.floor(useBreakeven * 0.91);
 
         const resultText = `**전리품 경매 최적가 계산** (${price.toLocaleString()} G / ${partySize}인 기준)\n━━━━━━━━━━━━━━━━━━━━━━\n**[판매 목적]** (수수료 5% 차감)\n- 손익 분기점: \`${sellBreakeven.toLocaleString()} G\`\n- **추천 선점가: \`${sellPreemptive.toLocaleString()} G\`**\n\n**[직접 사용]** (수수료 미차감)\n- 손익 분기점: \`${useBreakeven.toLocaleString()} G\`\n- **추천 선점가: \`${usePreemptive.toLocaleString()} G\`**\n━━━━━━━━━━━━━━━━━━━━━━\n안내: 추천 선점가로 입찰하면 다음 사람은 무조건 손해를 봅니다!`;
+
+        return new Response(JSON.stringify({ type: 4, data: { content: resultText, flags: 64 } }), { headers: { 'Content-Type': 'application/json' } });
+      }
+
+      if (commandName === '가토') {
+        // 주간 고정 로테이션이라 '오늘/내일'은 사실상 주차 경계(수요일 점검) 판별용.
+        // 화요일에 /가토 내일 → 다음 주차 가디언 미리보기.
+        const sub = interaction.data.options?.[0]?.name; // '오늘' | '내일'
+        const offsetDays = sub === '내일' ? 1 : 0;
+        const label = sub === '내일' ? '내일' : '오늘';
+        const targetMs = Date.now() + offsetDays * 24 * 60 * 60 * 1000;
+        const { guardian, weekStart, weekEnd } = getCurrentGuardianWeek(targetMs);
+
+        const resultText =
+          `🛡️ ${label} 가디언 토벌\n` +
+          `(해당 주차: ${formatMonthDayWithDow(weekStart)} ~ ${formatMonthDayWithDow(weekEnd)})\n\n` +
+          `· 가디언: **${guardian.name}**\n` +
+          `· 추천 카드: **${guardian.card}**`;
 
         return new Response(JSON.stringify({ type: 4, data: { content: resultText, flags: 64 } }), { headers: { 'Content-Type': 'application/json' } });
       }

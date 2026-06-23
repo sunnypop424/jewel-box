@@ -22,6 +22,22 @@ if (!APP_ID || !BOT_TOKEN) {
 // 1 = SUB_COMMAND, 2 = SUB_COMMAND_GROUP, 3 = STRING, 4 = INTEGER, 5 = BOOLEAN, 6 = USER ...
 const commands = [
   {
+    name: '가토',
+    description: '이번주 가디언 토벌(주간 고정 로테이션) 정보를 알려줍니다.',
+    options: [
+      {
+        type: 1, // SUB_COMMAND
+        name: '오늘',
+        description: '오늘 기준 가디언 토벌을 보여줍니다.',
+      },
+      {
+        type: 1, // SUB_COMMAND
+        name: '내일',
+        description: '내일 기준 가디언 토벌을 보여줍니다. (화요일에 다음 주차 미리보기)',
+      },
+    ],
+  },
+  {
     name: '일정',
     description: '공대원 개인 일정(참여 불가일)을 관리합니다.',
     options: [
