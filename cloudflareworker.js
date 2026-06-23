@@ -1044,6 +1044,38 @@ async function appendContestEntryREST(env, missionId, entry) {
   return res.ok;
 }
 
+// 미션 문서를 updateTime 과 함께 조회 (CAS 잠금용).
+async function fetchMissionWithMeta(env, missionId) {
+  const url = `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/missions/${missionId}?key=${env.FIREBASE_API_KEY}`;
+  const res = await fetch(url);
+  if (!res.ok) return null;
+  const data = await res.json();
+  return { mission: parseFirestoreDoc(data), updateTime: data.updateTime };
+}
+
+// 디스코드 게시 권한을 원자적으로 선점(claim).
+// 열린 화면(클라이언트)이 몇 개든, 동시에 호출해도 "맨 처음 하나"만 CLAIMED 된다.
+// 핵심: currentDocument.updateTime 조건부 쓰기(CAS) — 내가 읽은 시점 이후 문서가 바뀌었으면 실패.
+// 또 선점에 성공하면 discordMessageId='PENDING' 이 모든 클라이언트의 스냅샷에 퍼져,
+// (구버전 탭의) 구독 기반 자동 게시까지 멈춘다.
+// 반환: { status: 'ALREADY', messageId } | { status: 'CLAIMED' } | { status: 'CONTENDED' } | { status: 'NO_DOC' }
+async function claimDiscordPost(env, missionId) {
+  const meta = await fetchMissionWithMeta(env, missionId);
+  if (!meta || !meta.mission) return { status: 'NO_DOC' };
+  if (meta.mission.discordMessageId) return { status: 'ALREADY', messageId: meta.mission.discordMessageId };
+
+  const nowIso = new Date().toISOString();
+  const mask = ['discordMessageId', 'updatedAt'].map(n => `updateMask.fieldPaths=${n}`).join('&');
+  const precond = `currentDocument.updateTime=${encodeURIComponent(meta.updateTime)}`;
+  const url = `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/missions/${missionId}?key=${env.FIREBASE_API_KEY}&${mask}&${precond}`;
+  const res = await fetch(url, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fields: { discordMessageId: { stringValue: 'PENDING' }, updatedAt: { stringValue: nowIso } } }),
+  });
+  return { status: res.ok ? 'CLAIMED' : 'CONTENDED' };
+}
+
 // Firestore REST API: personalSchedules 컬렉션 전체 조회
 async function fetchPersonalSchedules(env) {
   const url = `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/personalSchedules?key=${env.FIREBASE_API_KEY}&pageSize=1000`;
@@ -1302,10 +1334,16 @@ export default {
           if (!body.missionId || !body.issuer || !body.title) {
             return new Response(JSON.stringify({ error: '필수 파라미터 누락' }), { status: 400, headers: corsHeaders });
           }
-          // 멱등성: 여러 클라이언트(설치된 PWA·다른 탭/기기)가 동시에 게시 요청해도 한 번만 게시.
-          const existing = await fetchMissionByIdREST(env, body.missionId);
-          if (existing && existing.discordMessageId) {
-            return new Response(JSON.stringify({ success: true, messageId: existing.discordMessageId, dedup: true }), {
+          // 원자적 선점(CAS): 열린 화면이 몇 개든 한 번만 게시.
+          const claim = await claimDiscordPost(env, body.missionId);
+          if (claim.status === 'ALREADY') {
+            return new Response(JSON.stringify({ success: true, messageId: claim.messageId, dedup: true }), {
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+          }
+          if (claim.status === 'CONTENDED') {
+            // 다른 화면이 이미 선점/게시 중 → 여기서는 올리지 않음.
+            return new Response(JSON.stringify({ success: true, messageId: null, dedup: true }), {
               headers: { ...corsHeaders, 'Content-Type': 'application/json' }
             });
           }
@@ -1317,9 +1355,15 @@ export default {
             description: body.description,
           });
           if (!result.ok) {
+            // 게시 실패 → PENDING 해제(빈 문자열)해 재시도 허용.
+            if (claim.status === 'CLAIMED') {
+              await updateMissionFieldsREST(env, body.missionId, {
+                discordMessageId: { stringValue: '' },
+                updatedAt: { stringValue: new Date().toISOString() },
+              });
+            }
             return new Response(JSON.stringify({ error: result.reason || 'DISCORD_FAIL' }), { status: 500, headers: corsHeaders });
           }
-          // 게시 직후 워커가 직접 discordMessageId 를 기록 → 다른 클라이언트의 중복 게시 차단.
           if (result.messageId) {
             await updateMissionFieldsREST(env, body.missionId, {
               discordMessageId: { stringValue: result.messageId },
@@ -1335,11 +1379,17 @@ export default {
         if (!body.issuer || !body.winner || !body.title) {
           return new Response(JSON.stringify({ error: '필수 파라미터 누락' }), { status: 400, headers: corsHeaders });
         }
-        // 멱등성: 이미 정산 메시지가 게시됐으면 재게시하지 않음.
+        // 원자적 선점(CAS): 열린 화면이 몇 개든 정산 메시지를 한 번만 게시.
+        let settleClaim = null;
         if (body.missionId) {
-          const existingS = await fetchMissionByIdREST(env, body.missionId);
-          if (existingS && existingS.discordMessageId) {
-            return new Response(JSON.stringify({ success: true, messageId: existingS.discordMessageId, dedup: true }), {
+          settleClaim = await claimDiscordPost(env, body.missionId);
+          if (settleClaim.status === 'ALREADY') {
+            return new Response(JSON.stringify({ success: true, messageId: settleClaim.messageId, dedup: true }), {
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+          }
+          if (settleClaim.status === 'CONTENDED') {
+            return new Response(JSON.stringify({ success: true, messageId: null, dedup: true }), {
               headers: { ...corsHeaders, 'Content-Type': 'application/json' }
             });
           }
@@ -1353,6 +1403,12 @@ export default {
           type: body.type,
         });
         if (!result.ok) {
+          if (settleClaim && settleClaim.status === 'CLAIMED') {
+            await updateMissionFieldsREST(env, body.missionId, {
+              discordMessageId: { stringValue: '' },
+              updatedAt: { stringValue: new Date().toISOString() },
+            });
+          }
           return new Response(JSON.stringify({ error: result.reason || 'DISCORD_FAIL' }), { status: 500, headers: corsHeaders });
         }
         if (body.missionId && result.messageId) {
