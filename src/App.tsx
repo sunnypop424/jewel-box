@@ -609,6 +609,10 @@ const App: React.FC = () => {
                             <CalendarDays size={18} /> 일정 공유 캘린더
                         </button>
 
+                        <button onClick={() => handleNavClick('/refine')} className={navButtonClass(isActive('/refine'))}>
+                            <Hammer size={18} /> 장비 재련 최적화
+                        </button>
+
                         <button onClick={() => handleNavClick('/missions')} className={navButtonClass(isActive('/missions'))}>
                             <Coins size={18} /> 미션 보드
                         </button>
@@ -672,9 +676,6 @@ const App: React.FC = () => {
                                 </button>
                                 <button onClick={() => setIsCalcOpen(true)} className={subMenuButtonClass}>
                                     경매 입찰 계산기
-                                </button>
-                                <button onClick={() => handleNavClick('/refine')} className={subMenuButtonClass}>
-                                    장비 재련 최적화
                                 </button>
                             </div>
                         )}
