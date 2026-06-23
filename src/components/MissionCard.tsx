@@ -91,8 +91,10 @@ export const MissionCard: React.FC<Props> = ({
 
   const isContest = mission.type === 'CONTEST';
   const entries = mission.entries ?? [];
-  // 당첨자 후보: 공모전은 응모자, 그 외 POOL 은 후보군.
-  const pickCandidates = isContest ? entries.map((e) => e.name) : mission.poolMembers ?? [];
+  // 당첨자 후보: 공모전은 응모자(중복 제출 허용이므로 이름 기준 중복 제거), 그 외 POOL 은 후보군.
+  const pickCandidates = isContest
+    ? [...new Set(entries.map((e) => e.name))]
+    : mission.poolMembers ?? [];
 
   // RESOLVING 상태에서 수령자 픽 chip
   const [pickedWinner, setPickedWinner] = useState<string>('');

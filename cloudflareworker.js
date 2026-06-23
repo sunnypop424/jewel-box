@@ -942,8 +942,9 @@ function buildContestMessageBody(mission, missionId) {
   const title = (mission.title || '').trim() || '공모전';
   const desc = (mission.description || '').trim();
   const entries = Array.isArray(mission.entries) ? mission.entries : [];
-  const names = entries.map(e => e && e.name).filter(Boolean);
-  const participantLine = names.length > 0 ? names.join(', ') : '(아직 없음)';
+  // 중복 제출 허용이라 응모 건수(entries)와 참여자(중복 제거)를 구분해 표기.
+  const uniqueNames = [...new Set(entries.map(e => e && e.name).filter(Boolean))];
+  const participantLine = uniqueNames.length > 0 ? uniqueNames.join(', ') : '(아직 없음)';
 
   const content =
     `## 공모전 참여 모집\n` +
@@ -951,7 +952,7 @@ function buildContestMessageBody(mission, missionId) {
     (desc ? `- 설명: ${desc}\n` : '') +
     `- 발의: **${mission.issuer}**\n` +
     `- 상금: **${amountStr} G**\n` +
-    `- 참여 ${names.length}명: ${participantLine}\n` +
+    `- 응모 ${entries.length}건 (참여자: ${participantLine})\n` +
     `아래 **참여하기** 버튼을 눌러 답변을 제출하세요. (답변 필수 · 사유 선택)`;
 
   const components = [{
@@ -1009,22 +1010,38 @@ async function refreshContestMessage(env, mission, missionId) {
   }
 }
 
-// ContestEntry[] → Firestore arrayValue 직렬화. discordId/reason 은 값 있을 때만 포함.
-function toFirestoreEntries(entries) {
-  return {
-    arrayValue: {
-      values: (entries || []).map((e) => {
-        const fields = {
-          name: { stringValue: e.name || '' },
-          answer: { stringValue: e.answer || '' },
-          submittedAt: { stringValue: e.submittedAt || '' },
-        };
-        if (e.discordId) fields.discordId = { stringValue: e.discordId };
-        if (e.reason) fields.reason = { stringValue: e.reason };
-        return { mapValue: { fields } };
-      }),
-    },
+// ContestEntry 한 건을 missions/{id}.entries 에 원자적으로 append.
+// arrayUnion(appendMissingElements) 트랜스폼이라 여러 명이 동시에 제출해도 유실되지 않는다.
+// submittedAt 이 매번 달라 항상 새 원소로 추가됨 → 같은 사람의 중복 제출도 허용.
+async function appendContestEntryREST(env, missionId, entry) {
+  const nowIso = new Date().toISOString();
+  const docPath = `projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/missions/${missionId}`;
+  const fields = {
+    name: { stringValue: entry.name || '' },
+    answer: { stringValue: entry.answer || '' },
+    submittedAt: { stringValue: entry.submittedAt || nowIso },
   };
+  if (entry.discordId) fields.discordId = { stringValue: entry.discordId };
+  if (entry.reason) fields.reason = { stringValue: entry.reason };
+
+  const url = `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents:commit?key=${env.FIREBASE_API_KEY}`;
+  const body = {
+    writes: [{
+      update: { name: docPath, fields: { updatedAt: { stringValue: nowIso } } },
+      updateMask: { fieldPaths: ['updatedAt'] },
+      updateTransforms: [{
+        fieldPath: 'entries',
+        appendMissingElements: { values: [{ mapValue: { fields } }] },
+      }],
+      currentDocument: { exists: true },
+    }],
+  };
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  return res.ok;
 }
 
 // Firestore REST API: personalSchedules 컬렉션 전체 조회
@@ -1691,26 +1708,23 @@ export default {
           const nickname = (member && member.nick) ? member.nick : (user.global_name || user.username);
           const nowIso = new Date().toISOString();
 
-          const entries = Array.isArray(mission.entries) ? mission.entries.slice() : [];
+          // 중복 제출 허용: 항상 새 응모로 원자적 append (동시 제출 유실 없음).
           const newEntry = { name: nickname, discordId: userId, answer, submittedAt: nowIso };
           if (reason) newEntry.reason = reason;
-          const existingIdx = entries.findIndex(e => e && e.discordId && e.discordId === userId);
-          if (existingIdx >= 0) entries[existingIdx] = newEntry; else entries.push(newEntry);
+          await appendContestEntryREST(env, missionId, newEntry);
 
-          await updateMissionFieldsREST(env, missionId, {
-            entries: toFirestoreEntries(entries),
-            updatedAt: { stringValue: nowIso },
-          });
-
-          // 모집 메시지의 참여 인원 갱신은 백그라운드로.
+          // 모집 메시지의 응모 수 갱신은 백그라운드로 (최신 entries 를 다시 읽어 정확히 반영).
           if (mission.discordMessageId) {
-            ctx.waitUntil(refreshContestMessage(env, { ...mission, entries }, missionId));
+            ctx.waitUntil((async () => {
+              const fresh = await fetchMissionByIdREST(env, missionId);
+              if (fresh && fresh.discordMessageId) await refreshContestMessage(env, fresh, missionId);
+            })());
           }
 
           return new Response(JSON.stringify({
             type: 4,
             data: {
-              content: `✅ 답변이 제출되었습니다.${existingIdx >= 0 ? ' (기존 답변을 갱신했어요.)' : ''}`,
+              content: '✅ 답변이 제출되었습니다.',
               flags: 64,
             }
           }), { headers: { 'Content-Type': 'application/json' } });
