@@ -1,15 +1,17 @@
 //https://discord-bot.sunnypop424.workers.dev/
-const InteractionType = { 
-  PING: 1, 
-  APPLICATION_COMMAND: 2, 
-  MESSAGE_COMPONENT: 3, 
-  APPLICATION_COMMAND_AUTOCOMPLETE: 4 
+const InteractionType = {
+  PING: 1,
+  APPLICATION_COMMAND: 2,
+  MESSAGE_COMPONENT: 3,
+  APPLICATION_COMMAND_AUTOCOMPLETE: 4,
+  MODAL_SUBMIT: 5
 };
-const InteractionResponseType = { 
-  PONG: 1, 
-  CHANNEL_MESSAGE_WITH_SOURCE: 4, 
-  UPDATE_MESSAGE: 7, 
-  APPLICATION_COMMAND_AUTOCOMPLETE_RESULT: 8 
+const InteractionResponseType = {
+  PONG: 1,
+  CHANNEL_MESSAGE_WITH_SOURCE: 4,
+  UPDATE_MESSAGE: 7,
+  APPLICATION_COMMAND_AUTOCOMPLETE_RESULT: 8,
+  MODAL: 9
 };
 
 // === GEN:RAID-LEDGER-BEGIN ===
@@ -851,7 +853,7 @@ function deriveMissionDisplayTitle(mission) {
 // 미션 정산 메시지 본문(content + buttons) 렌더링.
 // 송금/수령 상태에 따라 ☐/☑ 마크와 버튼 색이 바뀐다.
 function buildMissionMessageBody(mission, missionId) {
-  const typeLabel = mission.type === 'DIRECT' ? '1:1' : mission.type === 'POOL_LUCK' ? '랜덤' : '경쟁';
+  const typeLabel = mission.type === 'DIRECT' ? '1:1' : mission.type === 'POOL_LUCK' ? '랜덤' : mission.type === 'CONTEST' ? '공모' : '경쟁';
   const amountStr = Number(mission.goldAmount || 0).toLocaleString();
   const paid = !!mission.paidByIssuer;
   const received = !!mission.receivedByWinner;
@@ -932,6 +934,97 @@ async function refreshMissionMessage(env, mission, missionId) {
   } catch (e) {
     return { ok: false, reason: e.message };
   }
+}
+
+// 공모전(CONTEST) 참여 모집 메시지 본문(content + 참여하기 버튼) 렌더링.
+function buildContestMessageBody(mission, missionId) {
+  const amountStr = Number(mission.goldAmount || 0).toLocaleString();
+  const title = (mission.title || '').trim() || '공모전';
+  const desc = (mission.description || '').trim();
+  const entries = Array.isArray(mission.entries) ? mission.entries : [];
+  const names = entries.map(e => e && e.name).filter(Boolean);
+  const participantLine = names.length > 0 ? names.join(', ') : '(아직 없음)';
+
+  const content =
+    `## 공모전 참여 모집\n` +
+    `- 주제: **${title}**\n` +
+    (desc ? `- 설명: ${desc}\n` : '') +
+    `- 발의: **${mission.issuer}**\n` +
+    `- 상금: **${amountStr} G**\n` +
+    `- 참여 ${names.length}명: ${participantLine}\n` +
+    `아래 **참여하기** 버튼을 눌러 답변을 제출하세요. (답변 필수 · 사유 선택)`;
+
+  const components = [{
+    type: 1,
+    components: [
+      { type: 2, style: 1, label: '✍️ 참여하기', custom_id: `contest_join::${missionId}` },
+    ]
+  }];
+
+  return { content, components };
+}
+
+// 공모전 참여 모집 메시지를 채널에 게시하고 messageId 를 반환.
+async function postContestOpenMessage(env, { missionId, issuer, title, goldAmount, description }) {
+  const botToken = env.DISCORD_BOT_TOKEN;
+  const channelId = env.DISCORD_MISSION_CHANNEL_ID;
+  if (!botToken || !channelId) return { ok: true, messageId: null, skipped: 'CHANNEL_NOT_SET' };
+  if (!missionId) return { ok: false, reason: 'MISSION_ID_MISSING', messageId: null };
+
+  const { content, components } = buildContestMessageBody(
+    { issuer, title, goldAmount, description, entries: [] },
+    missionId
+  );
+  try {
+    const res = await fetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bot ${botToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content, components })
+    });
+    if (!res.ok) return { ok: false, reason: `HTTP_${res.status}`, messageId: null };
+    const data = await res.json();
+    return { ok: true, messageId: data?.id || null };
+  } catch (e) {
+    return { ok: false, reason: e.message, messageId: null };
+  }
+}
+
+// 공모전 모집 메시지의 참여 인원을 최신 상태로 PATCH.
+async function refreshContestMessage(env, mission, missionId) {
+  const botToken = env.DISCORD_BOT_TOKEN;
+  const channelId = env.DISCORD_MISSION_CHANNEL_ID;
+  if (!botToken || !channelId || !mission.discordMessageId) return { ok: false, reason: 'NO_TARGET' };
+
+  const { content, components } = buildContestMessageBody(mission, missionId);
+  try {
+    const res = await fetch(`https://discord.com/api/v10/channels/${channelId}/messages/${mission.discordMessageId}`, {
+      method: 'PATCH',
+      headers: { 'Authorization': `Bot ${botToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content, components }),
+    });
+    if (res.status === 404) return { ok: false, alreadyGone: true };
+    return { ok: res.ok };
+  } catch (e) {
+    return { ok: false, reason: e.message };
+  }
+}
+
+// ContestEntry[] → Firestore arrayValue 직렬화. discordId/reason 은 값 있을 때만 포함.
+function toFirestoreEntries(entries) {
+  return {
+    arrayValue: {
+      values: (entries || []).map((e) => {
+        const fields = {
+          name: { stringValue: e.name || '' },
+          answer: { stringValue: e.answer || '' },
+          submittedAt: { stringValue: e.submittedAt || '' },
+        };
+        if (e.discordId) fields.discordId = { stringValue: e.discordId };
+        if (e.reason) fields.reason = { stringValue: e.reason };
+        return { mapValue: { fields } };
+      }),
+    },
+  };
 }
 
 // Firestore REST API: personalSchedules 컬렉션 전체 조회
@@ -1184,6 +1277,25 @@ export default {
           }
           const result = await refreshMissionMessage(env, mission, body.missionId);
           return new Response(JSON.stringify({ success: !!result.ok }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
+        if (action === 'contest-open') {
+          if (!body.missionId || !body.issuer || !body.title) {
+            return new Response(JSON.stringify({ error: '필수 파라미터 누락' }), { status: 400, headers: corsHeaders });
+          }
+          const result = await postContestOpenMessage(env, {
+            missionId: body.missionId,
+            issuer: body.issuer,
+            title: body.title,
+            goldAmount: body.goldAmount,
+            description: body.description,
+          });
+          if (!result.ok) {
+            return new Response(JSON.stringify({ error: result.reason || 'DISCORD_FAIL' }), { status: 500, headers: corsHeaders });
+          }
+          return new Response(JSON.stringify({ success: true, messageId: result.messageId }), {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           });
         }
@@ -1483,10 +1595,104 @@ export default {
           }), { headers: { 'Content-Type': 'application/json' } });
         }
 
+        // 4. 📣 공모전 참여 버튼 → 모달 오픈
+        if (customId.startsWith('contest_join::')) {
+          const missionId = customId.split('::')[1];
+          const mission = await fetchMissionByIdREST(env, missionId);
+          if (!mission || mission.type !== 'CONTEST' || mission.status !== 'OPEN') {
+            return new Response(JSON.stringify({
+              type: 4,
+              data: { content: '[안내] 참여할 수 없는 공모전입니다. (마감되었거나 삭제됨)', flags: 64 }
+            }), { headers: { 'Content-Type': 'application/json' } });
+          }
+          return new Response(JSON.stringify({
+            type: InteractionResponseType.MODAL,
+            data: {
+              custom_id: `contest_modal::${missionId}`,
+              title: '공모전 답변 제출',
+              components: [
+                { type: 1, components: [{ type: 4, custom_id: 'answer', label: '답변', style: 2, required: true, max_length: 1000 }] },
+                { type: 1, components: [{ type: 4, custom_id: 'reason', label: '사유 (선택)', style: 2, required: false, max_length: 500 }] },
+              ],
+            }
+          }), { headers: { 'Content-Type': 'application/json' } });
+        }
+
       } catch (err) {
         return new Response(JSON.stringify({
           type: 4,
           data: { content: `버튼 처리 중 에러가 발생했습니다: ${err.message}`, flags: 64 }
+        }), { headers: { 'Content-Type': 'application/json' } });
+      }
+    }
+
+    // ==========================================
+    // 📣 모달 제출 (MODAL_SUBMIT) 처리 — 공모전 답변
+    // ==========================================
+    if (interaction.type === InteractionType.MODAL_SUBMIT) {
+      try {
+        const customId = interaction.data.custom_id || '';
+
+        if (customId.startsWith('contest_modal::')) {
+          const missionId = customId.split('::')[1];
+
+          // 모달 입력값 추출
+          const rows = interaction.data.components || [];
+          const flat = rows.flatMap(r => r.components || []);
+          const getVal = (cid) => (flat.find(c => c.custom_id === cid)?.value || '').trim();
+          const answer = getVal('answer');
+          const reason = getVal('reason');
+
+          if (!answer) {
+            return new Response(JSON.stringify({
+              type: 4, data: { content: '[안내] 답변을 입력해 주세요.', flags: 64 }
+            }), { headers: { 'Content-Type': 'application/json' } });
+          }
+
+          const mission = await fetchMissionByIdREST(env, missionId);
+          if (!mission || mission.type !== 'CONTEST' || mission.status !== 'OPEN') {
+            return new Response(JSON.stringify({
+              type: 4, data: { content: '[안내] 마감되었거나 참여할 수 없는 공모전입니다.', flags: 64 }
+            }), { headers: { 'Content-Type': 'application/json' } });
+          }
+
+          const member = interaction.member;
+          const user = member ? member.user : interaction.user;
+          const userId = user.id;
+          const nickname = (member && member.nick) ? member.nick : (user.global_name || user.username);
+          const nowIso = new Date().toISOString();
+
+          const entries = Array.isArray(mission.entries) ? mission.entries.slice() : [];
+          const newEntry = { name: nickname, discordId: userId, answer, submittedAt: nowIso };
+          if (reason) newEntry.reason = reason;
+          const existingIdx = entries.findIndex(e => e && e.discordId && e.discordId === userId);
+          if (existingIdx >= 0) entries[existingIdx] = newEntry; else entries.push(newEntry);
+
+          await updateMissionFieldsREST(env, missionId, {
+            entries: toFirestoreEntries(entries),
+            updatedAt: { stringValue: nowIso },
+          });
+
+          // 모집 메시지의 참여 인원 갱신은 백그라운드로.
+          if (mission.discordMessageId) {
+            ctx.waitUntil(refreshContestMessage(env, { ...mission, entries }, missionId));
+          }
+
+          return new Response(JSON.stringify({
+            type: 4,
+            data: {
+              content: `✅ 답변이 제출되었습니다.${existingIdx >= 0 ? ' (기존 답변을 갱신했어요.)' : ''}`,
+              flags: 64,
+            }
+          }), { headers: { 'Content-Type': 'application/json' } });
+        }
+
+        return new Response(JSON.stringify({
+          type: 4, data: { content: '[안내] 처리할 수 없는 입력입니다.', flags: 64 }
+        }), { headers: { 'Content-Type': 'application/json' } });
+      } catch (err) {
+        return new Response(JSON.stringify({
+          type: 4, data: { content: `처리 중 에러가 발생했습니다: ${err.message}`, flags: 64 }
         }), { headers: { 'Content-Type': 'application/json' } });
       }
     }

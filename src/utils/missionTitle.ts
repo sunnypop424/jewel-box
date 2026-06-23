@@ -32,6 +32,7 @@ export function getMissionDisplayTitle(mission: Mission): string {
     }
     return POOL_COMPETE_LABEL[mission.competeCriterion];
   }
+  if (mission.type === 'CONTEST') return '공모전';
   return '미션';
 }
 

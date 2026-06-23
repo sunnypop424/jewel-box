@@ -83,7 +83,7 @@ export interface RaidSwap {
 
 // 미션 보드 (Jewel Bet) — 공대원 간 골드 미션 트래킹.
 // 누적 골드 시스템과는 분리. 시스템이 골드를 옮기지 않고 송금/수령 체크박스로만 추적.
-export type MissionType = 'DIRECT' | 'POOL_LUCK' | 'POOL_COMPETE';
+export type MissionType = 'DIRECT' | 'POOL_LUCK' | 'POOL_COMPETE' | 'CONTEST';
 
 export type MissionStatus =
   | 'OPEN'        // 진행 중 (판정 대기)
@@ -91,6 +91,7 @@ export type MissionStatus =
   | 'SETTLED'     // 수령자 확정, 정산 트래킹 중
   | 'COMPLETED'   // 송금+수령 모두 체크
   | 'FAILED'      // 미션 실패
+  | 'NO_WINNER'   // 당첨자 없이 종료 (공모전 — 정산 없음)
   | 'VOIDED';     // 무효 (사유 필수)
 
 export type PoolLuckRule = 'RANDOM' | 'LOWEST_HP' | 'MAIN_MVP' | 'CUSTOM';
@@ -98,6 +99,15 @@ export type PoolLuckRule = 'RANDOM' | 'LOWEST_HP' | 'MAIN_MVP' | 'CUSTOM';
 export type CompeteCriterion = 'TOP_DPS' | 'CUSTOM';
 
 export type WinnerSelectedBy = 'AUTO' | 'ROULETTE' | 'ISSUER_PICK';
+
+// 공모전(CONTEST) 응모 1건. 공대원이 디스코드 모달로 제출하면 워커가 미션 문서의 entries[]에 append.
+export interface ContestEntry {
+  name: string;        // 디스코드 닉네임 (member.nick → global_name → username)
+  discordId?: string;  // 동일인 재제출 식별/덮어쓰기용
+  answer: string;      // 필수
+  reason?: string;     // 선택
+  submittedAt: string; // ISO 8601
+}
 
 export interface Mission {
   id: string;                            // Firestore doc id
@@ -109,6 +119,7 @@ export interface Mission {
 
   target?: string;                       // DIRECT 전용 (단일 이름)
   poolMembers?: string[];                // POOL_* 전용 (자유 입력 후보군)
+  entries?: ContestEntry[];              // CONTEST 전용 (디스코드로 모인 응모; 워커가 채움)
 
   poolLuckRule?: PoolLuckRule;           // POOL_LUCK 전용
   competeCriterion?: CompeteCriterion;   // POOL_COMPETE 전용
@@ -136,6 +147,7 @@ export type NewMission = Omit<
   | 'status'
   | 'createdAt'
   | 'updatedAt'
+  | 'entries'
   | 'winner'
   | 'winnerSelectedBy'
   | 'paidByIssuer'

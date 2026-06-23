@@ -7,7 +7,7 @@ import type {
   NewMission,
   PoolLuckRule,
 } from '../types';
-import { ChevronDown, Coins, Crosshair, Dice5, Swords } from 'lucide-react';
+import { ChevronDown, Coins, Crosshair, Dice5, Megaphone, Swords } from 'lucide-react';
 
 interface Props {
   isOpen: boolean;
@@ -20,6 +20,7 @@ const TYPE_OPTIONS: { value: MissionType; label: string; description: string; Ic
   { value: 'DIRECT', label: '1:1 미션', description: '특정 1명에게 거는 미션', Icon: Crosshair },
   { value: 'POOL_LUCK', label: '운빨/조건 미션', description: '풀에서 운/조건으로 1명 결정', Icon: Dice5 },
   { value: 'POOL_COMPETE', label: '경쟁 미션', description: 'N명 중 1등 지목', Icon: Swords },
+  { value: 'CONTEST', label: '공모전', description: '참여자 미지정 · 디스코드로 답변 모집', Icon: Megaphone },
 ];
 
 const LUCK_RULES: { value: PoolLuckRule; label: string }[] = [
@@ -101,15 +102,17 @@ export const MissionCreateModal: React.FC<Props> = ({ isOpen, onClose, allUserNa
     setError(null);
     if (!issuer.trim()) return setError('미션을 거는 사람을 선택해주세요.');
     // POOL 타입은 룰/기준 자체가 미션 정체성이므로 title 비어있어도 OK.
-    // DIRECT 는 title 이 미션 내용이므로 필수.
+    // DIRECT 는 title 이 미션 내용, CONTEST 는 title 이 공모 주제이므로 필수.
     if (type === 'DIRECT' && !title.trim()) return setError('미션 제목을 입력해주세요.');
+    if (type === 'CONTEST' && !title.trim()) return setError('공모 주제를 입력해주세요.');
     const amount = Number(goldAmount);
     if (!Number.isFinite(amount) || amount <= 0) return setError('미션 금액은 양수로 입력해주세요.');
 
     if (type === 'DIRECT' && !target.trim()) {
       return setError('대상자를 선택해주세요.');
     }
-    if (type !== 'DIRECT' && cleanedPoolMembers.length < 2) {
+    // 후보군 입력은 POOL 타입에만 적용 (CONTEST 는 디스코드로 후보가 모임).
+    if ((type === 'POOL_LUCK' || type === 'POOL_COMPETE') && cleanedPoolMembers.length < 2) {
       return setError('후보군은 2명 이상 입력해주세요.');
     }
     if (
@@ -126,7 +129,8 @@ export const MissionCreateModal: React.FC<Props> = ({ isOpen, onClose, allUserNa
       goldAmount: Math.floor(amount),
       description: description.trim() || undefined,
       target: type === 'DIRECT' ? target.trim() : undefined,
-      poolMembers: type !== 'DIRECT' ? cleanedPoolMembers : undefined,
+      poolMembers:
+        type === 'POOL_LUCK' || type === 'POOL_COMPETE' ? cleanedPoolMembers : undefined,
       poolLuckRule: type === 'POOL_LUCK' ? poolLuckRule : undefined,
       competeCriterion: type === 'POOL_COMPETE' ? competeCriterion : undefined,
       customCriterion:
@@ -140,7 +144,7 @@ export const MissionCreateModal: React.FC<Props> = ({ isOpen, onClose, allUserNa
       setSubmitting(true);
       await onCreate(data);
       onClose();
-    } catch (e) {
+    } catch {
       setError('미션 생성에 실패했습니다.');
     } finally {
       setSubmitting(false);
@@ -199,7 +203,7 @@ export const MissionCreateModal: React.FC<Props> = ({ isOpen, onClose, allUserNa
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_160px]">
           <div>
             <label className={LABEL_CLS}>
-              {type === 'DIRECT' ? '미션 제목' : '추가 조건 (선택)'}
+              {type === 'DIRECT' ? '미션 제목' : type === 'CONTEST' ? '공모 주제' : '추가 조건 (선택)'}
             </label>
             <input
               type="text"
@@ -208,7 +212,9 @@ export const MissionCreateModal: React.FC<Props> = ({ isOpen, onClose, allUserNa
               placeholder={
                 type === 'DIRECT'
                   ? '예: 솔로 일리아칸 클리어'
-                  : '예: 무공시, 5분컷 (없으면 비워두세요)'
+                  : type === 'CONTEST'
+                    ? '예: 우리 채널 최고의 짤 공모'
+                    : '예: 무공시, 5분컷 (없으면 비워두세요)'
               }
               className={INPUT_CLS}
             />

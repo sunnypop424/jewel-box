@@ -4,10 +4,12 @@ import {
   Crosshair,
   Dice5,
   Swords,
+  Megaphone,
   Trophy,
   CheckCircle2,
   XCircle,
   AlertOctagon,
+  Ban,
   Trash2,
 } from 'lucide-react';
 import type { Mission } from '../types';
@@ -17,6 +19,7 @@ interface Props {
   mission: Mission;
   onMarkSuccess: (m: Mission) => void;
   onMarkFailed: (m: Mission) => void;
+  onNoWinner: (m: Mission) => void;
   onRequestVoid: (m: Mission) => void;
   onRequestRouletteSpin: (m: Mission) => void;
   onPickWinner: (m: Mission, winner: string) => void;
@@ -29,6 +32,7 @@ const TYPE_META: Record<Mission['type'], { label: string; Icon: typeof Crosshair
   DIRECT: { label: '1:1', Icon: Crosshair, color: 'text-rose-500' },
   POOL_LUCK: { label: '운빨', Icon: Dice5, color: 'text-amber-500' },
   POOL_COMPETE: { label: '경쟁', Icon: Swords, color: 'text-indigo-500' },
+  CONTEST: { label: '공모', Icon: Megaphone, color: 'text-emerald-500' },
 };
 
 const STATUS_META: Record<
@@ -40,6 +44,7 @@ const STATUS_META: Record<
   SETTLED: { label: '정산 대기', bg: 'bg-indigo-100 dark:bg-indigo-900/30', fg: 'text-indigo-700 dark:text-indigo-300' },
   COMPLETED: { label: '정산 완료', bg: 'bg-zinc-200 dark:bg-zinc-700', fg: 'text-zinc-600 dark:text-zinc-300' },
   FAILED: { label: '실패', bg: 'bg-rose-100 dark:bg-rose-900/30', fg: 'text-rose-700 dark:text-rose-300' },
+  NO_WINNER: { label: '당첨자 없음', bg: 'bg-zinc-100 dark:bg-zinc-800', fg: 'text-zinc-500 dark:text-zinc-400' },
   VOIDED: { label: '무효', bg: 'bg-zinc-100 dark:bg-zinc-800', fg: 'text-zinc-500 dark:text-zinc-400' },
 };
 
@@ -68,6 +73,7 @@ export const MissionCard: React.FC<Props> = ({
   mission,
   onMarkSuccess,
   onMarkFailed,
+  onNoWinner,
   onRequestVoid,
   onRequestRouletteSpin,
   onPickWinner,
@@ -80,7 +86,13 @@ export const MissionCard: React.FC<Props> = ({
   const isCompleted = mission.status === 'COMPLETED';
   const isFailed = mission.status === 'FAILED';
   const isVoided = mission.status === 'VOIDED';
-  const isTerminal = isCompleted || isFailed || isVoided;
+  const isNoWinner = mission.status === 'NO_WINNER';
+  const isTerminal = isCompleted || isFailed || isVoided || isNoWinner;
+
+  const isContest = mission.type === 'CONTEST';
+  const entries = mission.entries ?? [];
+  // 당첨자 후보: 공모전은 응모자, 그 외 POOL 은 후보군.
+  const pickCandidates = isContest ? entries.map((e) => e.name) : mission.poolMembers ?? [];
 
   // RESOLVING 상태에서 수령자 픽 chip
   const [pickedWinner, setPickedWinner] = useState<string>('');
@@ -134,9 +146,10 @@ export const MissionCard: React.FC<Props> = ({
                 <span className="font-bold text-zinc-700 dark:text-zinc-200">{mission.target}</span>
               </>
             ) : null}
-            {mission.type !== 'DIRECT' && mission.poolMembers ? (
+            {(mission.type === 'POOL_LUCK' || mission.type === 'POOL_COMPETE') && mission.poolMembers ? (
               <> — 후보: {mission.poolMembers.join(', ')}</>
             ) : null}
+            {isContest ? <> — 참여 {entries.length}명</> : null}
           </p>
           {titleWasUserProvided && ruleSummary && (
             <p className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400">기준: {ruleSummary}</p>
@@ -156,15 +169,48 @@ export const MissionCard: React.FC<Props> = ({
         </div>
       </div>
 
+      {/* 공모전 응모 목록 (디스코드로 모인 답변) */}
+      {isContest && (mission.status === 'OPEN' || mission.status === 'RESOLVING') && (
+        <div className="flex flex-col gap-1.5 rounded-xl border border-emerald-100 bg-emerald-50/40 p-3 dark:border-emerald-900/30 dark:bg-emerald-950/20">
+          <p className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300">
+            응모 {entries.length}건
+          </p>
+          {entries.length === 0 ? (
+            <p className="text-xs text-zinc-500 dark:text-zinc-400">
+              아직 참여자가 없습니다. 디스코드에서 참여를 받아주세요.
+            </p>
+          ) : (
+            <ul className="flex flex-col gap-1.5">
+              {entries.map((e, i) => (
+                <li key={i} className="text-xs text-zinc-600 dark:text-zinc-300">
+                  <span className="font-bold text-zinc-800 dark:text-zinc-100">{e.name}</span>
+                  {' — '}
+                  {e.answer}
+                  {e.reason && (
+                    <span className="text-zinc-400 dark:text-zinc-500"> ({e.reason})</span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
       {/* OPEN: 판정 버튼 */}
       {mission.status === 'OPEN' && (
         <div className="flex flex-wrap gap-2">
           <button type="button" onClick={() => onMarkSuccess(mission)} className={INLINE_BTN_SUCCESS}>
-            <CheckCircle2 size={14} /> 성공
+            <CheckCircle2 size={14} /> {isContest ? '당첨자 선정' : '성공'}
           </button>
-          <button type="button" onClick={() => onMarkFailed(mission)} className={INLINE_BTN_DANGER}>
-            <XCircle size={14} /> 실패
-          </button>
+          {isContest ? (
+            <button type="button" onClick={() => onNoWinner(mission)} className={INLINE_BTN_NEUTRAL}>
+              <Ban size={14} /> 당첨자 없음
+            </button>
+          ) : (
+            <button type="button" onClick={() => onMarkFailed(mission)} className={INLINE_BTN_DANGER}>
+              <XCircle size={14} /> 실패
+            </button>
+          )}
           <button type="button" onClick={() => onRequestVoid(mission)} className={INLINE_BTN_NEUTRAL}>
             <AlertOctagon size={14} /> 무효
           </button>
@@ -180,13 +226,15 @@ export const MissionCard: React.FC<Props> = ({
             </button>
           ) : (
             <>
-              <p className="text-xs font-bold text-violet-700 dark:text-violet-300">수령자를 선택해주세요</p>
+              <p className="text-xs font-bold text-violet-700 dark:text-violet-300">
+                {isContest ? '당첨자를 선택해주세요' : '수령자를 선택해주세요'}
+              </p>
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                {(mission.poolMembers ?? []).map((m) => {
+                {pickCandidates.map((m, i) => {
                   const active = pickedWinner === m;
                   return (
                     <button
-                      key={m}
+                      key={`${m}-${i}`}
                       type="button"
                       onClick={() => setPickedWinner(m)}
                       className={`rounded-xl border px-3 py-2.5 text-sm font-bold transition ${
@@ -201,6 +249,11 @@ export const MissionCard: React.FC<Props> = ({
                 })}
               </div>
               <div className="flex flex-col-reverse gap-2 pt-1 sm:flex-row sm:justify-end">
+                {isContest && (
+                  <button type="button" onClick={() => onNoWinner(mission)} className={INLINE_BTN_NEUTRAL}>
+                    <Ban size={14} /> 당첨자 없음
+                  </button>
+                )}
                 <button type="button" onClick={() => onRequestVoid(mission)} className={INLINE_BTN_NEUTRAL}>
                   무효 처리
                 </button>

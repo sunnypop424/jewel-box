@@ -11,7 +11,7 @@ import {
   updateMission,
   deleteMission,
 } from '../api/firebaseApi';
-import { postMissionSettledMessage, deleteMissionMessage, refreshMissionMessage } from '../api/missionNotifier';
+import { postMissionSettledMessage, postContestOpenMessage, deleteMissionMessage, refreshMissionMessage } from '../api/missionNotifier';
 import { getMissionDisplayTitle } from '../utils/missionTitle';
 import { Segmented } from '../features/refine/refineUi';
 import type { Mission, MissionStatus, NewMission } from '../types';
@@ -26,8 +26,8 @@ type FilterKey = 'ACTIVE' | 'SETTLING' | 'DONE' | 'ALL';
 const FILTERS: { key: FilterKey; label: string; statuses: MissionStatus[] }[] = [
   { key: 'ACTIVE', label: '진행 중', statuses: ['OPEN', 'RESOLVING'] },
   { key: 'SETTLING', label: '정산 대기', statuses: ['SETTLED'] },
-  { key: 'DONE', label: '종료', statuses: ['COMPLETED', 'FAILED', 'VOIDED'] },
-  { key: 'ALL', label: '전체', statuses: ['OPEN', 'RESOLVING', 'SETTLED', 'COMPLETED', 'FAILED', 'VOIDED'] },
+  { key: 'DONE', label: '종료', statuses: ['COMPLETED', 'FAILED', 'NO_WINNER', 'VOIDED'] },
+  { key: 'ALL', label: '전체', statuses: ['OPEN', 'RESOLVING', 'SETTLED', 'COMPLETED', 'FAILED', 'NO_WINNER', 'VOIDED'] },
 ];
 
 export const MissionBoard: React.FC<Props> = ({ allUserNames }) => {
@@ -99,6 +99,29 @@ export const MissionBoard: React.FC<Props> = ({ allUserNames }) => {
     });
   }, [missions]);
 
+  // CONTEST 인데 OPEN 이고 discordMessageId 가 없는 미션 → 참여 모집 메시지를 한번만 게시.
+  const contestSendingRef = React.useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const candidates = missions.filter(
+      (m) => m.type === 'CONTEST' && m.status === 'OPEN' && !m.discordMessageId,
+    );
+    candidates.forEach(async (m) => {
+      if (contestSendingRef.current.has(m.id)) return;
+      contestSendingRef.current.add(m.id);
+      const messageId = await postContestOpenMessage({
+        missionId: m.id,
+        issuer: m.issuer,
+        title: getMissionDisplayTitle(m),
+        goldAmount: m.goldAmount,
+        description: m.description,
+      });
+      if (messageId) {
+        await updateMission(m.id, { discordMessageId: messageId });
+      }
+      contestSendingRef.current.delete(m.id);
+    });
+  }, [missions]);
+
   const handleMarkSuccess = async (m: Mission) => {
     if (m.type === 'DIRECT') return; // DIRECT 는 OPEN 상태가 없음
     await updateMission(m.id, { status: 'RESOLVING' });
@@ -147,12 +170,27 @@ export const MissionBoard: React.FC<Props> = ({ allUserNames }) => {
   };
 
   const handlePickWinner = async (m: Mission, winner: string) => {
+    // 공모전은 OPEN 모집 메시지를 띄워뒀으므로, 정산 단계로 넘어가며 그 메시지를 지우고
+    // discordMessageId 를 비워 SETTLED 자동 게시 효과가 정산 메시지를 새로 올리게 한다.
+    if (m.type === 'CONTEST' && m.discordMessageId) {
+      await deleteMissionMessage(m.discordMessageId);
+    }
     await updateMission(m.id, {
       status: 'SETTLED',
       winner,
       winnerSelectedBy: 'ISSUER_PICK',
       resolvedAt: new Date().toISOString(),
+      ...(m.type === 'CONTEST' ? { discordMessageId: '' } : {}),
     });
+  };
+
+  // 공모전을 당첨자 없이 종료. 정산 없이 NO_WINNER 로 마감하고 디스코드 모집 메시지를 정리.
+  const handleNoWinner = async (m: Mission) => {
+    await updateMission(m.id, { status: 'NO_WINNER', resolvedAt: new Date().toISOString() });
+    if (m.discordMessageId) {
+      await deleteMissionMessage(m.discordMessageId);
+      await updateMission(m.id, { discordMessageId: '' });
+    }
   };
 
   const handleTogglePaid = async (m: Mission, next: boolean) => {
@@ -235,6 +273,7 @@ export const MissionBoard: React.FC<Props> = ({ allUserNames }) => {
               mission={m}
               onMarkSuccess={handleMarkSuccess}
               onMarkFailed={handleMarkFailed}
+              onNoWinner={handleNoWinner}
               onRequestVoid={handleRequestVoid}
               onRequestRouletteSpin={handleRequestRouletteSpin}
               onPickWinner={handlePickWinner}

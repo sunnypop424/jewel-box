@@ -38,6 +38,35 @@ export async function postMissionSettledMessage(payload: MissionSettledPayload):
   }
 }
 
+export interface ContestOpenPayload {
+  missionId: string;
+  issuer: string;
+  title: string;
+  goldAmount: number;
+  description?: string;
+}
+
+// 공모전(CONTEST) 참여 모집 메시지를 채널에 게시하고 messageId 를 반환합니다.
+// 메시지에는 "참여하기" 버튼이 포함되어, 디스코드에서 모달로 답변을 제출할 수 있습니다.
+export async function postContestOpenMessage(payload: ContestOpenPayload): Promise<string | null> {
+  try {
+    const res = await fetch(WORKER_MISSION_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'contest-open', ...payload }),
+    });
+    if (!res.ok) {
+      console.warn('[missionNotifier] 공모전 메시지 게시 실패:', res.status);
+      return null;
+    }
+    const data = await res.json();
+    return typeof data?.messageId === 'string' ? data.messageId : null;
+  } catch (err) {
+    console.warn('[missionNotifier] 공모전 메시지 게시 중 예외:', err);
+    return null;
+  }
+}
+
 // 이전에 게시된 메시지를 채널에서 삭제합니다.
 export async function deleteMissionMessage(messageId: string | undefined | null): Promise<void> {
   if (!messageId) return;
