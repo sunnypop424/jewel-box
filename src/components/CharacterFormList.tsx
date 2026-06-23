@@ -17,7 +17,7 @@ import { useConfirm } from '../hooks/useConfirm';
 interface CharacterFormRow {
     uid: string; id?: string; discordName: string; discordId?: string;
     jobCode: string; role: Role; itemLevel: number | ''; combatPower: number | '';
-    serkaNightmare: boolean; valkyCanSupport: boolean; receiveBoundGold: boolean;
+    serkaNightmare: boolean; belgardinNightmare: boolean; valkyCanSupport: boolean; receiveBoundGold: boolean;
     lostArkName?: string; singleRaids: RaidId[];
     rosterId: string;        // 소속 원정대. 기본값 = discordName.
     rosterLabel?: string;    // 표시 이름. 지정 시에만 노출.
@@ -52,7 +52,7 @@ function SortableCharacterRow({ row, index, handleChangeRow, handleRemoveRow, is
     // 싱글 체크박스: 실제로 top3 에 들어가는 family 에만 표시 (아이템레벨 자격만 보면 고렙도 저레벨 싱글이 뜸).
     const eligibleSingleRaidIds = (() => {
         if (typeof row.itemLevel !== 'number') return [];
-        const ctx = { itemLevel: row.itemLevel, serkaNightmare: row.serkaNightmare };
+        const ctx = { itemLevel: row.itemLevel, serkaNightmare: row.serkaNightmare, belgardinNightmare: row.belgardinNightmare };
         const top3Families = new Set(getEligibleRaids(ctx).map(getRaidFamily));
         return getSingleModeRaidIds(row.itemLevel).filter(id => top3Families.has(getRaidFamily(id)));
     })();
@@ -129,6 +129,13 @@ function SortableCharacterRow({ row, index, handleChangeRow, handleRemoveRow, is
                             <span className="whitespace-nowrap">나메 참여</span>
                         </label>
                     )}
+                    {/* UPDATE-D: 벨가르딘 나메 체크박스 — 활성화 시 아래 블록 주석 해제 (IL≥1780) */}
+                    {/* {typeof row.itemLevel === 'number' && row.itemLevel >= 1780 && (
+                        <label className="inline-flex select-none items-center gap-1 rounded-md border border-cyan-200 bg-cyan-50 px-1.5 py-1 text-[11px] font-semibold text-cyan-700 shadow-sm dark:border-cyan-900/50 dark:bg-cyan-900/20 dark:text-cyan-300 hover:bg-cyan-100 dark:hover:bg-cyan-900/40 transition-colors cursor-pointer">
+                            <input type="checkbox" checked={row.belgardinNightmare} onChange={(e) => handleChangeRow(index, 'belgardinNightmare', e.target.checked)} disabled={isSaving} className="h-3 w-3 shrink-0 rounded border-cyan-300 text-cyan-600 focus:ring-cyan-500 dark:border-cyan-600 cursor-pointer" />
+                            <span className="whitespace-nowrap">벨가 나메</span>
+                        </label>
+                    )} */}
                     {row.jobCode === '발키리' && (
                         <label className="inline-flex select-none items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-1.5 py-1 text-[11px] font-semibold text-amber-700 shadow-sm dark:border-amber-900/50 dark:bg-amber-900/20 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors cursor-pointer">
                             <input type="checkbox" checked={row.valkyCanSupport} onChange={(e) => handleChangeRow(index, 'valkyCanSupport', e.target.checked)} disabled={isSaving} className="h-3 w-3 rounded border-amber-300 text-amber-600 focus:ring-amber-500 dark:border-amber-600 cursor-pointer" />
@@ -202,6 +209,7 @@ export const CharacterFormList: React.FC<Props> = ({
                 ...c,
                 uid: c.id || `char-${i}-${Date.now()}`,
                 serkaNightmare: c.serkaNightmare ?? (c.itemLevel >= 1740),
+                belgardinNightmare: c.belgardinNightmare ?? (c.itemLevel >= 1780),
                 valkyCanSupport: c.valkyCanSupport ?? false,
                 receiveBoundGold: c.receiveBoundGold ?? true,
                 singleRaids: c.singleRaids || [],
@@ -213,7 +221,7 @@ export const CharacterFormList: React.FC<Props> = ({
             setGoldOption('ALL_MAX');
             setRows([{
                 uid: `new-0-${Date.now()}`, discordName, jobCode: '', role: 'DPS',
-                itemLevel: 1700, combatPower: '', serkaNightmare: false, valkyCanSupport: false,
+                itemLevel: 1700, combatPower: '', serkaNightmare: false, belgardinNightmare: false, valkyCanSupport: false,
                 receiveBoundGold: true, singleRaids: [], rosterId: discordName,
             }]);
         }
@@ -254,6 +262,7 @@ export const CharacterFormList: React.FC<Props> = ({
                 itemLevel: r.itemLevel,
                 combatPower: typeof r.combatPower === 'number' ? r.combatPower : 0,
                 serkaNightmare: r.serkaNightmare,
+                belgardinNightmare: r.belgardinNightmare,
                 valkyCanSupport: r.valkyCanSupport,
                 receiveBoundGold: r.receiveBoundGold,
                 lostArkName: r.lostArkName,
@@ -369,6 +378,7 @@ export const CharacterFormList: React.FC<Props> = ({
                         itemLevel: Math.floor(lv),
                         combatPower: Math.floor(cp),
                         serkaNightmare: lv >= 1740,
+                        belgardinNightmare: lv >= 1780,
                         valkyCanSupport: false,
                         receiveBoundGold: true,
                         singleRaids: [],
@@ -407,6 +417,7 @@ export const CharacterFormList: React.FC<Props> = ({
                     itemLevel: Math.floor(lv),
                     combatPower: Math.floor(cp),
                     serkaNightmare: lv >= 1740,
+                    belgardinNightmare: lv >= 1780,
                     valkyCanSupport: false,
                     receiveBoundGold: true,
                     singleRaids: [],
@@ -457,6 +468,7 @@ export const CharacterFormList: React.FC<Props> = ({
                     ...c,
                     uid: c.id || `char-${i}-${Date.now()}`,
                     serkaNightmare: c.serkaNightmare ?? (c.itemLevel >= 1740),
+                    belgardinNightmare: c.belgardinNightmare ?? (c.itemLevel >= 1780),
                     valkyCanSupport: c.valkyCanSupport ?? false,
                     receiveBoundGold: c.receiveBoundGold ?? true,
                     singleRaids: c.singleRaids || [],
@@ -492,11 +504,15 @@ export const CharacterFormList: React.FC<Props> = ({
                     if (prevIl < 1740 && nextIl >= 1740) nextSerkaNightmare = true;
                     if (prevIl >= 1740 && nextIl < 1740) nextSerkaNightmare = false;
 
+                    let nextBelgardinNightmare = row.belgardinNightmare;
+                    if (prevIl < 1780 && nextIl >= 1780) nextBelgardinNightmare = true;
+                    if (prevIl >= 1780 && nextIl < 1780) nextBelgardinNightmare = false;
+
                     let nextSingleRaids = [...row.singleRaids];
                     if (nextIl < 1680 || nextIl >= 1710) {
                         nextSingleRaids = nextSingleRaids.filter(id => id !== 'ACT2_NORMAL' && id !== 'ACT3_NORMAL');
                     }
-                    return { ...row, [field]: numValue, serkaNightmare: nextSerkaNightmare, singleRaids: nextSingleRaids } as CharacterFormRow;
+                    return { ...row, [field]: numValue, serkaNightmare: nextSerkaNightmare, belgardinNightmare: nextBelgardinNightmare, singleRaids: nextSingleRaids } as CharacterFormRow;
                 }
                 return { ...row, [field]: numValue } as CharacterFormRow;
             }
@@ -520,7 +536,7 @@ export const CharacterFormList: React.FC<Props> = ({
         setRows(prev => [...prev, {
             uid: `new-${Date.now()}`, discordName: localDiscord, discordId: localDiscordId,
             jobCode: '', role: 'DPS', itemLevel: 1700, combatPower: '',
-            serkaNightmare: false, valkyCanSupport: false, receiveBoundGold: true,
+            serkaNightmare: false, belgardinNightmare: false, valkyCanSupport: false, receiveBoundGold: true,
             singleRaids: [], rosterId: lastUsedRosterId, rosterLabel: roster?.label || undefined,
         }]);
         // 드래프트에 있던 원정대가 첫 캐릭 받음 → 드래프트에서 제거
@@ -563,6 +579,7 @@ export const CharacterFormList: React.FC<Props> = ({
                     itemLevel: Number(r.itemLevel),
                     combatPower: Number(r.combatPower),
                     serkaNightmare: Boolean(r.serkaNightmare),
+                    belgardinNightmare: Boolean(r.belgardinNightmare),
                     valkyCanSupport: r.jobCode === '발키리' ? Boolean(r.valkyCanSupport) : false,
                     receiveBoundGold: Boolean(r.receiveBoundGold),
                     goldOption,

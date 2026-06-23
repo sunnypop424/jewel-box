@@ -24,6 +24,9 @@ export type Character = {
   /** 발키 “서폿 가능(플렉스)” 체크 (기본 false) */
   valkyCanSupport?: boolean;
 
+  /** 벨가르딘 나이트메어(1780+) 참여 의사. 체크 시 나메, 아니면 하드 (세트 D, 8/5) */
+  belgardinNightmare?: boolean;
+
   /** 귀속 골드 여부 **/
   receiveBoundGold?: boolean;
 

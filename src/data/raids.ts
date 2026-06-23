@@ -10,6 +10,8 @@
 //   - minItemLevel > 1710 레이드: 100% 거래가능 (generalGold only)
 //   - minItemLevel ≤ 1710 레이드: 50% 거래가능 + 50% 귀속으로 분할
 //   - HORIZON: 귀속 전용 (변경 없음)
+//   - 2026-06-24 패치(세트 A, 현재 주석 스테이징): 4막 13500/13500·38000,
+//     종막 16000/16000·48000, 세르카 노말 16000/16000. 활성화 시 UPDATE-A 줄 맞바꿈.
 //
 // 싱글모드:
 //   - 패치 후 ACT2/ACT3 의 싱글모드는 일반 모드와 동일해져 플래그를 전부 내림.
@@ -29,7 +31,10 @@ export type RaidFamily =
   | 'FINAL'
   | 'SERKA'
   | 'HORIZON'
-  | 'KAZEROS';
+  | 'KAZEROS'
+  // UPDATE-D: 벨가르딘 활성화 시 아래 주석 해제
+  // | 'BELGARDIN'
+  ;
 
 export type DifficultyTier =
   | 'NORMAL'
@@ -63,19 +68,30 @@ export type RaidId =
   | 'HORIZON_STEP3'
   | 'KAZEROS_NORMAL'
   | 'KAZEROS_HARD'
-  | 'KAZEROS_NIGHTMARE';
+  | 'KAZEROS_NIGHTMARE'
+  // UPDATE-B: 4막/종막/세르카 싱글 활성화 시 아래 3줄 주석 해제
+  // | 'ACT4_SINGLE'
+  // | 'FINAL_SINGLE'
+  // | 'SERKA_SINGLE'
+  // UPDATE-D: 벨가르딘 활성화 시 아래 3줄 주석 해제
+  // | 'BELGARDIN_NORMAL'
+  // | 'BELGARDIN_HARD'
+  // | 'BELGARDIN_NIGHTMARE'
+  ;
 
 export type GoldType = 'GENERAL' | 'BOUND';
 export type ClearScope = 'character' | 'roster';
 export type ResetPolicy = 'weekly' | 'event' | 'none';
 
 // 난이도 해금에 필요한 캐릭터 boolean 플래그명 (신규 추가 시 확장)
-export type RequiresFlag = 'serkaNightmare';
+// belgardinNightmare 는 벨가르딘(세트 D) 나이트메어용 — 플래그 선언은 무해하므로 미리 추가.
+export type RequiresFlag = 'serkaNightmare' | 'belgardinNightmare';
 
 // getEligibleRaids 가 캐릭터에서 참조하는 최소 필드 (Character import 회피)
 export interface EligibilityContext {
   itemLevel: number;
   serkaNightmare?: boolean;
+  belgardinNightmare?: boolean;
   singleRaids?: RaidId[];
 }
 
@@ -146,6 +162,24 @@ export const RAIDS: RaidDefinition[] = [
       { tier: 'NIGHTMARE', label: '나이트메어', minItemLevel: 1770, generalGold: 45000, boundGold: 0, colorClass: 'bg-pink-800' },
     ],
   },
+  // UPDATE-D: 벨가르딘 (신규 레이드, 8/5). 활성화 시 이 블록 + RaidFamily/RaidId 의 BELGARDIN 주석 해제.
+  // availableFrom 으로 8/5 전엔 자동 숨김. 나이트메어는 belgardinNightmare 플래그 필요(체크 시 나메, 아니면 하드).
+  // {
+  //   family: 'BELGARDIN',
+  //   label: '벨가르딘',
+  //   order: 1,
+  //   clearScope: 'character',
+  //   resetPolicy: 'weekly',
+  //   includeInGoldTop3: true,
+  //   exclusiveDifficulty: true,
+  //   partySize: 8,
+  //   availableFrom: '2026-08-05',
+  //   difficulties: [
+  //     { tier: 'NORMAL', label: '노말', minItemLevel: 1750, generalGold: 50000, boundGold: 0, colorClass: 'bg-cyan-400' },
+  //     { tier: 'HARD', label: '하드', minItemLevel: 1770, generalGold: 62000, boundGold: 0, colorClass: 'bg-cyan-600' },
+  //     { tier: 'NIGHTMARE', label: '나이트메어', minItemLevel: 1780, generalGold: 75000, boundGold: 0, colorClass: 'bg-cyan-800', requiresFlag: 'belgardinNightmare' },
+  //   ],
+  // },
   {
     family: 'SERKA',
     label: '세르카',
@@ -156,9 +190,13 @@ export const RAIDS: RaidDefinition[] = [
     exclusiveDifficulty: true,
     partySize: 4,
     difficulties: [
+      // UPDATE-A: 활성화 시 위 NORMAL 줄 주석, 아래 줄(16000/16000) 해제
       { tier: 'NORMAL', label: '노말', minItemLevel: 1710, generalGold: 17500, boundGold: 17500, colorClass: 'bg-violet-300' },
+      // { tier: 'NORMAL', label: '노말', minItemLevel: 1710, generalGold: 16000, boundGold: 16000, colorClass: 'bg-violet-300' },
       { tier: 'HARD', label: '하드', minItemLevel: 1730, generalGold: 44000, boundGold: 0, colorClass: 'bg-violet-500' },
       { tier: 'NIGHTMARE', label: '나이트메어', minItemLevel: 1740, generalGold: 54000, boundGold: 0, colorClass: 'bg-violet-700', requiresFlag: 'serkaNightmare' },
+      // UPDATE-B: 세르카 싱글(매칭이지만 싱글 표기) 활성화 시 해제 (= 노말 16000/16000)
+      // { tier: 'SINGLE', label: '싱글', minItemLevel: 1710, generalGold: 16000, boundGold: 16000, colorClass: 'bg-violet-400' },
     ],
   },
   {
@@ -171,8 +209,14 @@ export const RAIDS: RaidDefinition[] = [
     exclusiveDifficulty: true,
     partySize: 8,
     difficulties: [
+      // UPDATE-A: 활성화 시 위 NORMAL 줄 주석, 아래 줄(16000/16000) 해제
       { tier: 'NORMAL', label: '노말', minItemLevel: 1710, generalGold: 20000, boundGold: 20000, colorClass: 'bg-emerald-400' },
+      // { tier: 'NORMAL', label: '노말', minItemLevel: 1710, generalGold: 16000, boundGold: 16000, colorClass: 'bg-emerald-400' },
+      // UPDATE-A: 활성화 시 위 HARD 줄 주석, 아래 줄(48000) 해제
       { tier: 'HARD', label: '하드', minItemLevel: 1730, generalGold: 52000, boundGold: 0, colorClass: 'bg-red-500' },
+      // { tier: 'HARD', label: '하드', minItemLevel: 1730, generalGold: 48000, boundGold: 0, colorClass: 'bg-red-500' },
+      // UPDATE-B: 종막 싱글 활성화 시 해제 (= 노말 16000/16000)
+      // { tier: 'SINGLE', label: '싱글', minItemLevel: 1710, generalGold: 16000, boundGold: 16000, colorClass: 'bg-violet-400' },
     ],
   },
   {
@@ -185,8 +229,14 @@ export const RAIDS: RaidDefinition[] = [
     exclusiveDifficulty: true,
     partySize: 8,
     difficulties: [
+      // UPDATE-A: 활성화 시 위 NORMAL 줄 주석, 아래 줄(13500/13500) 해제
       { tier: 'NORMAL', label: '노말', minItemLevel: 1700, generalGold: 16500, boundGold: 16500, colorClass: 'bg-sky-400' },
+      // { tier: 'NORMAL', label: '노말', minItemLevel: 1700, generalGold: 13500, boundGold: 13500, colorClass: 'bg-sky-400' },
+      // UPDATE-A: 활성화 시 위 HARD 줄 주석, 아래 줄(38000) 해제
       { tier: 'HARD', label: '하드', minItemLevel: 1720, generalGold: 42000, boundGold: 0, colorClass: 'bg-amber-500' },
+      // { tier: 'HARD', label: '하드', minItemLevel: 1720, generalGold: 38000, boundGold: 0, colorClass: 'bg-amber-500' },
+      // UPDATE-B: 4막 싱글 활성화 시 해제 (= 노말 13500/13500)
+      // { tier: 'SINGLE', label: '싱글', minItemLevel: 1700, generalGold: 13500, boundGold: 13500, colorClass: 'bg-violet-400' },
     ],
   },
   {
@@ -582,6 +632,7 @@ export interface TopRaidsContext {
   discordName: string;
   rosterId?: string;
   serkaNightmare?: boolean;
+  belgardinNightmare?: boolean;
   receiveBoundGold?: boolean;
   goldOption?: string;
   singleRaids?: RaidId[];
