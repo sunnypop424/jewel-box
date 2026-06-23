@@ -1,7 +1,9 @@
 // 재련/상급 재련 페이지 공용 프리미티브 (jewel-box 인라인 Tailwind 패턴)
 import { useEffect, useState } from 'react';
-import { ChevronDown, RefreshCw, Coins } from 'lucide-react';
+import { ChevronDown, RefreshCw, Coins, Info, Trash2 } from 'lucide-react';
 import { MATERIAL_META, GRADE_RING } from './materialMeta';
+import { PRICE_TYPE_LABEL } from './marketPrice';
+import type { PriceType } from './marketPrice';
 
 // number input 스피너 제거용
 const noSpin =
@@ -166,6 +168,94 @@ export function MaterialIcon({
 
 export const gold = (n: number) => `${Math.round(n).toLocaleString('ko-KR')} G`;
 export const pct = (n: number) => `${(n * 100).toFixed(2)}%`;
+
+// 큰 골드 값 축약 표기 (만/억). 헤드라인 가독성용 — 정확값은 title로 노출한다.
+export const goldShort = (n: number): string => {
+  const v = Math.round(n);
+  const abs = Math.abs(v);
+  const trim = (s: string) => s.replace(/\.?0+$/, '');
+  if (abs >= 100_000_000) return `${trim((v / 100_000_000).toFixed(2))}억 G`;
+  if (abs >= 10_000) return `${trim((v / 10_000).toFixed(1))}만 G`;
+  return `${v.toLocaleString('ko-KR')} G`;
+};
+
+// 도움말 아이콘 (네이티브 title 툴팁 — 별도 라이브러리 없이 접근성 확보)
+export function InfoTip({ text }: { text: string }) {
+  return (
+    <span
+      role="img"
+      title={text}
+      aria-label={text}
+      tabIndex={0}
+      className="inline-flex cursor-help items-center text-zinc-400 align-middle outline-none focus-visible:text-indigo-500 hover:text-indigo-500"
+    >
+      <Info size={13} />
+    </span>
+  );
+}
+
+// 시세 출처(가격 기준)·갱신 시각 표시 + 새로고침/보유 초기화 — 세 페이지 공통 헤더.
+const PRICE_TYPE_OPTS: readonly (readonly [PriceType, string])[] = [
+  ['YDayAvgPrice', '전일 평균'],
+  ['RecentPrice', '최근 거래가'],
+];
+
+// 마켓 갱신 시각 → "N분 전" 상대 표기 (파싱 실패 시 null)
+function relativeFromNow(iso: string): string | null {
+  const t = new Date(iso).getTime();
+  if (isNaN(t)) return null;
+  const min = Math.round((Date.now() - t) / 60000);
+  if (min < 1) return '방금 전';
+  if (min < 60) return `${min}분 전`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return `${h}시간 전`;
+  return `${Math.floor(h / 24)}일 전`;
+}
+
+export function PriceSourceBar({
+  priceType,
+  onPriceType,
+  updateTime,
+  onRefresh,
+  loading,
+  onClearOwned,
+}: {
+  priceType: PriceType;
+  onPriceType: (t: PriceType) => void;
+  updateTime: string;
+  onRefresh: () => void;
+  loading: boolean;
+  onClearOwned?: () => void;
+}) {
+  const rel = updateTime ? relativeFromNow(updateTime) : null;
+  return (
+    <div className="mb-3 flex flex-col gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className={`${subtitleClass} mb-0`}>재료 가격 · 보유</span>
+        <div className="flex items-center gap-1.5">
+          {onClearOwned && (
+            <button
+              type="button"
+              onClick={onClearOwned}
+              aria-label="보유 재료 전체 초기화"
+              className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-zinc-100 px-2.5 py-1.5 text-xs font-bold text-zinc-500 transition-colors hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700"
+            >
+              <Trash2 size={13} /> 보유 초기화
+            </button>
+          )}
+          <RefreshButton onClick={onRefresh} loading={loading} />
+        </div>
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
+        <Segmented size="sm" options={PRICE_TYPE_OPTS} value={priceType} onChange={onPriceType} />
+        <span className="text-[11px] text-zinc-400">
+          {PRICE_TYPE_LABEL[priceType]}
+          {rel ? ` · ${rel} 기준` : ''}
+        </span>
+      </div>
+    </div>
+  );
+}
 
 // 데이터 키(짧은 식별자)를 화면 표기용 명칭으로 변환. 키 자체는 시세/계산에
 // 그대로 쓰이므로 절대 바꾸지 않고, 표시할 때만 매핑한다.

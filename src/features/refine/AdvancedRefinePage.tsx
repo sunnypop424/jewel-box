@@ -9,10 +9,12 @@ import {
   cardClass,
   subtitleClass,
   gold,
+  goldShort,
+  InfoTip,
   Field,
   Select,
   Checkbox,
-  RefreshButton,
+  PriceSourceBar,
   MaterialIcon,
   materialSortIndex,
   MaterialPriceSection,
@@ -72,7 +74,10 @@ function BreathIconList({ names }: { names: string[] }) {
 }
 
 export function AdvancedRefinePage({ prices }: { prices: MaterialPrices }) {
-  const { priceMap, owned, includeMap, priceLoading, loadPrices, onPrice, onOwned, onInclude } = prices;
+  const {
+    priceMap, owned, includeMap, priceLoading, priceType, updateTime,
+    loadPrices, setPriceType, onPrice, onOwned, onInclude, clearOwned,
+  } = prices;
   const [type, setType] = useState<ItemType>('weapon');
   const [target, setTarget] = useState<AdvancedRefineTarget | ''>('');
   const [mochalik, setMochalik] = useState(false);
@@ -210,15 +215,14 @@ export function AdvancedRefinePage({ prices }: { prices: MaterialPrices }) {
           </div>
 
           <div className={cardClass}>
-            <div className="relative mb-3">
-              <span className={`${subtitleClass} mb-0`}>재료 가격 · 보유</span>
-              <div className="absolute right-0 top-1/2 -translate-y-1/2">
-                <RefreshButton
-                  onClick={() => loadPrices(true)}
-                  loading={priceLoading}
-                />
-              </div>
-            </div>
+            <PriceSourceBar
+              priceType={priceType}
+              onPriceType={setPriceType}
+              updateTime={updateTime}
+              onRefresh={() => loadPrices(true)}
+              loading={priceLoading}
+              onClearOwned={clearOwned}
+            />
             {!table ? (
               <p className="py-6 text-center text-sm text-zinc-400">
                 장비 정보를 선택하면 필요한 재료가 표시됩니다.
@@ -262,11 +266,15 @@ export function AdvancedRefinePage({ prices }: { prices: MaterialPrices }) {
             <div className="flex flex-col gap-4">
               <div className="flex flex-wrap items-end justify-between gap-4 rounded-xl bg-gradient-to-br from-indigo-50 to-indigo-100/40 p-4 dark:from-indigo-950/30 dark:to-indigo-900/10">
                 <div>
-                  <div className="text-[11px] font-bold uppercase tracking-wider text-indigo-500/80">
+                  <div className="flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-indigo-500/80">
                     최적 숨결 · 평균 기대 비용
+                    <InfoTip text="여러 번 시도했을 때의 평균값입니다. 무료 일반턴(테메르의 정)을 반영해 계산하므로 다른 사이트와 값이 다를 수 있습니다." />
                   </div>
-                  <div className="text-2xl font-bold text-indigo-700 dark:text-indigo-300">
-                    {gold(best.expectedPrice)}
+                  <div
+                    className="text-2xl font-bold text-indigo-700 dark:text-indigo-300"
+                    title={gold(best.expectedPrice)}
+                  >
+                    {goldShort(best.expectedPrice)}
                   </div>
                   <div className="mt-1 text-[11px] font-medium text-indigo-600/70 dark:text-indigo-300/70">
                     그중 누르는 골드 {gold(pressGold)}

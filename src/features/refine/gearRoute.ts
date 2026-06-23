@@ -419,6 +419,19 @@ export function estimateByItemLevel(
     }
   }
 
+  return finalizeRoutes(pieces, chosen, priceMap, role, targetAvgIL, feasible);
+}
+
+// 선택된 부위별 루트 → 역할 우선순위 재배정 + 집계 → 결과 객체.
+// estimateByItemLevel / estimateByBudget 공통 마무리 단계.
+function finalizeRoutes(
+  pieces: GearPiece[],
+  chosen: PieceRoute[],
+  priceMap: Record<string, number>,
+  role: 'dealer' | 'support',
+  targetAvgIL: number,
+  feasible: boolean
+): ItemLevelEstimateResult {
   // 역할 우선순위: 같은 현재 상태의 방어구끼리, 높은 IL을 우선순위 높은 부위에 배정.
   // (모든 방어구 부위는 동일 재련 테이블이라 같은 현재상태면 루트가 호환되어 재배치 가능)
   const prio = ARMOR_PRIORITY[role];
@@ -471,4 +484,94 @@ export function estimateByItemLevel(
     feasible,
     routes: chosen,
   };
+}
+
+// 예산 역산: 주어진 골드로 도달 가능한 최대 평균 IL을 찾는다.
+// 각 부위 비용곡선으로 "총 IL 상승분 s를 만드는 최소 골드 dp[s]"를 구한 뒤,
+// 예산 이하인 가장 큰 s를 채택(0/1 배낭의 비용최소화 변형).
+export function estimateByBudget(
+  pieces: GearPiece[],
+  budget: number,
+  priceMap: Record<string, number>,
+  applyResearch: boolean,
+  applyMochalik: boolean,
+  balanced = false,
+  role: 'dealer' | 'support' = 'dealer'
+): ItemLevelEstimateResult {
+  const curves = pieces.map((p) => buildPieceCurve(p, priceMap, applyResearch, applyMochalik));
+  const base = curves.reduce((s, c) => s + c.currentIL, 0);
+
+  // 균등 강화: 예산 안에서 "모든 부위를 동일 IL 이상으로" 올릴 수 있는 가장 높은 IL을 찾는다.
+  // (높은 후보 IL부터, 각 부위를 그 IL 이상으로 올리는 최저가 점을 골라 합이 예산 이하인 첫 IL)
+  if (balanced) {
+    const allIls = new Set<number>();
+    for (const c of curves) for (const p of c.points) allIls.add(p.itemLevel);
+    const candidates = [...allIls].sort((a, b) => b - a);
+    let chosen = curves.map((c) => c.points[0]); // 기본: 현재 유지
+    for (const T of candidates) {
+      const pick = curves.map((c) => c.points.find((p) => p.itemLevel >= T));
+      if (pick.some((p) => !p)) continue; // 어떤 부위가 T 도달 불가
+      const cost = pick.reduce((s, p) => s + p!.gold, 0);
+      if (cost <= budget) {
+        chosen = pick as PieceRoute[];
+        break;
+      }
+    }
+    const achievedAvg = chosen.reduce((s, r) => s + r.itemLevel, 0) / 6;
+    return finalizeRoutes(pieces, chosen, priceMap, role, Math.round(achievedAvg), true);
+  }
+
+  const maxGain = curves.reduce(
+    (s, c) => s + (c.points[c.points.length - 1].itemLevel - c.currentIL),
+    0
+  );
+
+  // dp[s] = 총 IL 상승분 s를 만드는 최소 골드
+  let dp = new Array<number>(maxGain + 1).fill(Infinity);
+  dp[0] = 0;
+  const choiceLayers: Int32Array[] = [];
+  const prevLayers: Int32Array[] = [];
+  for (let i = 0; i < curves.length; i++) {
+    const pts = curves[i].points;
+    const cur = curves[i].currentIL;
+    const ndp = new Array<number>(maxGain + 1).fill(Infinity);
+    const choice = new Int32Array(maxGain + 1).fill(-1);
+    const pre = new Int32Array(maxGain + 1).fill(-1);
+    for (let s = 0; s <= maxGain; s++) {
+      if (dp[s] === Infinity) continue;
+      for (let pi = 0; pi < pts.length; pi++) {
+        const gain = pts[pi].itemLevel - cur;
+        const nsum = Math.min(maxGain, s + gain);
+        const nc = dp[s] + pts[pi].gold;
+        if (nc < ndp[nsum]) {
+          ndp[nsum] = nc;
+          choice[nsum] = pi;
+          pre[nsum] = s;
+        }
+      }
+    }
+    dp = ndp;
+    choiceLayers.push(choice);
+    prevLayers.push(pre);
+  }
+
+  // 예산 이하로 달성 가능한 가장 큰 상승분
+  let bestS = 0;
+  for (let s = maxGain; s >= 0; s--) {
+    if (dp[s] <= budget) {
+      bestS = s;
+      break;
+    }
+  }
+  const chosen = new Array<PieceRoute>(curves.length);
+  let s = bestS;
+  for (let i = curves.length - 1; i >= 0; i--) {
+    const ci = choiceLayers[i][s];
+    chosen[i] = curves[i].points[ci >= 0 ? ci : 0];
+    s = prevLayers[i][s] >= 0 ? prevLayers[i][s] : 0;
+  }
+
+  // 목표 평균 = 달성 평균(예산 모드는 목표=달성), feasible 항상 true
+  const achievedAvg = (base + bestS) / 6;
+  return finalizeRoutes(pieces, chosen, priceMap, role, Math.round(achievedAvg), true);
 }

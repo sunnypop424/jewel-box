@@ -9,11 +9,13 @@ import {
   subtitleClass,
   inputClass,
   gold,
+  goldShort,
   pct,
+  InfoTip,
   Field,
   Select,
   Checkbox,
-  RefreshButton,
+  PriceSourceBar,
   MaterialIcon,
   GRADE_OPTIONS,
   materialSortIndex,
@@ -45,7 +47,10 @@ const GRADES = GRADE_OPTIONS;
 type ResultMode = 'optimal' | 'noBreath' | 'fullBreath';
 
 export function RefinePage({ prices }: { prices: MaterialPrices }) {
-  const { priceMap, owned, includeMap, priceLoading, loadPrices, onPrice, onOwned, onInclude } = prices;
+  const {
+    priceMap, owned, includeMap, priceLoading, priceType, updateTime,
+    loadPrices, setPriceType, onPrice, onOwned, onInclude, clearOwned,
+  } = prices;
   const [type, setType] = useState<ItemType>('weapon');
   const [grade, setGrade] = useState<string>('t4_1590');
   const [target, setTarget] = useState<number | undefined>(undefined);
@@ -249,15 +254,14 @@ export function RefinePage({ prices }: { prices: MaterialPrices }) {
           </div>
 
           <div className={cardClass}>
-            <div className="relative mb-3">
-              <span className={`${subtitleClass} mb-0`}>재료 가격 · 보유</span>
-              <div className="absolute right-0 top-1/2 -translate-y-1/2">
-                <RefreshButton
-                  onClick={() => loadPrices(true)}
-                  loading={priceLoading}
-                />
-              </div>
-            </div>
+            <PriceSourceBar
+              priceType={priceType}
+              onPriceType={setPriceType}
+              updateTime={updateTime}
+              onRefresh={() => loadPrices(true)}
+              loading={priceLoading}
+              onClearOwned={clearOwned}
+            />
             {!table ? (
               <p className="py-6 text-center text-sm text-zinc-400">
                 장비 정보를 선택하면 필요한 재료가 표시됩니다.
@@ -323,19 +327,24 @@ export function RefinePage({ prices }: { prices: MaterialPrices }) {
 
               <div className="flex flex-wrap items-end justify-between gap-4 rounded-xl bg-gradient-to-br from-indigo-50 to-indigo-100/40 p-4 dark:from-indigo-950/30 dark:to-indigo-900/10">
                 <div>
-                  <div className="text-[11px] font-bold uppercase tracking-wider text-indigo-500/80">
+                  <div className="flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-indigo-500/80">
                     평균 기대 비용
+                    <InfoTip text="여러 번 시도했을 때의 평균값입니다. 운이 나쁘면 더 들 수 있고, 최악의 경우는 오른쪽 장기백(천장) 비용입니다." />
                   </div>
-                  <div className="text-2xl font-bold text-indigo-700 dark:text-indigo-300">
-                    {gold(active.price)}
+                  <div
+                    className="text-2xl font-bold text-indigo-700 dark:text-indigo-300"
+                    title={gold(active.price)}
+                  >
+                    {goldShort(active.price)}
                   </div>
                   <div className="mt-1 text-[11px] font-medium text-indigo-600/70 dark:text-indigo-300/70">
                     그중 누르는 골드 {gold(pressGold)}
                   </div>
                 </div>
                 <div className="text-right">
-                  <div className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">
+                  <div className="flex items-center justify-end gap-1 text-[11px] font-bold uppercase tracking-wider text-zinc-400">
                     장기백(천장)
+                    <InfoTip text="장인의 기운을 가득 채워 100% 성공(천장)에 도달할 때까지의 총 비용입니다." />
                   </div>
                   <div className="text-sm font-bold text-zinc-700 dark:text-zinc-200">
                     {gold(fullJanginPrice)}

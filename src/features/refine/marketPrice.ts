@@ -4,6 +4,13 @@ const MARKET_PRICE_URL = 'https://market-cron.icepeng.workers.dev';
 
 export type PriceType = 'YDayAvgPrice' | 'RecentPrice' | 'CurrentMinPrice';
 
+// 시세 종류 화면 라벨 (가격 기준 토글용)
+export const PRICE_TYPE_LABEL: Record<PriceType, string> = {
+  YDayAvgPrice: '전일 평균',
+  RecentPrice: '최근 거래가',
+  CurrentMinPrice: '최저가',
+};
+
 export interface MarketItem {
   Name: string;
   YDayAvgPrice: number;
