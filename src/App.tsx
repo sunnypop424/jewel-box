@@ -22,11 +22,9 @@ import { Modal } from './components/Modal';
 import { RouletteGame } from './components/RouletteGame';
 import { AuctionCalculatorModal } from './components/AuctionCalculatorModal';
 import { GatheringModal } from './components/GatheringModal';
-import { RefinePage } from './features/refine/RefinePage';
-import { AdvancedRefinePage } from './features/refine/AdvancedRefinePage';
-import { GearEstimatePage } from './features/refine/GearEstimatePage';
-import { Swords, Sun, Moon, UserCog, LayoutDashboard, ClipboardList, Menu, X, Users, ChevronDown, Orbit, Megaphone, UserRoundMinus, CalendarDays, Coins, Hammer, Sparkles, Wrench } from 'lucide-react';
-import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
+import { RefineHub } from './features/refine/RefineHub';
+import { Swords, Sun, Moon, UserCog, LayoutDashboard, ClipboardList, Menu, X, Users, ChevronDown, Orbit, Megaphone, UserRoundMinus, CalendarDays, Coins, Hammer } from 'lucide-react';
+import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 
 // ✨ Hook 추가
 import { useConfirm } from './hooks/useConfirm';
@@ -528,13 +526,7 @@ const App: React.FC = () => {
             return { title: '미션 보드', Icon: Coins };
         }
         if (location.pathname === '/refine') {
-            return { title: '재련 최적화', Icon: Hammer };
-        }
-        if (location.pathname === '/advanced-refine') {
-            return { title: '상급 재련 최적화', Icon: Sparkles };
-        }
-        if (location.pathname === '/gear-estimate') {
-            return { title: '장비 강화 견적', Icon: Wrench };
+            return { title: '장비 재련 최적화', Icon: Hammer };
         }
         return { title: '개인별 진행 현황', Icon: LayoutDashboard };
     }, [location.pathname]);
@@ -682,13 +674,7 @@ const App: React.FC = () => {
                                     경매 입찰 계산기
                                 </button>
                                 <button onClick={() => handleNavClick('/refine')} className={subMenuButtonClass}>
-                                    재련 최적화
-                                </button>
-                                <button onClick={() => handleNavClick('/advanced-refine')} className={subMenuButtonClass}>
-                                    상급 재련 최적화
-                                </button>
-                                <button onClick={() => handleNavClick('/gear-estimate')} className={subMenuButtonClass}>
-                                    장비 강화 견적
+                                    장비 재련 최적화
                                 </button>
                             </div>
                         )}
@@ -946,19 +932,13 @@ const App: React.FC = () => {
 
                             <Route path="/missions" element={
                                 <section className="flex flex-col gap-6">
-                                    <div className="hidden flex-col gap-3 sm:flex-row sm:items-center sm:justify-between md:flex md:h-[38px]">
-                                        <h2 className="flex items-center gap-2 text-xl font-bold text-zinc-900 dark:text-zinc-100">
-                                            <Coins className="text-indigo-500" /> 미션 보드
-                                        </h2>
-                                    </div>
-
                                     <MissionBoard allUserNames={allUserNames} />
                                 </section>
                             } />
 
-                            <Route path="/refine" element={<RefinePage />} />
-                            <Route path="/advanced-refine" element={<AdvancedRefinePage />} />
-                            <Route path="/gear-estimate" element={<GearEstimatePage />} />
+                            <Route path="/refine" element={<RefineHub />} />
+                            <Route path="/advanced-refine" element={<Navigate to="/refine?tab=advanced" replace />} />
+                            <Route path="/gear-estimate" element={<Navigate to="/refine?tab=gear" replace />} />
                         </Routes>
                     </div>
                 </div>

@@ -14,6 +14,58 @@ export const subtitleClass =
 export const inputClass =
   `h-9 w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 text-sm text-zinc-900 shadow-sm outline-none transition-colors focus:border-indigo-500 focus:bg-white dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 ${noSpin}`;
 
+// 세그먼티드(pill) 토글 — 재련 허브 탭 / 견적 모드 토글 공용.
+// size='md'는 허브 상단 탭, 'sm'은 카드 내부 모드 토글에 사용.
+export function Segmented<T extends string>({
+  options,
+  value,
+  onChange,
+  size = 'sm',
+  badges,
+}: {
+  options: readonly (readonly [T, string])[];
+  value: T;
+  onChange: (v: T) => void;
+  size?: 'sm' | 'md';
+  // 옵션별 카운트 뱃지 (없으면 미표시)
+  badges?: Partial<Record<T, number>>;
+}) {
+  const pad = size === 'md' ? 'px-4 py-1.5 text-sm' : 'px-3 py-1 text-xs';
+  return (
+    <div className="inline-flex flex-wrap rounded-lg bg-zinc-100 p-0.5 dark:bg-zinc-800">
+      {options.map(([v, label]) => {
+        const active = value === v;
+        const badge = badges?.[v];
+        return (
+          <button
+            key={v}
+            type="button"
+            onClick={() => onChange(v)}
+            className={`flex items-center gap-1.5 rounded-md font-bold transition-colors ${pad} ${
+              active
+                ? 'bg-white text-indigo-600 shadow-sm dark:bg-zinc-900 dark:text-indigo-400'
+                : 'text-zinc-500 dark:text-zinc-400'
+            }`}
+          >
+            {label}
+            {badge !== undefined && (
+              <span
+                className={`rounded-full px-1.5 text-[10px] ${
+                  active
+                    ? 'bg-indigo-100 text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-300'
+                    : 'bg-zinc-200 text-zinc-500 dark:bg-zinc-700 dark:text-zinc-300'
+                }`}
+              >
+                {badge}
+              </span>
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 const numFmt = (n: number) =>
   n ? n.toLocaleString('ko-KR', { maximumFractionDigits: 4 }) : '0';
 

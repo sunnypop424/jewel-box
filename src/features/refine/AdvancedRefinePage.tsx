@@ -1,11 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Sparkles, Calculator, ChevronDown } from 'lucide-react';
-import { toast } from 'sonner';
 import { getAdvancedRefineTable } from './advancedData';
 import type { AdvancedRefineTarget } from './advancedData';
 import { getReport } from './advancedLogic';
 import type { AdvancedRefineReport } from './advancedLogic';
-import { fetchMarketPrices, getPriceObj, emptyPriceMap } from './marketPrice';
+import type { MaterialPrices } from './useMaterialPrices';
 import {
   cardClass,
   subtitleClass,
@@ -72,38 +71,15 @@ function BreathIconList({ names }: { names: string[] }) {
   );
 }
 
-export function AdvancedRefinePage() {
+export function AdvancedRefinePage({ prices }: { prices: MaterialPrices }) {
+  const { priceMap, owned, includeMap, priceLoading, loadPrices, onPrice, onOwned, onInclude } = prices;
   const [type, setType] = useState<ItemType>('weapon');
   const [target, setTarget] = useState<AdvancedRefineTarget | ''>('');
   const [mochalik, setMochalik] = useState(false);
 
-  const [priceMap, setPriceMap] = useState<Record<string, number>>(emptyPriceMap);
-  const [owned, setOwned] = useState<Record<string, number>>({});
-  // 체크 해제 → 0골드(보유). 기본 전부 체크.
-  const [includeMap, setIncludeMap] = useState<Record<string, boolean>>({});
-  const [priceLoading, setPriceLoading] = useState(false);
   const [reports, setReports] = useState<AdvancedRefineReport[] | null>(null);
   const [showAll, setShowAll] = useState(false);
   const [aggOpen, setAggOpen] = useState(false);
-
-  const loadPrices = async (manual = false) => {
-    setPriceLoading(true);
-    try {
-      const data = await fetchMarketPrices();
-      const obj = getPriceObj(data, 'RecentPrice');
-      setPriceMap((prev) => ({ ...prev, ...obj, 골드: 1 }));
-      if (manual) toast.success('재료 시세를 불러왔습니다. (최근 거래가)');
-    } catch (e) {
-      console.error('[시세 로드 실패]', e);
-      toast.error('시세를 불러오지 못했습니다. 가격을 직접 입력해 주세요.');
-    } finally {
-      setPriceLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    loadPrices();
-  }, []);
 
   const table = useMemo(
     () => (target ? getAdvancedRefineTable(type, target, mochalik) : undefined),
@@ -128,13 +104,6 @@ export function AdvancedRefinePage() {
     const list = table.book ? [...breaths, { name: table.book, amount: 1 }] : breaths;
     return list.sort((a, b) => materialSortIndex(a.name) - materialSortIndex(b.name));
   }, [table]);
-
-  const onPrice = (name: string, v: number) =>
-    setPriceMap((p) => ({ ...p, [name]: v }));
-  const onOwned = (name: string, v: number) =>
-    setOwned((o) => ({ ...o, [name]: v }));
-  const onInclude = (name: string, v: boolean) =>
-    setIncludeMap((m) => ({ ...m, [name]: v }));
 
   const calculate = () => {
     if (!table) return;
@@ -207,12 +176,6 @@ export function AdvancedRefinePage() {
 
   return (
     <section className="flex flex-col gap-6">
-      <div className="hidden flex-col gap-3 sm:flex-row sm:items-center sm:justify-between md:flex md:h-[38px]">
-        <h2 className="flex items-center gap-2 text-xl font-bold text-zinc-900 dark:text-zinc-100">
-          <Sparkles className="text-indigo-500" /> 상급 재련 최적화
-        </h2>
-      </div>
-
       <div className="grid gap-6 lg:grid-cols-[minmax(0,440px)_minmax(0,1fr)] lg:items-start">
         {/* 좌측: 입력 */}
         <div className="flex flex-col gap-6">

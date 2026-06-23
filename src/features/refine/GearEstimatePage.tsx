@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Wrench, Calculator, Search, Loader2, ChevronDown } from 'lucide-react';
 import { toast } from 'sonner';
-import { fetchMarketPrices, getPriceObj, emptyPriceMap } from './marketPrice';
+import type { MaterialPrices } from './useMaterialPrices';
 import { getRefineTable, getTargetList } from './refineData';
 import { getAdvancedRefineTable } from './advancedData';
 import type { AdvancedRefineTarget } from './advancedData';
@@ -23,6 +23,7 @@ import {
   Checkbox,
   NumInput,
   RefreshButton,
+  Segmented,
   GRADE_OPTIONS,
   materialSortIndex,
   MaterialPriceSection,
@@ -274,16 +275,12 @@ const applyBtn =
 // 적용 전 안정적인 빈 목록 (useMemo 의존성이 매 렌더 변하지 않도록)
 const EMPTY_MATS: string[] = [];
 
-export function GearEstimatePage() {
+export function GearEstimatePage({ prices }: { prices: MaterialPrices }) {
+  const { priceMap, owned, includeMap, priceLoading, loadPrices, onPrice, onOwned, onInclude } = prices;
   const [charName, setCharName] = useState('');
   const [searching, setSearching] = useState(false);
   const [rows, setRows] = useState<Row[]>([]);
   const [source, setSource] = useState<'api' | 'manual' | null>(null);
-
-  const [priceMap, setPriceMap] = useState<Record<string, number>>(emptyPriceMap);
-  const [priceLoading, setPriceLoading] = useState(false);
-  const [owned, setOwned] = useState<Record<string, number>>({});
-  const [includeMap, setIncludeMap] = useState<Record<string, boolean>>({});
 
   const [bulkNormal, setBulkNormal] = useState(0);
   const [bulkAdv, setBulkAdv] = useState(0);
@@ -300,24 +297,6 @@ export function GearEstimatePage() {
 
   const [result, setResult] = useState<EstimateResult | ItemLevelEstimateResult | null>(null);
   const [calcSnap, setCalcSnap] = useState<CalcSnap | null>(null);
-
-  const loadPrices = async (manual = false) => {
-    setPriceLoading(true);
-    try {
-      const data = await fetchMarketPrices();
-      setPriceMap((prev) => ({ ...prev, ...getPriceObj(data, 'RecentPrice'), 골드: 1 }));
-      if (manual) toast.success('재료 시세를 불러왔습니다. (최근 거래가)');
-    } catch (e) {
-      console.error('[시세 로드 실패]', e);
-      toast.error('시세를 불러오지 못했습니다. 가격을 직접 입력해 주세요.');
-    } finally {
-      setPriceLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    loadPrices();
-  }, []);
 
   const search = async () => {
     const name = charName.trim();
@@ -524,12 +503,6 @@ export function GearEstimatePage() {
     [bill]
   );
 
-  const onPrice = (name: string, v: number) =>
-    setPriceMap((p) => ({ ...p, [name]: v }));
-  const onOwned = (name: string, v: number) =>
-    setOwned((o) => ({ ...o, [name]: v }));
-  const onInclude = (name: string, v: boolean) =>
-    setIncludeMap((m) => ({ ...m, [name]: v }));
 
   const skippedNote = useMemo(
     () => result?.pieces.some((p) => p.skippedNormal.length > 0) ?? false,
@@ -556,12 +529,6 @@ export function GearEstimatePage() {
 
   return (
     <section className="flex flex-col gap-6">
-      <div className="hidden flex-col gap-3 sm:flex-row sm:items-center sm:justify-between md:flex md:h-[38px]">
-        <h2 className="flex items-center gap-2 text-xl font-bold text-zinc-900 dark:text-zinc-100">
-          <Wrench className="text-indigo-500" /> 장비 강화 견적
-        </h2>
-      </div>
-
       <div className="flex flex-col gap-6 lg:grid lg:grid-cols-[minmax(0,440px)_minmax(0,1fr)] lg:items-start">
         {/* 좌측 (440px): 검색 · 재료별 집계 · 재료 시세 — 모바일에선 contents로 풀어 카드별 order 적용 */}
         <div className="contents lg:flex lg:flex-col lg:gap-6">
@@ -693,25 +660,15 @@ export function GearEstimatePage() {
                   <div className="relative flex flex-wrap items-center justify-between gap-2">
                     <span className={`${subtitleClass} mb-0`}>부위별 강화 단계</span>
                     {/* 모바일: 토글을 absolute로 띄워 제목 줄 세로 중앙에 정렬 */}
-                    <div className="absolute right-0 top-1/2 inline-flex -translate-y-1/2 rounded-lg bg-zinc-100 p-0.5 dark:bg-zinc-800 sm:static sm:translate-y-0">
-                      {(
-                        [
+                    <div className="absolute right-0 top-1/2 -translate-y-1/2 sm:static sm:translate-y-0">
+                      <Segmented
+                        options={[
                           ['per-part', '부위별 목표'],
                           ['target-ilvl', '목표 아이템 레벨'],
-                        ] as const
-                      ).map(([m, label]) => (
-                        <button
-                          key={m}
-                          onClick={() => onModeChange(m)}
-                          className={`rounded-md px-3 py-1 text-xs font-bold transition-colors ${
-                            mode === m
-                              ? 'bg-white text-indigo-600 shadow-sm dark:bg-zinc-900 dark:text-indigo-400'
-                              : 'text-zinc-500 dark:text-zinc-400'
-                          }`}
-                        >
-                          {label}
-                        </button>
-                      ))}
+                        ] as const}
+                        value={mode}
+                        onChange={onModeChange}
+                      />
                     </div>
                   </div>
                   {mode === 'per-part' ? (

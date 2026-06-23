@@ -13,6 +13,7 @@ import {
 } from '../api/firebaseApi';
 import { postMissionSettledMessage, deleteMissionMessage, refreshMissionMessage } from '../api/missionNotifier';
 import { getMissionDisplayTitle } from '../utils/missionTitle';
+import { Segmented } from '../features/refine/refineUi';
 import type { Mission, MissionStatus, NewMission } from '../types';
 import { useConfirm } from '../hooks/useConfirm';
 
@@ -55,6 +56,15 @@ export const MissionBoard: React.FC<Props> = ({ allUserNames }) => {
     if (!f) return missions;
     return missions.filter((m) => f.statuses.includes(m.status));
   }, [missions, filter]);
+
+  const filterCounts = useMemo(
+    () =>
+      FILTERS.reduce((acc, f) => {
+        acc[f.key] = missions.filter((m) => f.statuses.includes(m.status)).length;
+        return acc;
+      }, {} as Record<FilterKey, number>),
+    [missions],
+  );
 
   const handleCreate = async (data: NewMission) => {
     await createMission(data);
@@ -184,37 +194,26 @@ export const MissionBoard: React.FC<Props> = ({ allUserNames }) => {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap gap-1.5">
-          {FILTERS.map((f) => {
-            const active = filter === f.key;
-            const count = missions.filter((m) => f.statuses.includes(m.status)).length;
-            return (
-              <button
-                key={f.key}
-                type="button"
-                onClick={() => setFilter(f.key)}
-                className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold transition ${
-                  active
-                    ? 'bg-indigo-600 text-white shadow-sm'
-                    : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300'
-                }`}
-              >
-                {f.label}
-                <span className={`rounded-full px-1.5 text-[10px] ${active ? 'bg-white/20' : 'bg-zinc-200 dark:bg-zinc-700'}`}>
-                  {count}
-                </span>
-              </button>
-            );
-          })}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between md:h-[38px]">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+          <h2 className="hidden items-center gap-2 text-xl font-bold text-zinc-900 dark:text-zinc-100 md:flex">
+            <Coins className="text-indigo-500" /> 미션 보드
+          </h2>
+          <Segmented
+            size="md"
+            options={FILTERS.map((f) => [f.key, f.label] as const)}
+            value={filter}
+            onChange={setFilter}
+            badges={filterCounts}
+          />
         </div>
         <button
           type="button"
           onClick={() => setIsCreateOpen(true)}
           disabled={allUserNames.length === 0}
-          className="inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-bold text-white shadow-md shadow-indigo-500/25 transition-colors hover:bg-indigo-500 active:bg-indigo-700 disabled:opacity-50"
+          className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg bg-indigo-600 px-3.5 py-2 text-sm font-bold text-white shadow-sm transition-colors hover:bg-indigo-500 active:bg-indigo-700 disabled:opacity-50"
         >
-          <Plus size={16} /> 미션 걸기
+          <Plus size={15} /> 미션 걸기
         </button>
       </div>
 
