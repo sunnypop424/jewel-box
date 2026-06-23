@@ -1285,6 +1285,13 @@ export default {
           if (!body.missionId || !body.issuer || !body.title) {
             return new Response(JSON.stringify({ error: '필수 파라미터 누락' }), { status: 400, headers: corsHeaders });
           }
+          // 멱등성: 여러 클라이언트(설치된 PWA·다른 탭/기기)가 동시에 게시 요청해도 한 번만 게시.
+          const existing = await fetchMissionByIdREST(env, body.missionId);
+          if (existing && existing.discordMessageId) {
+            return new Response(JSON.stringify({ success: true, messageId: existing.discordMessageId, dedup: true }), {
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+          }
           const result = await postContestOpenMessage(env, {
             missionId: body.missionId,
             issuer: body.issuer,
@@ -1295,6 +1302,13 @@ export default {
           if (!result.ok) {
             return new Response(JSON.stringify({ error: result.reason || 'DISCORD_FAIL' }), { status: 500, headers: corsHeaders });
           }
+          // 게시 직후 워커가 직접 discordMessageId 를 기록 → 다른 클라이언트의 중복 게시 차단.
+          if (result.messageId) {
+            await updateMissionFieldsREST(env, body.missionId, {
+              discordMessageId: { stringValue: result.messageId },
+              updatedAt: { stringValue: new Date().toISOString() },
+            });
+          }
           return new Response(JSON.stringify({ success: true, messageId: result.messageId }), {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           });
@@ -1303,6 +1317,15 @@ export default {
         // action === 'create'
         if (!body.issuer || !body.winner || !body.title) {
           return new Response(JSON.stringify({ error: '필수 파라미터 누락' }), { status: 400, headers: corsHeaders });
+        }
+        // 멱등성: 이미 정산 메시지가 게시됐으면 재게시하지 않음.
+        if (body.missionId) {
+          const existingS = await fetchMissionByIdREST(env, body.missionId);
+          if (existingS && existingS.discordMessageId) {
+            return new Response(JSON.stringify({ success: true, messageId: existingS.discordMessageId, dedup: true }), {
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+          }
         }
         const result = await postMissionSettledMessage(env, {
           missionId: body.missionId,
@@ -1314,6 +1337,12 @@ export default {
         });
         if (!result.ok) {
           return new Response(JSON.stringify({ error: result.reason || 'DISCORD_FAIL' }), { status: 500, headers: corsHeaders });
+        }
+        if (body.missionId && result.messageId) {
+          await updateMissionFieldsREST(env, body.missionId, {
+            discordMessageId: { stringValue: result.messageId },
+            updatedAt: { stringValue: new Date().toISOString() },
+          });
         }
         return new Response(JSON.stringify({ success: true, messageId: result.messageId }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }

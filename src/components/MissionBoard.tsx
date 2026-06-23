@@ -30,12 +30,6 @@ const FILTERS: { key: FilterKey; label: string; statuses: MissionStatus[] }[] = 
   { key: 'ALL', label: '전체', statuses: ['OPEN', 'RESOLVING', 'SETTLED', 'COMPLETED', 'FAILED', 'NO_WINNER', 'VOIDED'] },
 ];
 
-// 디스코드 메시지 중복 게시 방지용 가드.
-// 컴포넌트 useRef 가 아니라 모듈 스코프에 둔다 — StrictMode 의 재마운트(개발 모드)나 리렌더 사이에도
-// 유지되어야 같은 미션을 두 번 게시하지 않는다. (useRef 는 재마운트 시 새로 생성되어 중복 게시의 원인)
-const postedSettledIds = new Set<string>();
-const postedContestIds = new Set<string>();
-
 export const MissionBoard: React.FC<Props> = ({ allUserNames }) => {
   const { confirm, ConfirmModal } = useConfirm();
 
@@ -72,59 +66,44 @@ export const MissionBoard: React.FC<Props> = ({ allUserNames }) => {
     [missions],
   );
 
-  const handleCreate = async (data: NewMission) => {
-    await createMission(data);
-    toast.success('미션이 등록되었습니다.');
-    // SETTLED 상태로 들어간 미션(DIRECT 또는 결정 후)은 아래 useEffect 가 알림을 발송함.
+  // 디스코드 게시는 "행동하는 한 클라이언트"가 인라인으로 한 번만 한다 (주간 공지가 cron 단일 주체로
+  // 한 번만 올리는 것과 같은 원리). 구독 기반 자동 게시를 두지 않으므로 다른 탭·기기·PWA 가 같은 미션을
+  // 중복 게시하지 않는다. 게시 실패해도 다른 클라이언트가 재시도하지 않는다(공지와 동일 — 단일 주체).
+  const announceSettled = async (m: Mission, winner: string) => {
+    const messageId = await postMissionSettledMessage({
+      missionId: m.id,
+      issuer: m.issuer,
+      winner,
+      goldAmount: m.goldAmount,
+      // title 비어있는 POOL 미션은 룰/기준 라벨로 폴백.
+      title: getMissionDisplayTitle(m),
+      type: m.type,
+    });
+    if (messageId) {
+      await updateMission(m.id, { discordMessageId: messageId });
+    }
   };
 
-  // SETTLED 인데 discordMessageId 가 없는 미션 → 한번만 알림 발송 후 messageId 저장.
-  // postedSettledIds(모듈 스코프)로 중복 게시를 막는다. 성공 시 id 를 남겨 스냅샷 반영 지연 구간에도
-  // 재게시되지 않게 하고, 실패 시에만 제거해 재시도를 허용한다.
-  useEffect(() => {
-    const candidates = missions.filter((m) => m.status === 'SETTLED' && !m.discordMessageId && m.winner);
-    candidates.forEach(async (m) => {
-      if (postedSettledIds.has(m.id)) return;
-      postedSettledIds.add(m.id);
-      const messageId = await postMissionSettledMessage({
-        missionId: m.id,
-        issuer: m.issuer,
-        winner: m.winner!,
-        goldAmount: m.goldAmount,
-        // title 비어있는 POOL 미션은 룰/기준 라벨로 폴백.
-        title: getMissionDisplayTitle(m),
-        type: m.type,
-      });
-      if (messageId) {
-        await updateMission(m.id, { discordMessageId: messageId });
-      } else {
-        postedSettledIds.delete(m.id); // 실패 시 재시도 허용
-      }
-    });
-  }, [missions]);
-
-  // CONTEST 인데 OPEN 이고 discordMessageId 가 없는 미션 → 참여 모집 메시지를 한번만 게시.
-  useEffect(() => {
-    const candidates = missions.filter(
-      (m) => m.type === 'CONTEST' && m.status === 'OPEN' && !m.discordMessageId,
-    );
-    candidates.forEach(async (m) => {
-      if (postedContestIds.has(m.id)) return;
-      postedContestIds.add(m.id);
+  const handleCreate = async (data: NewMission) => {
+    const created = await createMission(data);
+    toast.success('미션이 등록되었습니다.');
+    if (created.type === 'CONTEST') {
+      // 공모전: 참여 모집 메시지 게시 (참여하기 버튼 포함).
       const messageId = await postContestOpenMessage({
-        missionId: m.id,
-        issuer: m.issuer,
-        title: getMissionDisplayTitle(m),
-        goldAmount: m.goldAmount,
-        description: m.description,
+        missionId: created.id,
+        issuer: created.issuer,
+        title: getMissionDisplayTitle(created),
+        goldAmount: created.goldAmount,
+        description: created.description,
       });
       if (messageId) {
-        await updateMission(m.id, { discordMessageId: messageId });
-      } else {
-        postedContestIds.delete(m.id); // 실패 시 재시도 허용
+        await updateMission(created.id, { discordMessageId: messageId });
       }
-    });
-  }, [missions]);
+    } else if (created.status === 'SETTLED' && created.winner) {
+      // DIRECT 등 생성 즉시 정산 대기로 들어가는 미션 → 정산 메시지 게시.
+      await announceSettled(created, created.winner);
+    }
+  };
 
   const handleMarkSuccess = async (m: Mission) => {
     if (m.type === 'DIRECT') return; // DIRECT 는 OPEN 상태가 없음
@@ -164,19 +143,20 @@ export const MissionBoard: React.FC<Props> = ({ allUserNames }) => {
 
   const handleRouletteWinner = async (winner: string) => {
     if (!rouletteCtx) return;
-    await updateMission(rouletteCtx.id, {
+    const m = rouletteCtx;
+    await updateMission(m.id, {
       status: 'SETTLED',
       winner,
       winnerSelectedBy: 'ROULETTE',
       resolvedAt: new Date().toISOString(),
     });
+    await announceSettled(m, winner);
     setRouletteCtx(null);
   };
 
   const handlePickWinner = async (m: Mission, winner: string) => {
-    // 공모전은 OPEN 모집 메시지를 띄워뒀으므로, 정산 단계로 넘어가며 그 메시지를 지우고
-    // discordMessageId 를 비워 SETTLED 자동 게시 효과가 정산 메시지를 새로 올리게 한다.
-    if (m.type === 'CONTEST' && m.discordMessageId) {
+    // 공모전이면 OPEN 모집 메시지를 먼저 정리한 뒤 정산 메시지를 새로 올린다.
+    if (m.discordMessageId) {
       await deleteMissionMessage(m.discordMessageId);
     }
     await updateMission(m.id, {
@@ -184,8 +164,8 @@ export const MissionBoard: React.FC<Props> = ({ allUserNames }) => {
       winner,
       winnerSelectedBy: 'ISSUER_PICK',
       resolvedAt: new Date().toISOString(),
-      ...(m.type === 'CONTEST' ? { discordMessageId: '' } : {}),
     });
+    await announceSettled(m, winner);
   };
 
   // 공모전을 당첨자 없이 종료. 정산 없이 NO_WINNER 로 마감하고 디스코드 모집 메시지를 정리.

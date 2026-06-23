@@ -169,8 +169,8 @@ export const MissionCard: React.FC<Props> = ({
         </div>
       </div>
 
-      {/* 공모전 응모 목록 (디스코드로 모인 답변) */}
-      {isContest && (mission.status === 'OPEN' || mission.status === 'RESOLVING') && (
+      {/* 공모전 응모 목록 (디스코드로 모인 답변) — 종료 후에도 계속 표시 */}
+      {isContest && (entries.length > 0 || !isTerminal) && (
         <div className="flex flex-col gap-1.5 rounded-xl border border-emerald-100 bg-emerald-50/40 p-3 dark:border-emerald-900/30 dark:bg-emerald-950/20">
           <p className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300">
             응모 {entries.length}건
