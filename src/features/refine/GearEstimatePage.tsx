@@ -737,7 +737,7 @@ export function GearEstimatePage({ prices }: { prices: MaterialPrices }) {
                   />
                   <div className="flex gap-2">
                     <button
-                      onClick={search}
+                      onClick={() => search()}
                       disabled={searching || !charName.trim()}
                       className={`${btnBase} flex-1 bg-indigo-600 text-white hover:bg-indigo-500`}
                     >
