@@ -1,32 +1,40 @@
-/* 티카투카 주사위 연출 — 굴림(tumble)→정착(settle), 배치(pop), 밀어내기(fling). */
+/* 티카투카 주사위 연출 — 굴림(tumble)→정착(settle), 놓기(place), 밀어내기(fling). */
 
 @keyframes tk-tumble {
   0% { transform: rotate(-14deg) scale(0.9); }
   50% { transform: rotate(12deg) scale(1.06); }
   100% { transform: rotate(-10deg) scale(0.94); }
 }
+/* 굴림이 멈추는 순간 — 위에서 떨어져 통통 튀다가 잠깐 멈춰 결과를 보여줌. */
 @keyframes tk-settle {
-  0% { transform: scale(1.3) translateY(-7px); }
-  55% { transform: scale(0.92) translateY(3px); }
-  100% { transform: scale(1) translateY(0); }
+  0% { transform: translateY(-10px) scale(1.35) rotate(-6deg); }
+  45% { transform: translateY(4px) scale(0.9) rotate(2deg); }
+  68% { transform: translateY(-2px) scale(1.06) rotate(-1deg); }
+  84% { transform: translateY(0) scale(0.98); }
+  /* 끝부분(84~100%)은 정지 상태로 유지 → "살짝 멈춤" */
+  100% { transform: translateY(0) scale(1); }
 }
-@keyframes tk-pop {
-  0% { transform: scale(0.3); opacity: 0; }
-  70% { transform: scale(1.14); opacity: 1; }
-  100% { transform: scale(1); }
+/* 놓기 — 라인에 탁 내려놓는 동작(위에서 낙하 + 착지 반동). */
+@keyframes tk-place {
+  0% { transform: translateY(-26px) scale(1.22) rotate(-8deg); opacity: 0; }
+  55% { transform: translateY(3px) scale(0.92) rotate(3deg); opacity: 1; }
+  78% { transform: translateY(-2px) scale(1.05) rotate(-1deg); }
+  100% { transform: translateY(0) scale(1) rotate(0); }
 }
+/* 밀어내기 — 살짝 눌렸다가 바깥으로 튕겨 날아감. */
 @keyframes tk-fling {
-  0% { transform: translate(0, 0) rotate(0); opacity: 1; }
+  0% { transform: translate(0, 0) rotate(0) scale(1); opacity: 1; }
+  18% { transform: translate(0, 3px) scale(0.88); opacity: 1; }
   100% {
-    transform: translate(var(--tk-fx, 0), -22px) rotate(var(--tk-fr, 50deg));
+    transform: translate(var(--tk-fx, 0), -34px) rotate(var(--tk-fr, 60deg)) scale(0.65);
     opacity: 0;
   }
 }
 
 .tk-tumble { animation: tk-tumble 130ms linear infinite; }
-.tk-settle { animation: tk-settle 320ms cubic-bezier(0.2, 1.4, 0.4, 1) both; }
-.tk-pop { animation: tk-pop 280ms cubic-bezier(0.2, 1.2, 0.4, 1) both; }
-.tk-fling { animation: tk-fling 460ms ease-in forwards; pointer-events: none; }
+.tk-settle { animation: tk-settle 520ms cubic-bezier(0.18, 1.1, 0.32, 1) both; }
+.tk-pop { animation: tk-place 380ms cubic-bezier(0.2, 1.15, 0.32, 1) both; }
+.tk-fling { animation: tk-fling 480ms cubic-bezier(0.42, 0, 0.7, 0.4) forwards; pointer-events: none; }
 
 @media (prefers-reduced-motion: reduce) {
   .tk-tumble, .tk-settle, .tk-pop, .tk-fling { animation-duration: 1ms; }

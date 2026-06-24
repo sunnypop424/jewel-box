@@ -13,6 +13,8 @@ export interface RollAnim {
 }
 
 const LABEL: Record<Owner, string> = { me: '내 주사위', ai: '상대 주사위' };
+// 트레이 주사위 크기 — 화면 폭에 맞춰 스케일.
+const TRAY_DIE = 'w-[clamp(34px,11vw,46px)] h-[clamp(34px,11vw,46px)]';
 
 function synthDie(owner: Owner, value: DieValue, shield = false): Die {
   return { id: `tray-${owner}-${value}`, value, shield, owner };
@@ -64,9 +66,9 @@ export function DiceTray({
 
       <div className="flex flex-1 items-center justify-center gap-2">
         {shield ? (
-          <DiePip die={shield} size={44} className="tk-settle" />
+          <DiePip die={shield} className={`${TRAY_DIE} tk-settle`} />
         ) : anim && anim.tumbling ? (
-          <DiePip die={synthDie(owner, face)} size={44} className="tk-tumble" />
+          <DiePip die={synthDie(owner, face)} className={`${TRAY_DIE} tk-tumble`} />
         ) : anim && anim.values.length > 0 ? (
           anim.values.map((v, i) =>
             pickable && onPick ? (
@@ -76,14 +78,13 @@ export function DiceTray({
                 onClick={() => onPick(i as 0 | 1)}
                 className="rounded-xl p-0.5 ring-2 ring-transparent transition hover:ring-indigo-400"
               >
-                <DiePip die={synthDie(owner, v)} size={44} className="tk-settle" />
+                <DiePip die={synthDie(owner, v)} className={`${TRAY_DIE} tk-settle`} />
               </button>
             ) : (
               <DiePip
                 key={i}
                 die={synthDie(owner, v)}
-                size={44}
-                className={`tk-settle ${anim.chosen != null && anim.chosen !== i ? 'opacity-40' : ''}`}
+                className={`${TRAY_DIE} tk-settle ${anim.chosen != null && anim.chosen !== i ? 'opacity-40' : ''}`}
               />
             )
           )

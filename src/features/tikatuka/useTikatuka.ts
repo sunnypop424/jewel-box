@@ -10,8 +10,8 @@ import { initialState, reducer } from './reducer';
 import type { AiLevel, DieValue, LineIndex } from './types';
 
 const ROLL_TUMBLE = 480; // 굴림(면 교체) 지속
-const SETTLE_BEAT = 420; // 정착 후 행동 전 여유
-const FLING_MS = 460; // 밀어내기(날아가기) — tikatuka.css의 tk-fling과 일치
+const SETTLE_BEAT = 620; // 정착(tk-settle 520ms) 재생 + 잠깐 멈춤 뒤 행동
+const FLING_MS = 480; // 밀어내기(날아가기) — tikatuka.css의 tk-fling과 일치
 const PASS_DELAY = 520; // 둘 곳 없음 자동 패스 연출
 
 // AI 굴림의 '정착' 시점(타이머로 비동기 공개). null이면 아직 굴리는 중(tumbling).

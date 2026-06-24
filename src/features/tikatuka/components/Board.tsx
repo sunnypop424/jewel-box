@@ -6,6 +6,8 @@ import { DiePip } from './DiePip';
 
 const MAX = 3;
 const LINE_NAMES = ['1번 라인', '2번 라인', '3번 라인'];
+// 주사위 크기 — 화면 폭에 따라 줄어들도록 clamp(모바일에서 3개+3개가 한 줄에 들어오게).
+const DIE_SIZE = 'w-[clamp(26px,8vw,38px)] h-[clamp(26px,8vw,38px)]';
 
 interface Props {
   state: GameState;
@@ -53,7 +55,7 @@ export function Board({ state, flingIds, onPlace, onPush, onPlaceShield }: Props
         return (
           <div
             key={line}
-            className="grid grid-cols-[1fr_auto_1fr] items-stretch gap-2 rounded-2xl border border-zinc-200 bg-zinc-50/60 p-2 dark:border-zinc-800 dark:bg-zinc-900/40"
+            className="grid grid-cols-[1fr_auto_1fr] items-stretch gap-1 rounded-2xl border border-zinc-200 bg-zinc-50/60 p-1.5 dark:border-zinc-800 dark:bg-zinc-900/40 sm:gap-2 sm:p-2"
           >
             {/* 내 필드 (왼쪽) — 안쪽=오른쪽. 배치/쉴드 배치 타겟 */}
             <FieldBox
@@ -67,8 +69,9 @@ export function Board({ state, flingIds, onPlace, onPush, onPlaceShield }: Props
             />
 
             {/* 라인 정보 — 나(왼쪽) : 상대(오른쪽) */}
-            <div className="flex min-w-[84px] flex-col items-center justify-center gap-0.5 px-1">
-              <span className="text-[10px] font-bold text-zinc-400">{LINE_NAMES[line]}</span>
+            <div className="flex min-w-0 flex-col items-center justify-center gap-0.5 px-0.5 sm:min-w-[84px] sm:px-1">
+              <span className="hidden text-[10px] font-bold text-zinc-400 sm:block">{LINE_NAMES[line]}</span>
+              <span className="text-[10px] font-bold text-zinc-400 sm:hidden">{line + 1}라인</span>
               <span className="text-sm font-bold tabular-nums">
                 <span className="text-indigo-500">{lr.meSum}</span>
                 <span className="mx-1 text-zinc-300">:</span>
@@ -120,7 +123,7 @@ function FieldBox({
       type="button"
       disabled={!onClick}
       onClick={onClick}
-      className={`flex items-center gap-1.5 rounded-xl p-1.5 transition-colors ${justify === 'end' ? 'justify-end' : 'justify-start'} ${ring} disabled:cursor-default`}
+      className={`flex items-center gap-1 rounded-xl p-1 transition-colors sm:gap-1.5 sm:p-1.5 ${justify === 'end' ? 'justify-end' : 'justify-start'} ${ring} disabled:cursor-default`}
     >
       {slots.map((d, i) => {
         const flinging = d != null && flingIds.includes(d.id);
@@ -128,8 +131,7 @@ function FieldBox({
           <DiePip
             key={d?.id ?? `e${i}`}
             die={d}
-            size={38}
-            className={d == null ? '' : flinging ? 'tk-fling' : 'tk-pop'}
+            className={`${DIE_SIZE} ${d == null ? '' : flinging ? 'tk-fling' : 'tk-pop'}`}
             style={
               flinging
                 ? ({

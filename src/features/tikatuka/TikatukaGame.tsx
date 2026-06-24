@@ -111,7 +111,13 @@ export function TikatukaGame({ onClose }: { onClose?: () => void }) {
               owner="me"
               active={state.turn === 'me'}
               anim={meAnim}
-              shield={state.phase === 'placingShield' && state.turn === 'me' ? state.pendingShield : null}
+              shield={
+                state.phase === 'placingShield' && state.turn === 'me'
+                  ? state.pendingShield
+                  : state.turn === 'me' && state.phase === 'acting' && state.rolledDie?.shield
+                    ? state.rolledDie // 선공 첫 쉴드 주사위 — 트레이에 쉴드로 표시
+                    : null
+              }
               pickable={state.phase === 'choosingDie' && state.turn === 'me'}
               onPick={g.chooseDie}
               hint={
@@ -308,7 +314,8 @@ function Intro() {
       <div>
         3개 라인 중 <b>2개 이상</b>에서 주사위 합으로 이기면 승리(1승1패1무는 전체 총합으로 결정).
         턴마다 주사위가 자동으로 굴려집니다. 내 필드에 배치하거나, 같은 라인 상대 주사위와 숫자가 같으면
-        밀어낼 수 있어요(밀면 <b>쉴드</b> 1개 획득). 타짜(1회)·홀드·티카투카를 활용하세요.
+        밀어낼 수 있어요(밀면 <b>쉴드</b> 1개 획득). <b>선공의 첫 주사위는 쉴드</b>로 시작해요(밀어낼 수 없는 보호 주사위).
+        타짜(1회)·홀드·티카투카를 활용하세요.
       </div>
     </div>
   );

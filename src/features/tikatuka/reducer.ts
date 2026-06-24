@@ -48,6 +48,7 @@ export function initialState(aiLevel: AiLevel = 2): GameState {
     tazzaUsed: { me: false, ai: false },
     held: false,
     tikatukaUsed: false,
+    pendingFirstShield: null,
     winner: null,
     result: null,
     log: [],
@@ -98,18 +99,25 @@ export function reducer(state: GameState, action: Action): GameState {
         ...initialState(action.aiLevel),
         turn: action.firstTurn,
         phase: action.firstTurn === 'me' ? 'rolling' : 'aiThinking',
-        log: [`${action.firstTurn === 'me' ? '선공: 나' : '선공: 컴퓨터'} (★${action.aiLevel})`],
+        // 선공측은 첫 주사위를 쉴드 주사위로 시작(첫 턴엔 보드가 비어 밀어내기 불가 → 자기 필드에 보호된 주사위로 배치).
+        pendingFirstShield: action.firstTurn,
+        log: [
+          `${action.firstTurn === 'me' ? '선공: 나' : '선공: 컴퓨터'} (★${action.aiLevel})`,
+          `${action.firstTurn === 'me' ? '나' : '컴퓨터'}의 첫 주사위는 쉴드로 시작`,
+        ],
       };
 
     case 'ROLL': {
       if (state.phase !== 'rolling' || state.turn !== 'me') return state;
-      const die = makeDie(action.die.value, 'me', false);
+      const asShield = state.pendingFirstShield === 'me'; // 선공(나)의 첫 굴림 → 쉴드 주사위
+      const die = makeDie(action.die.value, 'me', asShield);
       return {
         ...state,
         rolledDie: die,
         rolledChoices: null,
         phase: 'acting',
-        log: log(state, `내 굴림: ${action.die.value}`),
+        pendingFirstShield: asShield ? null : state.pendingFirstShield,
+        log: log(state, `내 굴림: ${action.die.value}${asShield ? ' (쉴드)' : ''}`),
       };
     }
 
@@ -207,10 +215,13 @@ export function reducer(state: GameState, action: Action): GameState {
       let lines = state.log;
       lines = [...lines, `컴퓨터 굴림: ${t.rolls.join(' → ')}${t.usedTazza ? ' (타짜)' : ''}`];
 
+      // 선공(컴퓨터)의 첫 주사위 → 쉴드로 배치(첫 턴은 보드가 비어 밀어내기가 없으므로 배치만 가능).
+      const aiFirstShield = state.pendingFirstShield === 'ai';
+
       let board: Board;
       if (t.move.kind === 'place') {
-        board = placeDie(state.board, t.move.line, 'ai', makeDie(t.chosenValue, 'ai', false));
-        lines = [...lines, `컴퓨터: ${LINE_LABEL[t.move.line]} 라인에 ${t.chosenValue} 배치`];
+        board = placeDie(state.board, t.move.line, 'ai', makeDie(t.chosenValue, 'ai', aiFirstShield));
+        lines = [...lines, `컴퓨터: ${LINE_LABEL[t.move.line]} 라인에 ${t.chosenValue} 배치${aiFirstShield ? ' (쉴드)' : ''}`];
       } else {
         const res = applyPush(state.board, t.move.line, 'ai', t.chosenValue);
         board = res.board;
@@ -229,9 +240,10 @@ export function reducer(state: GameState, action: Action): GameState {
         }
       }
 
+      const base: GameState = aiFirstShield ? { ...state, pendingFirstShield: null } : state;
       const withTazza: GameState = t.usedTazza
-        ? { ...state, tazzaUsed: { ...state.tazzaUsed, ai: true } }
-        : state;
+        ? { ...base, tazzaUsed: { ...base.tazzaUsed, ai: true } }
+        : base;
       return advanceTurn(withTazza, board, lines.slice(-40));
     }
 

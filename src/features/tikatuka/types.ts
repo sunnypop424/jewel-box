@@ -77,6 +77,7 @@ export interface GameState {
   tazzaUsed: { me: boolean; ai: boolean }; // 타짜의 손놀림 사용 여부(각 1회)
   held: boolean; // 플레이어 홀드 여부(플레이어 전용)
   tikatukaUsed: boolean; // 플레이어 티카투카 발동 여부(보너스용 플래그)
+  pendingFirstShield: Owner | null; // 선공측 첫 주사위는 쉴드로 시작 — 그 첫 굴림에서 소비되면 null
   winner: Owner | 'draw' | null; // 확정된 승자(종료 시)
   result: ResultDetail | null;
   log: string[];

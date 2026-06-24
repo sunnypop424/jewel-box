@@ -24,7 +24,7 @@ import { TikatukaGame } from './features/tikatuka/TikatukaGame';
 import { AuctionCalculatorModal } from './components/AuctionCalculatorModal';
 import { GatheringModal } from './components/GatheringModal';
 import { RefineHub } from './features/refine/RefineHub';
-import { Swords, Sun, Moon, UserCog, LayoutDashboard, ClipboardList, Menu, X, Users, ChevronDown, Orbit, Megaphone, UserRoundMinus, CalendarDays, Coins, Hammer } from 'lucide-react';
+import { Swords, Sun, Moon, UserCog, LayoutDashboard, ClipboardList, Menu, X, Users, ChevronDown, Orbit, Megaphone, UserRoundMinus, CalendarDays, Coins, Hammer, Dices } from 'lucide-react';
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 
 // ✨ Hook 추가
@@ -104,7 +104,6 @@ const App: React.FC = () => {
 
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isRouletteModalOpen, setIsRouletteModalOpen] = useState(false);
-    const [isTikatukaModalOpen, setIsTikatukaModalOpen] = useState(false);
     const [isCalcOpen, setIsCalcOpen] = useState(false);
     const [isGatheringModalOpen, setIsGatheringModalOpen] = useState(false);
 
@@ -530,6 +529,9 @@ const App: React.FC = () => {
         if (location.pathname === '/refine') {
             return { title: '장비 재련 최적화', Icon: Hammer };
         }
+        if (location.pathname === '/tikatuka') {
+            return { title: '티카투카', Icon: Dices };
+        }
         return { title: '개인별 진행 현황', Icon: LayoutDashboard };
     }, [location.pathname]);
 
@@ -634,7 +636,7 @@ const App: React.FC = () => {
                         {isGameMenuOpen && (
                             <div className="ml-3 flex flex-col gap-1 border-l border-zinc-200 pl-3 dark:border-zinc-800">
                                 <button onClick={() => setIsRouletteModalOpen(true)} className={subMenuButtonClass}>경매 룰렛</button>
-                                <button onClick={() => setIsTikatukaModalOpen(true)} className={subMenuButtonClass}>티카투카</button>
+                                <button onClick={() => handleNavClick('/tikatuka')} className={`${subMenuButtonClass} ${isActive('/tikatuka') ? 'bg-zinc-100 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-100' : ''}`}>티카투카</button>
                             </div>
                         )}
 
@@ -943,6 +945,17 @@ const App: React.FC = () => {
                                 </section>
                             } />
 
+                            <Route path="/tikatuka" element={
+                                <section className="mx-auto flex w-full max-w-2xl flex-col gap-6">
+                                    <div className="hidden flex-col gap-3 sm:flex-row sm:items-center sm:justify-between md:flex md:h-[38px]">
+                                        <h2 className="flex items-center gap-2 text-xl font-bold text-zinc-900 dark:text-zinc-100">
+                                            <Dices className="text-indigo-500" /> 티카투카
+                                        </h2>
+                                    </div>
+                                    <TikatukaGame />
+                                </section>
+                            } />
+
                             <Route path="/refine" element={<RefineHub />} />
                             <Route path="/advanced-refine" element={<Navigate to="/refine?tab=advanced" replace />} />
                             <Route path="/gear-estimate" element={<Navigate to="/refine?tab=gear" replace />} />
@@ -967,10 +980,6 @@ const App: React.FC = () => {
 
                 <Modal open={isRouletteModalOpen} title="경매 아이템 룰렛" onClose={() => setIsRouletteModalOpen(false)} maxWidth="max-w-4xl">
                     <RouletteGame allUserNames={allUserNames} />
-                </Modal>
-
-                <Modal open={isTikatukaModalOpen} title="티카투카" onClose={() => setIsTikatukaModalOpen(false)} maxWidth="max-w-2xl">
-                    <TikatukaGame onClose={() => setIsTikatukaModalOpen(false)} />
                 </Modal>
 
                 <GuestAddModal
