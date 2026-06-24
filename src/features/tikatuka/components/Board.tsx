@@ -15,6 +15,7 @@ interface Props {
   flingIds: string[]; // 밀어내기로 부서지는 중인 주사위 id
   pushFx: PushFx | null; // 밀어내기 충돌(들이받는 공격 주사위) 연출
   aiShieldTarget: ShieldPlacement | null; // AI가 쉴드 둘 칸(고민 중 강조)
+  adviceTarget: { line: LineIndex; side: Owner } | null; // 지원 모드 추천 강조 칸
   onPlace: (line: LineIndex) => void;
   onPush: (line: LineIndex) => void;
   onPlaceShield: (line: LineIndex, owner: Owner) => void;
@@ -42,7 +43,7 @@ function toSlots(field: Die[], innerSide: 'left' | 'right'): (Die | null)[] {
   return innerSide === 'right' ? ordered.reverse() : ordered;
 }
 
-export function Board({ state, flingIds, pushFx, aiShieldTarget, onPlace, onPush, onPlaceShield }: Props) {
+export function Board({ state, flingIds, pushFx, aiShieldTarget, adviceTarget, onPlace, onPush, onPlaceShield }: Props) {
   const myTurn = state.turn === 'me' && state.winner === null;
   const acting = myTurn && state.phase === 'acting' && !!state.rolledDie;
   const placingShield = myTurn && state.phase === 'placingShield' && !!state.pendingShield;
@@ -81,6 +82,10 @@ export function Board({ state, flingIds, pushFx, aiShieldTarget, onPlace, onPush
         const aiShieldMy = aiShieldTarget?.line === line && aiShieldTarget.owner === 'me';
         const aiShieldAi = aiShieldTarget?.line === line && aiShieldTarget.owner === 'ai';
 
+        // 지원 모드 추천 칸 강조.
+        const adviceMy = adviceTarget?.line === line && adviceTarget.side === 'me';
+        const adviceAi = adviceTarget?.line === line && adviceTarget.side === 'ai';
+
         return (
           <div
             key={line}
@@ -93,6 +98,7 @@ export function Board({ state, flingIds, pushFx, aiShieldTarget, onPlace, onPush
               flingIds={flingIds}
               ram={myRam}
               highlight={canPlaceHere ? 'place' : shieldMy || aiShieldMy ? 'shield' : null}
+              advice={adviceMy}
               onClick={
                 canPlaceHere ? () => onPlace(line) : shieldMy ? () => onPlaceShield(line, 'me') : undefined
               }
@@ -117,6 +123,7 @@ export function Board({ state, flingIds, pushFx, aiShieldTarget, onPlace, onPush
               flingIds={flingIds}
               ram={aiRam}
               highlight={canPushHere ? 'push' : shieldAi || aiShieldAi ? 'shield' : null}
+              advice={adviceAi}
               onClick={
                 canPushHere ? () => onPush(line) : shieldAi ? () => onPlaceShield(line, 'ai') : undefined
               }
@@ -134,6 +141,7 @@ function FieldBox({
   flingIds,
   ram,
   highlight,
+  advice,
   onClick,
 }: {
   slots: (Die | null)[];
@@ -141,10 +149,13 @@ function FieldBox({
   flingIds: string[];
   ram?: Ram | null;
   highlight: 'place' | 'push' | 'shield' | null;
+  advice?: boolean;
   onClick?: () => void;
 }) {
-  const ring =
-    highlight === 'place'
+  // 추천 칸이면 place/push 색 대신 에메랄드 링+배경 하나로(중복 테두리 방지, 지원 텍스트와 같은 계열).
+  const ring = advice
+    ? 'ring-2 ring-emerald-400 bg-emerald-50 cursor-pointer hover:bg-emerald-100 dark:bg-emerald-950/30 dark:hover:bg-emerald-900/30'
+    : highlight === 'place'
       ? 'ring-2 ring-indigo-400 cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-950/30'
       : highlight === 'push'
         ? 'ring-2 ring-rose-400 cursor-pointer hover:bg-rose-50 dark:hover:bg-rose-950/30'
@@ -158,6 +169,12 @@ function FieldBox({
       onClick={onClick}
       className={`relative flex touch-manipulation select-none items-center gap-1 rounded-xl p-1 transition-colors sm:gap-1.5 sm:p-1.5 ${justify === 'end' ? 'justify-end' : 'justify-start'} ${ring} disabled:cursor-default`}
     >
+      {/* 지원 모드 추천 강조 — '추천' 칩(링/배경은 위 ring으로 처리) */}
+      {advice && (
+        <span className="pointer-events-none absolute -top-2 left-1/2 z-30 -translate-x-1/2 rounded-full bg-emerald-500 px-1.5 py-px text-[9px] font-bold text-white shadow">
+          추천
+        </span>
+      )}
       {slots.map((d, i) => {
         const flinging = d != null && flingIds.includes(d.id);
         // 부서지는 주사위는 충돌 지점 바깥(나=왼쪽, 상대=오른쪽)으로 넉백. z-30으로 띄워 이웃 주사위 뒤로 깔리지 않게.

@@ -1,12 +1,13 @@
 // 티카투카 게임 루트 — 난이도 선택 / 플레이(보드+컨트롤) / 결과.
 import { useState } from 'react';
-import { Dices, Hand, Megaphone, Sparkles, Trophy, RotateCcw, Info } from 'lucide-react';
+import { Dices, Hand, Megaphone, Sparkles, Trophy, RotateCcw, Info, Lightbulb } from 'lucide-react';
 import { useTikatuka } from './useTikatuka';
 import { isFieldFull } from './engine';
+import { recommendMove, recommendChoose, recommendShield } from './ai';
 import { Board } from './components/Board';
 import { DiceTray } from './components/DiceTray';
 import type { RollAnim } from './components/DiceTray';
-import type { AiLevel, LineIndex } from './types';
+import type { AiLevel, LineIndex, Owner } from './types';
 import './tikatuka.css';
 
 const LEVELS: { lv: AiLevel; name: string; desc: string }[] = [
@@ -22,6 +23,7 @@ export function TikatukaGame({ onClose }: { onClose?: () => void }) {
   const g = useTikatuka();
   const { state } = g;
   const [level, setLevel] = useState<AiLevel>(3);
+  const [assist, setAssist] = useState(false); // 지원 모드: 수 추천 + 이유
 
   // ── 난이도 선택 화면 ──
   if (state.phase === 'coinToss') {
@@ -47,6 +49,33 @@ export function TikatukaGame({ onClose }: { onClose?: () => void }) {
             ))}
           </div>
         </div>
+
+        {/* 지원 모드 토글 */}
+        <button
+          type="button"
+          onClick={() => setAssist((v) => !v)}
+          className={`flex items-center justify-between gap-3 rounded-xl border p-3 text-left transition-colors ${
+            assist
+              ? 'border-emerald-400 bg-emerald-50 dark:border-emerald-700 dark:bg-emerald-950/30'
+              : 'border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900/50'
+          }`}
+        >
+          <span className="flex items-start gap-2">
+            <Lightbulb size={16} className={`mt-0.5 shrink-0 ${assist ? 'text-emerald-500' : 'text-zinc-400'}`} />
+            <span className="flex flex-col">
+              <span className="text-sm font-bold text-zinc-700 dark:text-zinc-200">지원 모드</span>
+              <span className="text-[11px] text-zinc-500 dark:text-zinc-400">어디에 두고/밀고, 타짜 쓸지 추천 + 이유를 알려줘요</span>
+            </span>
+          </span>
+          <span
+            className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold ${
+              assist ? 'bg-emerald-500 text-white' : 'bg-zinc-200 text-zinc-500 dark:bg-zinc-700 dark:text-zinc-300'
+            }`}
+          >
+            {assist ? 'ON' : 'OFF'}
+          </span>
+        </button>
+
         <button
           onClick={() => g.start(level)}
           className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-indigo-600 py-3.5 text-base font-bold text-white shadow-lg shadow-indigo-500/20 transition hover:bg-indigo-500"
@@ -98,6 +127,9 @@ export function TikatukaGame({ onClose }: { onClose?: () => void }) {
   // AI가 밀어내고 얻은 쉴드 — 트레이에 보여주며 둘 곳 고민.
   const aiPlacingShield = state.turn === 'ai' && state.phase === 'placingShield';
 
+  // 지원 모드 — 현재 상황에 맞는 추천 수 + 근거. (내 차례, 행동 가능한 단계에서만)
+  const advice = computeAdvice(g, assist);
+
   const myTurn = state.turn === 'me' && state.winner === null;
   const tazzaEnabled = myTurn && state.phase === 'acting' && !state.tazzaUsed.me;
   const holdEnabled = myTurn && (state.phase === 'acting' || state.phase === 'rolling') && !state.held;
@@ -113,7 +145,21 @@ export function TikatukaGame({ onClose }: { onClose?: () => void }) {
           {state.held && <span className="ml-2 text-indigo-500">홀드 중</span>}
           {state.tikatukaUsed && <span className="ml-2 text-fuchsia-500">티카투카!</span>}
         </span>
-        <StatusText state={state} />
+        <div className="flex items-center gap-2">
+          <StatusText state={state} />
+          <button
+            type="button"
+            onClick={() => setAssist((v) => !v)}
+            title="수 추천 + 이유 보기"
+            className={`inline-flex shrink-0 touch-manipulation select-none items-center gap-1 rounded-full px-2 py-1 text-[11px] font-bold transition-colors ${
+              assist
+                ? 'bg-emerald-500 text-white'
+                : 'bg-zinc-200 text-zinc-500 dark:bg-zinc-700 dark:text-zinc-300'
+            }`}
+          >
+            <Lightbulb size={12} /> 지원 {assist ? 'ON' : 'OFF'}
+          </button>
+        </div>
       </div>
 
       <Board
@@ -121,10 +167,28 @@ export function TikatukaGame({ onClose }: { onClose?: () => void }) {
         flingIds={g.flingIds}
         pushFx={g.pushFx}
         aiShieldTarget={g.aiShieldTarget}
+        adviceTarget={advice && advice.line != null && advice.side ? { line: advice.line, side: advice.side } : null}
         onPlace={g.place}
         onPush={g.push}
         onPlaceShield={g.placeShield}
       />
+
+      {/* 지원 모드 추천 패널 */}
+      {advice && (
+        <div className="rounded-2xl border border-emerald-300 bg-emerald-50 p-3 dark:border-emerald-800/60 dark:bg-emerald-950/30">
+          <div className="flex items-center gap-1.5 text-sm font-bold text-emerald-700 dark:text-emerald-300">
+            <Lightbulb size={16} /> 추천 — {advice.headline}
+          </div>
+          <ul className="mt-1.5 flex flex-col gap-1 text-[12px] leading-relaxed text-emerald-900/80 dark:text-emerald-200/80">
+            {advice.factors.map((f, i) => (
+              <li key={i} className="flex gap-1.5">
+                <span className="mt-px text-emerald-500">•</span>
+                <span>{f}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {/* 주사위 던지는 곳 — 내 주사위(왼쪽) / 상대 주사위(오른쪽) */}
       {state.winner === null && (
@@ -345,6 +409,44 @@ function Log({ lines }: { lines: string[] }) {
       )}
     </div>
   );
+}
+
+// 지원 모드 추천 — 현재 단계에 맞는 추천(+근거)과 강조 대상. 내 차례·행동 단계에서만.
+interface AdviceView {
+  headline: string;
+  factors: string[];
+  line?: LineIndex; // 강조할 라인
+  side?: Owner; // 강조할 필드(내/상대)
+  chooseIndex?: 0 | 1; // 타짜 택1 추천
+  isTazza?: boolean;
+}
+
+function computeAdvice(g: ReturnType<typeof useTikatuka>, assist: boolean): AdviceView | null {
+  if (!assist) return null;
+  const s = g.state;
+  if (s.turn !== 'me' || s.winner !== null) return null;
+
+  if (s.phase === 'acting' && s.rolledDie && !s.rolledDie.shield) {
+    const a = recommendMove(s.board, 'me', s.rolledDie.value, !s.tazzaUsed.me);
+    if (!a) return null;
+    return {
+      headline: a.headline,
+      factors: a.factors,
+      line: a.line,
+      side: a.action === 'push' ? 'ai' : a.action === 'place' ? 'me' : undefined,
+      isTazza: a.action === 'tazza',
+    };
+  }
+  if (s.phase === 'choosingDie' && s.rolledChoices) {
+    const a = recommendChoose(s.board, 'me', [s.rolledChoices[0].value, s.rolledChoices[1].value]);
+    return { headline: a.headline, factors: a.factors, chooseIndex: a.index };
+  }
+  if (s.phase === 'placingShield' && s.pendingShield) {
+    const a = recommendShield(s.board, 'me', s.pendingShield.value);
+    if (!a) return null;
+    return { headline: a.headline, factors: a.factors, line: a.line, side: a.owner };
+  }
+  return null;
 }
 
 function Intro() {
