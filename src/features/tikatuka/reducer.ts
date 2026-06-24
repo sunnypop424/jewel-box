@@ -192,10 +192,10 @@ export function reducer(state: GameState, action: Action): GameState {
     }
 
     case 'AUTO_HOLD': {
-      // 합법수 없음 → 패스. 플레이어면 자동 홀드(이후 안 던짐), AI면 그냥 넘김.
-      const autoHeld = state.turn === 'me' ? { ...state, held: true } : state;
+      // 합법수 없음 → 이번 턴만 패스(일시적). held는 건드리지 않는다.
+      // 영구 정지는 오직 수동 HOLD에서만 발생 — 이후 상대가 밀어내 빈칸이 생기면 정상 복귀.
       return advanceTurn(
-        autoHeld,
+        state,
         state.board,
         log(state, `${state.turn === 'me' ? '나' : '컴퓨터'}: 둘 곳이 없어 자동 패스`)
       );

@@ -9,6 +9,7 @@ const LINE_NAMES = ['1번 라인', '2번 라인', '3번 라인'];
 
 interface Props {
   state: GameState;
+  flingIds: string[]; // 밀어내기로 날아가는 중인 주사위 id
   onPlace: (line: LineIndex) => void;
   onPush: (line: LineIndex) => void;
   onPlaceShield: (line: LineIndex, owner: Owner) => void;
@@ -21,7 +22,7 @@ function toSlots(field: Die[], innerSide: 'left' | 'right'): (Die | null)[] {
   return innerSide === 'right' ? ordered.reverse() : ordered;
 }
 
-export function Board({ state, onPlace, onPush, onPlaceShield }: Props) {
+export function Board({ state, flingIds, onPlace, onPush, onPlaceShield }: Props) {
   const myTurn = state.turn === 'me' && state.winner === null;
   const acting = myTurn && state.phase === 'acting' && !!state.rolledDie;
   const placingShield = myTurn && state.phase === 'placingShield' && !!state.pendingShield;
@@ -58,6 +59,7 @@ export function Board({ state, onPlace, onPush, onPlaceShield }: Props) {
             <FieldBox
               slots={toSlots(myField, 'right')}
               justify="end"
+              flingIds={flingIds}
               highlight={canPlaceHere ? 'place' : shieldMy ? 'shield' : null}
               onClick={
                 canPlaceHere ? () => onPlace(line) : shieldMy ? () => onPlaceShield(line, 'me') : undefined
@@ -79,6 +81,7 @@ export function Board({ state, onPlace, onPush, onPlaceShield }: Props) {
             <FieldBox
               slots={toSlots(aiField, 'left')}
               justify="start"
+              flingIds={flingIds}
               highlight={canPushHere ? 'push' : shieldAi ? 'shield' : null}
               onClick={
                 canPushHere ? () => onPush(line) : shieldAi ? () => onPlaceShield(line, 'ai') : undefined
@@ -94,11 +97,13 @@ export function Board({ state, onPlace, onPush, onPlaceShield }: Props) {
 function FieldBox({
   slots,
   justify,
+  flingIds,
   highlight,
   onClick,
 }: {
   slots: (Die | null)[];
   justify: 'start' | 'end';
+  flingIds: string[];
   highlight: 'place' | 'push' | 'shield' | null;
   onClick?: () => void;
 }) {
@@ -117,9 +122,26 @@ function FieldBox({
       onClick={onClick}
       className={`flex items-center gap-1.5 rounded-xl p-1.5 transition-colors ${justify === 'end' ? 'justify-end' : 'justify-start'} ${ring} disabled:cursor-default`}
     >
-      {slots.map((d, i) => (
-        <DiePip key={d?.id ?? `e${i}`} die={d} size={38} />
-      ))}
+      {slots.map((d, i) => {
+        const flinging = d != null && flingIds.includes(d.id);
+        return (
+          <DiePip
+            key={d?.id ?? `e${i}`}
+            die={d}
+            size={38}
+            className={d == null ? '' : flinging ? 'tk-fling' : 'tk-pop'}
+            style={
+              flinging
+                ? ({
+                    // 자기 필드 바깥쪽으로 날아감(나=왼쪽, 상대=오른쪽).
+                    '--tk-fx': d!.owner === 'me' ? '-34px' : '34px',
+                    '--tk-fr': d!.owner === 'me' ? '-55deg' : '55deg',
+                  } as React.CSSProperties)
+                : undefined
+            }
+          />
+        );
+      })}
     </button>
   );
 }

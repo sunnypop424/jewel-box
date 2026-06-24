@@ -15,15 +15,19 @@ const PIPS: Record<DieValue, number[]> = {
 export function DiePip({
   die,
   size = 40,
+  className = '',
+  style,
 }: {
   die: Die | null;
   size?: number;
+  className?: string; // 애니메이션 클래스(tk-pop / tk-fling / tk-settle / tk-tumble) 주입용
+  style?: React.CSSProperties;
 }) {
   if (!die) {
     return (
       <div
-        className="rounded-lg border-2 border-dashed border-zinc-200 dark:border-zinc-700"
-        style={{ width: size, height: size }}
+        className={`rounded-lg border-2 border-dashed border-zinc-200 dark:border-zinc-700 ${className}`}
+        style={{ width: size, height: size, ...style }}
       />
     );
   }
@@ -41,8 +45,8 @@ export function DiePip({
 
   return (
     <div
-      className={`relative grid grid-cols-3 grid-rows-3 place-items-center rounded-lg border ${base} ${shieldRing}`}
-      style={{ width: size, height: size, padding: size * 0.12 }}
+      className={`relative grid grid-cols-3 grid-rows-3 place-items-center rounded-lg border ${base} ${shieldRing} ${className}`}
+      style={{ width: size, height: size, padding: size * 0.12, ...style }}
       title={`${mine ? '내' : '상대'} 주사위 ${die.value}${die.shield ? ' (쉴드)' : ''}`}
     >
       {Array.from({ length: 9 }).map((_, i) => (

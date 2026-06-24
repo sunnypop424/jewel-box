@@ -3,8 +3,10 @@ import { useState } from 'react';
 import { Dices, Hand, Megaphone, Sparkles, Trophy, RotateCcw, Info } from 'lucide-react';
 import { useTikatuka } from './useTikatuka';
 import { Board } from './components/Board';
-import { DiePip } from './components/DiePip';
+import { DiceTray } from './components/DiceTray';
+import type { RollAnim } from './components/DiceTray';
 import type { AiLevel } from './types';
+import './tikatuka.css';
 
 const LEVELS: { lv: AiLevel; name: string; desc: string }[] = [
   { lv: 0, name: '★☆☆☆☆ 랜덤', desc: '완전 무작위' },
@@ -54,6 +56,27 @@ export function TikatukaGame({ onClose }: { onClose?: () => void }) {
     );
   }
 
+  // 트레이 굴림 연출 — 내 쪽은 상태에서 파생, 상대 쪽은 타이머 공개값(aiReveal)에서.
+  const meAnim: RollAnim | null =
+    state.turn === 'me' && state.phase === 'rolling'
+      ? { owner: 'me', values: [], tumbling: true, chosen: null }
+      : state.turn === 'me' && state.phase === 'choosingDie' && state.rolledChoices
+        ? {
+            owner: 'me',
+            values: [state.rolledChoices[0].value, state.rolledChoices[1].value],
+            tumbling: false,
+            chosen: null,
+          }
+        : state.turn === 'me' && state.phase === 'acting' && state.rolledDie
+          ? { owner: 'me', values: [state.rolledDie.value], tumbling: false, chosen: null }
+          : null;
+  const aiAnim: RollAnim | null =
+    state.turn === 'ai' && state.phase === 'aiThinking'
+      ? g.aiReveal
+        ? { owner: 'ai', values: g.aiReveal.values, tumbling: false, chosen: g.aiReveal.chosen }
+        : { owner: 'ai', values: [], tumbling: true, chosen: null }
+      : null;
+
   const myTurn = state.turn === 'me' && state.winner === null;
   const tazzaEnabled = myTurn && state.phase === 'acting' && !state.tazzaUsed.me;
   const holdEnabled = myTurn && (state.phase === 'acting' || state.phase === 'rolling') && !state.held;
@@ -72,44 +95,38 @@ export function TikatukaGame({ onClose }: { onClose?: () => void }) {
         <StatusText state={state} />
       </div>
 
-      <Board state={state} onPlace={g.place} onPush={g.push} onPlaceShield={g.placeShield} />
+      <Board
+        state={state}
+        flingIds={g.flingIds}
+        onPlace={g.place}
+        onPush={g.push}
+        onPlaceShield={g.placeShield}
+      />
 
-      {/* 굴린 주사위 / 택1 */}
+      {/* 주사위 던지는 곳 — 내 주사위(왼쪽) / 상대 주사위(오른쪽) */}
       {state.winner === null && (
-        <div className="flex flex-col items-center gap-2 rounded-2xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900/50">
-          {state.phase === 'choosingDie' && state.rolledChoices ? (
-            <div className="flex flex-col items-center gap-2">
-              <span className="text-xs font-bold text-zinc-500">둘 중 하나를 선택</span>
-              <div className="flex gap-3">
-                {state.rolledChoices.map((d, i) => (
-                  <button
-                    key={d.id}
-                    onClick={() => g.chooseDie(i as 0 | 1)}
-                    className="rounded-xl p-1 ring-2 ring-transparent transition hover:ring-indigo-400"
-                  >
-                    <DiePip die={d} size={48} />
-                  </button>
-                ))}
-              </div>
-            </div>
-          ) : state.phase === 'placingShield' && state.pendingShield ? (
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-amber-600 dark:text-amber-400">배치할 쉴드</span>
-              <DiePip die={state.pendingShield} size={44} />
-            </div>
-          ) : state.rolledDie && (state.phase === 'acting' || state.turn === 'me') ? (
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-zinc-500">굴린 주사위</span>
-              <DiePip die={state.rolledDie} size={44} />
-            </div>
-          ) : (
-            <div className="flex h-[44px] items-center text-xs text-zinc-400">
-              {state.turn === 'ai' ? '컴퓨터 차례' : '주사위를 굴리는 중...'}
-            </div>
-          )}
+        <div className="flex flex-col items-center gap-3 rounded-2xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900/50">
+          <div className="grid w-full grid-cols-2 gap-2.5">
+            <DiceTray
+              owner="me"
+              active={state.turn === 'me'}
+              anim={meAnim}
+              shield={state.phase === 'placingShield' && state.turn === 'me' ? state.pendingShield : null}
+              pickable={state.phase === 'choosingDie' && state.turn === 'me'}
+              onPick={g.chooseDie}
+              hint={
+                state.phase === 'placingShield' && state.turn === 'me'
+                  ? '쉴드 놓을 칸 선택'
+                  : state.phase === 'choosingDie' && state.turn === 'me'
+                    ? '하나 선택'
+                    : undefined
+              }
+            />
+            <DiceTray owner="ai" active={state.turn === 'ai'} anim={aiAnim} />
+          </div>
 
           {/* 버튼 */}
-          <div className="mt-1 flex flex-wrap items-center justify-center gap-2">
+          <div className="flex flex-wrap items-center justify-center gap-2">
             <GameBtn
               onClick={g.useTazza}
               disabled={!tazzaEnabled}
