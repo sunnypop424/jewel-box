@@ -139,14 +139,13 @@ export function TikatukaGame({ onClose }: { onClose?: () => void }) {
   return (
     <div className="flex flex-col gap-4">
       {/* 상태 바 */}
-      <div className="flex items-center justify-between gap-2 rounded-xl bg-zinc-50 px-3 py-2 text-xs font-bold dark:bg-zinc-900/50">
+      <div className="flex items-center justify-between gap-2 rounded-xl bg-zinc-50 py-2 text-xs font-bold dark:bg-zinc-900/50">
         <span className="text-zinc-500">
           난이도 <span className="text-amber-500">★{state.aiLevel}</span>
           {state.held && <span className="ml-2 text-indigo-500">홀드 중</span>}
           {state.tikatukaUsed && <span className="ml-2 text-fuchsia-500">티카투카!</span>}
         </span>
         <div className="flex items-center gap-2">
-          <StatusText state={state} />
           <button
             type="button"
             onClick={() => setAssist((v) => !v)}
@@ -284,18 +283,6 @@ export function TikatukaGame({ onClose }: { onClose?: () => void }) {
       )}
     </div>
   );
-}
-
-function StatusText({ state }: { state: ReturnType<typeof useTikatuka>['state'] }) {
-  let msg = '';
-  const allFull = ([0, 1, 2] as LineIndex[]).every((l) => isFieldFull(state.board, l, state.turn));
-  if (state.winner !== null) msg = '게임 종료';
-  else if (state.turn === 'ai') msg = allFull ? '컴퓨터: 둘 곳이 없어 패스' : '컴퓨터가 두는 중...';
-  else if (state.phase === 'rolling') msg = allFull ? '둘 곳이 없어 패스합니다' : '주사위 굴리는 중...';
-  else if (state.phase === 'choosingDie') msg = '두 주사위 중 선택';
-  else if (state.phase === 'placingShield') msg = '쉴드 놓을 칸 선택 (낮으면 상대, 높으면 내 필드)';
-  else if (state.phase === 'acting') msg = '배치할 라인 또는 밀어낼 상대 주사위 선택';
-  return <span className="text-indigo-600 dark:text-indigo-400">{msg}</span>;
 }
 
 function GameBtn({
