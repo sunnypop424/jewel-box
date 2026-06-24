@@ -70,9 +70,9 @@ export type RaidId =
   | 'KAZEROS_HARD'
   | 'KAZEROS_NIGHTMARE'
   // UPDATE-B: 4막/종막/세르카 싱글 활성화 시 아래 3줄 주석 해제
-  // | 'ACT4_SINGLE'
-  // | 'FINAL_SINGLE'
-  // | 'SERKA_SINGLE'
+  | 'ACT4_SINGLE'
+  | 'FINAL_SINGLE'
+  | 'SERKA_SINGLE'
   // UPDATE-D: 벨가르딘 활성화 시 아래 3줄 주석 해제
   // | 'BELGARDIN_NORMAL'
   // | 'BELGARDIN_HARD'
@@ -191,12 +191,12 @@ export const RAIDS: RaidDefinition[] = [
     partySize: 4,
     difficulties: [
       // UPDATE-A: 활성화 시 위 NORMAL 줄 주석, 아래 줄(16000/16000) 해제
-      { tier: 'NORMAL', label: '노말', minItemLevel: 1710, generalGold: 17500, boundGold: 17500, colorClass: 'bg-violet-300' },
-      // { tier: 'NORMAL', label: '노말', minItemLevel: 1710, generalGold: 16000, boundGold: 16000, colorClass: 'bg-violet-300' },
+      // { tier: 'NORMAL', label: '노말', minItemLevel: 1710, generalGold: 17500, boundGold: 17500, colorClass: 'bg-violet-300' },
+      { tier: 'NORMAL', label: '노말', minItemLevel: 1710, generalGold: 16000, boundGold: 16000, colorClass: 'bg-violet-300' },
       { tier: 'HARD', label: '하드', minItemLevel: 1730, generalGold: 44000, boundGold: 0, colorClass: 'bg-violet-500' },
       { tier: 'NIGHTMARE', label: '나이트메어', minItemLevel: 1740, generalGold: 54000, boundGold: 0, colorClass: 'bg-violet-700', requiresFlag: 'serkaNightmare' },
       // UPDATE-B: 세르카 싱글(매칭이지만 싱글 표기) 활성화 시 해제 (= 노말 16000/16000)
-      // { tier: 'SINGLE', label: '싱글', minItemLevel: 1710, generalGold: 16000, boundGold: 16000, colorClass: 'bg-violet-400' },
+      { tier: 'SINGLE', label: '싱글', minItemLevel: 1710, generalGold: 16000, boundGold: 16000, colorClass: 'bg-violet-400' },
     ],
   },
   {
@@ -210,13 +210,13 @@ export const RAIDS: RaidDefinition[] = [
     partySize: 8,
     difficulties: [
       // UPDATE-A: 활성화 시 위 NORMAL 줄 주석, 아래 줄(16000/16000) 해제
-      { tier: 'NORMAL', label: '노말', minItemLevel: 1710, generalGold: 20000, boundGold: 20000, colorClass: 'bg-emerald-400' },
-      // { tier: 'NORMAL', label: '노말', minItemLevel: 1710, generalGold: 16000, boundGold: 16000, colorClass: 'bg-emerald-400' },
+      // { tier: 'NORMAL', label: '노말', minItemLevel: 1710, generalGold: 20000, boundGold: 20000, colorClass: 'bg-emerald-400' },
+      { tier: 'NORMAL', label: '노말', minItemLevel: 1710, generalGold: 16000, boundGold: 16000, colorClass: 'bg-emerald-400' },
       // UPDATE-A: 활성화 시 위 HARD 줄 주석, 아래 줄(48000) 해제
-      { tier: 'HARD', label: '하드', minItemLevel: 1730, generalGold: 52000, boundGold: 0, colorClass: 'bg-red-500' },
-      // { tier: 'HARD', label: '하드', minItemLevel: 1730, generalGold: 48000, boundGold: 0, colorClass: 'bg-red-500' },
+      // { tier: 'HARD', label: '하드', minItemLevel: 1730, generalGold: 52000, boundGold: 0, colorClass: 'bg-red-500' },
+      { tier: 'HARD', label: '하드', minItemLevel: 1730, generalGold: 48000, boundGold: 0, colorClass: 'bg-red-500' },
       // UPDATE-B: 종막 싱글 활성화 시 해제 (= 노말 16000/16000)
-      // { tier: 'SINGLE', label: '싱글', minItemLevel: 1710, generalGold: 16000, boundGold: 16000, colorClass: 'bg-violet-400' },
+      { tier: 'SINGLE', label: '싱글', minItemLevel: 1710, generalGold: 16000, boundGold: 16000, colorClass: 'bg-violet-400' },
     ],
   },
   {
@@ -230,13 +230,13 @@ export const RAIDS: RaidDefinition[] = [
     partySize: 8,
     difficulties: [
       // UPDATE-A: 활성화 시 위 NORMAL 줄 주석, 아래 줄(13500/13500) 해제
-      { tier: 'NORMAL', label: '노말', minItemLevel: 1700, generalGold: 16500, boundGold: 16500, colorClass: 'bg-sky-400' },
-      // { tier: 'NORMAL', label: '노말', minItemLevel: 1700, generalGold: 13500, boundGold: 13500, colorClass: 'bg-sky-400' },
+      // { tier: 'NORMAL', label: '노말', minItemLevel: 1700, generalGold: 16500, boundGold: 16500, colorClass: 'bg-sky-400' },
+      { tier: 'NORMAL', label: '노말', minItemLevel: 1700, generalGold: 13500, boundGold: 13500, colorClass: 'bg-sky-400' },
       // UPDATE-A: 활성화 시 위 HARD 줄 주석, 아래 줄(38000) 해제
-      { tier: 'HARD', label: '하드', minItemLevel: 1720, generalGold: 42000, boundGold: 0, colorClass: 'bg-amber-500' },
-      // { tier: 'HARD', label: '하드', minItemLevel: 1720, generalGold: 38000, boundGold: 0, colorClass: 'bg-amber-500' },
+      // { tier: 'HARD', label: '하드', minItemLevel: 1720, generalGold: 42000, boundGold: 0, colorClass: 'bg-amber-500' },
+      { tier: 'HARD', label: '하드', minItemLevel: 1720, generalGold: 38000, boundGold: 0, colorClass: 'bg-amber-500' },
       // UPDATE-B: 4막 싱글 활성화 시 해제 (= 노말 13500/13500)
-      // { tier: 'SINGLE', label: '싱글', minItemLevel: 1700, generalGold: 13500, boundGold: 13500, colorClass: 'bg-violet-400' },
+      { tier: 'SINGLE', label: '싱글', minItemLevel: 1700, generalGold: 13500, boundGold: 13500, colorClass: 'bg-violet-400' },
     ],
   },
   {

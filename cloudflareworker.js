@@ -51,8 +51,8 @@ const RAID_META = {
   },
   "SERKA_NORMAL": {
     "label": "세르카 노말",
-    "generalGold": 17500,
-    "boundGold": 17500
+    "generalGold": 16000,
+    "boundGold": 16000
   },
   "SERKA_HARD": {
     "label": "세르카 하드",
@@ -64,25 +64,40 @@ const RAID_META = {
     "generalGold": 54000,
     "boundGold": 0
   },
+  "SERKA_SINGLE": {
+    "label": "세르카 싱글",
+    "generalGold": 16000,
+    "boundGold": 16000
+  },
   "FINAL_NORMAL": {
     "label": "종막 노말",
-    "generalGold": 20000,
-    "boundGold": 20000
+    "generalGold": 16000,
+    "boundGold": 16000
   },
   "FINAL_HARD": {
     "label": "종막 하드",
-    "generalGold": 52000,
+    "generalGold": 48000,
     "boundGold": 0
+  },
+  "FINAL_SINGLE": {
+    "label": "종막 싱글",
+    "generalGold": 16000,
+    "boundGold": 16000
   },
   "ACT4_NORMAL": {
     "label": "4막 노말",
-    "generalGold": 16500,
-    "boundGold": 16500
+    "generalGold": 13500,
+    "boundGold": 13500
   },
   "ACT4_HARD": {
     "label": "4막 하드",
-    "generalGold": 42000,
+    "generalGold": 38000,
     "boundGold": 0
+  },
+  "ACT4_SINGLE": {
+    "label": "4막 싱글",
+    "generalGold": 13500,
+    "boundGold": 13500
   },
   "ACT3_NORMAL": {
     "label": "3막 노말",
@@ -193,6 +208,11 @@ const RAIDS = [
         "tier": "NIGHTMARE",
         "minItemLevel": 1740,
         "requiresFlag": "serkaNightmare"
+      },
+      {
+        "tier": "SINGLE",
+        "minItemLevel": 1710,
+        "requiresFlag": null
       }
     ]
   },
@@ -211,6 +231,11 @@ const RAIDS = [
         "tier": "HARD",
         "minItemLevel": 1730,
         "requiresFlag": null
+      },
+      {
+        "tier": "SINGLE",
+        "minItemLevel": 1710,
+        "requiresFlag": null
       }
     ]
   },
@@ -228,6 +253,11 @@ const RAIDS = [
       {
         "tier": "HARD",
         "minItemLevel": 1720,
+        "requiresFlag": null
+      },
+      {
+        "tier": "SINGLE",
+        "minItemLevel": 1700,
         "requiresFlag": null
       }
     ]
