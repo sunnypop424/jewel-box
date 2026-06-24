@@ -58,7 +58,6 @@ export function RefinePage({ prices }: { prices: MaterialPrices }) {
   const [jangin, setJangin] = useState(0);
   const [applyResearch, setApplyResearch] = useState(false);
   const [applyHyperExpress, setApplyHyperExpress] = useState(false);
-  const [showAdvanced, setShowAdvanced] = useState(false);
   const [aggOpen, setAggOpen] = useState(false);
 
   const [mode, setMode] = useState<ResultMode>('optimal');
@@ -206,51 +205,39 @@ export function RefinePage({ prices }: { prices: MaterialPrices }) {
               </div>
             )}
 
-            <button
-              type="button"
-              onClick={() => setShowAdvanced((v) => !v)}
-              className="mt-4 flex w-full items-center justify-between rounded-xl bg-zinc-50 px-3 py-2.5 text-xs font-bold text-zinc-500 transition-colors hover:bg-zinc-100 dark:bg-zinc-800/50 dark:text-zinc-400 dark:hover:bg-zinc-800"
-            >
-              <span className="uppercase tracking-wider">고급 설정</span>
-              <ChevronDown
-                size={15}
-                className={showAdvanced ? 'rotate-180 transition-transform' : 'transition-transform'}
-              />
-            </button>
-            {showAdvanced && (
-              <div className="mt-3 flex flex-col gap-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <Field label="실패로 추가된 확률 (%)">
-                    <input
-                      type="number"
-                      className={inputClass}
-                      value={probFromFailure}
-                      onChange={(e) => setProbFromFailure(Number(e.target.value))}
-                    />
-                  </Field>
-                  <Field label="장인의 기운 (%)">
-                    <input
-                      type="number"
-                      className={inputClass}
-                      value={jangin}
-                      onChange={(e) => setJangin(Number(e.target.value))}
-                    />
-                  </Field>
-                </div>
-                <div className="flex flex-col gap-2">
-                  <Checkbox
-                    checked={applyResearch}
-                    onChange={setApplyResearch}
-                    label="영지 연구 적용"
+            <div className={`${subtitleClass} mt-6`}>고급 설정</div>
+            <div className="flex flex-col gap-4">
+              <div className="grid grid-cols-2 gap-4">
+                <Field label="실패로 추가된 확률 (%)">
+                  <input
+                    type="number"
+                    className={inputClass}
+                    value={probFromFailure}
+                    onChange={(e) => setProbFromFailure(Number(e.target.value))}
                   />
-                  <Checkbox
-                    checked={applyHyperExpress}
-                    onChange={setApplyHyperExpress}
-                    label="모챌익 성장지원 적용"
+                </Field>
+                <Field label="장인의 기운 (%)">
+                  <input
+                    type="number"
+                    className={inputClass}
+                    value={jangin}
+                    onChange={(e) => setJangin(Number(e.target.value))}
                   />
-                </div>
+                </Field>
               </div>
-            )}
+              <div className="flex flex-col gap-2">
+                <Checkbox
+                  checked={applyResearch}
+                  onChange={setApplyResearch}
+                  label="영지 연구 적용"
+                />
+                <Checkbox
+                  checked={applyHyperExpress}
+                  onChange={setApplyHyperExpress}
+                  label="모챌익 성장지원 적용"
+                />
+              </div>
+            </div>
           </div>
 
           <div className={cardClass}>
