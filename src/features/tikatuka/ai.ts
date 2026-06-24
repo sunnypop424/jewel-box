@@ -41,7 +41,7 @@ const LINES: LineIndex[] = [0, 1, 2];
 const FILL = 3.5; // 빈 슬롯 기대 충원값(주사위 평균 1~6)
 const VAR_PER_SLOT = 2.9; // 주사위 분산 근사(남은 슬롯이 만드는 불확실성)
 const PUSH_BONUS = 10; // 밀어내기로 얻는 쉴드의 기대 가치(근사)
-const TAZZA_GATE = 30; // ★3+: v1의 위치 개선 이득이 이 값 미만이면 타짜로 다시 굴림
+const TAZZA_EV_MARGIN = 15; // 타짜: 다시 굴렸을 때 기대 최선 점수가 현재보다 이만큼 높아야 굴림(높은 눈 낭비 방지)
 const VULN_W = 1.6; // 같은 값 스택이 한 번의 밀어내기에 통째로 날아갈 위험 가중
 
 function sumv(field: { value: number }[]): number {
@@ -315,12 +315,10 @@ export function decideAi(
   let chosen = v1;
 
   if (canTazza) {
-    // 일관 평가(boardScore 기반, gate=min(level,3))로 v1의 '이득'을 측정.
+    // 다시 굴렸을 때 기대 최선 점수가 현재 눈보다 충분히 높을 때만 타짜(높은 눈 낭비 방지).
     const gate = Math.min(level, 3) as AiLevel;
-    const base = boardScore(board, owner);
     const s1 = bestMoveScore(board, owner, v1, gate);
-    // v1을 둬도 위치가 별로 나아지지 않으면(이득<문턱) 한 번 더 굴려 더 나은 값을 채택.
-    if (s1 - base < TAZZA_GATE) {
+    if (rerollEV(board, owner, v1, gate) - s1 > TAZZA_EV_MARGIN) {
       const v2 = biasedRoll(level, rng, v1); // 타짜 재굴림 — 같은 눈 제외 + 높은 눈 가중
       const s2 = bestMoveScore(board, owner, v2, gate);
       rolls = [v1, v2];
@@ -368,6 +366,21 @@ function bestMoveScore(
   let best = -Infinity;
   for (const m of moves) best = Math.max(best, scoreMove(board, owner, m, value, level));
   return best;
+}
+
+// 타짜로 다시 굴렸을 때의 기대 최선 점수(현재 눈 제외 5개 균등). 높은 눈일수록 이 값이 현재보다 낮아 굴릴 이유 없음.
+function rerollEV(board: Board, owner: Owner, exclude: DieValue, level: AiLevel): number {
+  let sum = 0;
+  let n = 0;
+  for (let v = 1 as DieValue; v <= 6; v = (v + 1) as DieValue) {
+    if (v === exclude) continue;
+    const s = bestMoveScore(board, owner, v, level);
+    if (s > -Infinity) {
+      sum += s;
+      n++;
+    }
+  }
+  return n > 0 ? sum / n : -Infinity;
 }
 
 function argmaxMove(moves: Move[], score: (m: Move) => number): Move {
@@ -479,15 +492,16 @@ function analyzeMove(board: Board, owner: Owner, move: Move, value: DieValue): s
     // 배치: 어느 라인 승률이 어떻게 변하나
     const b = lineWinProb(board, owner, move.line);
     const a = lineWinProb(after, owner, move.line);
-    if (b < 0.5 && a >= 0.5)
-      facts.push(`${ADV_LINE[move.line]} 라인을 열세(${pct(b)})에서 우세(${pct(a)})로 뒤집어요.`);
-    else if (a - b >= 0.05) facts.push(`${ADV_LINE[move.line]} 라인 우세를 ${pct(b)}→${pct(a)}로 키워요.`);
-    else facts.push(`${ADV_LINE[move.line]} 라인 합을 높여 우세를 노려요(${pct(a)}).`);
+    const label = ADV_LINE[move.line];
+    if (b < 0.5 && a >= 0.5) facts.push(`${label} 라인을 열세(${pct(b)})에서 우세(${pct(a)})로 뒤집어요.`);
+    else if (b >= 0.8) facts.push(`이미 우세한 ${label} 라인(${pct(b)})을 가득 채워 굳히고, 총합도 벌려두는 안전한 수예요.`);
+    else if (a - b >= 0.05) facts.push(`${label} 라인 우세를 ${pct(b)}→${pct(a)}로 키워요.`);
+    else facts.push(`${label} 라인에 보태 우세를 노려요(현재 ${pct(a)}).`);
 
     // 같은 값 스택 취약점 경고
     const sameVal = board.lines[move.line][owner].filter((d) => !d.shield && d.value === value).length;
     if (sameVal >= 1 && board.lines[move.line][oppo].length < 3)
-      facts.push(`참고: 이 라인엔 이미 ${value}가 있어, 더 쌓으면 상대가 ${value} 한 번에 둘 다 밀어낼 위험이 있어요(그래도 지금은 이 배치 이득이 더 큼).`);
+      facts.push(`참고: 이 라인엔 이미 ${value}가 있어, 더 쌓으면 상대가 ${value} 한 번에 모두 밀어낼 위험이 있어요(그래도 지금은 이 배치 이득이 더 큼).`);
   }
 
   // 2라인 목표 근접도(기대 승리 라인 수)
@@ -500,6 +514,10 @@ function analyzeMove(board: Board, owner: Owner, move: Move, value: DieValue): s
   const tD = totalDiff(after, owner) - totalDiff(board, owner);
   if (tD >= 3)
     facts.push(`전체 총합 우세가 +${tD.toFixed(0)} 벌어져, 1승1무1패 같은 접전에선 타이브레이커가 유리해져요.`);
+
+  // 근거가 너무 빈약하면 현재 판세를 한 줄 덧붙임.
+  if (facts.length < 2)
+    facts.push(`지금 기대 승리 라인은 ${evA.toFixed(1)}개 — 다른 라인은 더 둘 자리가 없거나 이득이 적어 이 수가 최선이에요.`);
 
   return facts;
 }
@@ -519,14 +537,15 @@ export function recommendMove(
   if (moves.length === 0) return null;
   const best = argmaxMove(moves, (m) => scoreMove(board, owner, m, rolledValue, 5));
 
-  if (tazzaAvailable && best.kind !== 'push') {
-    const base = boardScore(board, owner);
-    const gain = bestMoveScore(board, owner, rolledValue, 3) - base;
-    if (gain < TAZZA_GATE) {
+  // 타짜: 다시 굴렸을 때 기대 이득이 충분할 때만 권한다(6 같은 높은 눈은 권하지 않음).
+  if (tazzaAvailable) {
+    const s1 = bestMoveScore(board, owner, rolledValue, 3);
+    const ev = rerollEV(board, owner, rolledValue, 3);
+    if (ev - s1 > TAZZA_EV_MARGIN) {
       const factors = [
-        `지금 ${rolledValue} 눈으로 둘 수 있는 최선 수의 위치 개선 이득이 작아요(약 ${Math.max(0, gain).toFixed(0)}점).`,
-        '밀어낼 상대 주사위도 없어, 이 눈은 그냥 흘려보내기 아까운 턴이에요.',
-        '타짜로 다시 굴리면 평균적으로 더 높은/유용한 눈을 얻을 기대값이 커요(게임당 1회뿐이니 지금처럼 애매할 때가 적기).',
+        `지금 ${rolledValue} 눈으로 둘 수 있는 최선 수가 시원찮아요.`,
+        `다시 굴리면 기대 이득이 약 +${(ev - s1).toFixed(0)}점 더 높아요 — ${rolledValue}은(는) 흘려보내기 아까운 눈이에요.`,
+        '타짜는 게임당 1번뿐 — 지금처럼 더 나은 눈을 노릴 만할 때 쓰는 게 좋아요.',
       ];
       return { action: 'tazza', headline: '타짜로 다시 굴리기', factors };
     }
