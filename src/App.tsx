@@ -835,6 +835,9 @@ const App: React.FC = () => {
                                             <p className="mt-2 max-w-xs text-sm text-zinc-500 dark:text-zinc-400">
                                                 원정대를 등록하면 레이드 배정 · 진행 현황 · 골드 집계를<br className="hidden sm:inline" /> 한눈에 확인할 수 있습니다.
                                             </p>
+                                            <p className="mt-2 max-w-xs text-xs text-zinc-400 dark:text-zinc-500">
+                                                캐릭터 등록은 여기(웹)에서 합니다. 디스코드 봇(가토)은 골드 · 일정 조회 전용이에요.
+                                            </p>
                                             <button
                                                 onClick={() => setIsModalOpen(true)}
                                                 className="mt-6 inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-bold text-white shadow-md shadow-indigo-500/25 transition-colors hover:bg-indigo-700 active:bg-indigo-800"

@@ -385,9 +385,6 @@ export const materialSortIndex = (n: string) => {
 
 // 재련/상급 재련/견적 페이지 공용 장비 등급 옵션 (동일 라벨 사용)
 export const GRADE_OPTIONS: { value: string; label: string }[] = [
-  { value: 't3_1250', label: 'T3 1250 (희귀 ~ 유물)' },
-  { value: 't3_1390', label: 'T3 1390 (상위 유물 ~ 고대)' },
-  { value: 't3_1525', label: 'T3 1525 (상위 고대)' },
   { value: 't4_1590', label: 'T4 1590 (4티어)' },
   { value: 't4_1730', label: 'T4 1730 (상위 고대)' },
 ];

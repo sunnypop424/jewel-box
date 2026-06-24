@@ -100,8 +100,7 @@ class MinHeap<T> {
 function advStageCost(
   type: 'weapon' | 'armor',
   bucketIndex: number,
-  priceMap: Record<string, number>,
-  mochalik: boolean
+  priceMap: Record<string, number>
 ): {
   gold: number;
   materials: Record<string, number>;
@@ -109,7 +108,7 @@ function advStageCost(
 } | null {
   let table;
   try {
-    table = getAdvancedRefineTable(type, `t4_${bucketIndex}` as AdvancedRefineTarget, mochalik);
+    table = getAdvancedRefineTable(type, `t4_${bucketIndex}` as AdvancedRefineTarget);
   } catch {
     return null;
   }
@@ -201,7 +200,7 @@ function dijkstra(
     const b = Math.floor((advStage - 1) / 10);
     let v = advCache.get(b);
     if (v === undefined) {
-      v = advStageCost(type, b, priceMap, applyMochalik);
+      v = advStageCost(type, b, priceMap);
       advCache.set(b, v);
     }
     return v;

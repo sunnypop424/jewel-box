@@ -33,8 +33,6 @@ export interface EstimateResult {
 }
 
 const ADV_BUCKETS = new Set<AdvancedRefineTarget>([
-  't3_0',
-  't3_1',
   't4_0',
   't4_1',
   't4_2',
@@ -86,7 +84,6 @@ function estimateAdvanced(
   piece: GearPiece,
   target: number,
   priceMap: Record<string, number>,
-  mochalik: boolean,
   agg: Record<string, MaterialAgg>
 ): number {
   // 상급 재련은 t4_1590(결단/업화)에만 존재. 전율(세르카)·T3은 없음.
@@ -100,7 +97,7 @@ function estimateAdvanced(
     let best;
     let book: string | undefined;
     try {
-      const table = getAdvancedRefineTable(piece.type, bucket, mochalik);
+      const table = getAdvancedRefineTable(piece.type, bucket);
       book = table.book;
       best = getReport(table, priceMap)[0];
     } catch {
@@ -161,7 +158,6 @@ export function estimateGear(
       piece,
       tgt.targetAdv,
       priceMap,
-      applyMochalik,
       materials
     );
     results.push({

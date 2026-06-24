@@ -1,5 +1,5 @@
-import { t3_01, t4_01, t4_23 } from './simulated';
-import { t3_01_mochalik, t4_01_mochalik, t4_23_mochalik } from './mochalikData';
+import { t4_01, t4_23 } from './simulated';
+import { t4_01_mochalik, t4_23_mochalik } from './mochalikData';
 
 export interface AdvancedRefineSimData {
   parameters: {
@@ -17,7 +17,7 @@ export interface AdvancedRefineSimData {
 
 export interface AdvancedRefineTable {
   data: AdvancedRefineSimData[];
-  // 모챌익(가호 게이지 2배 충전)용 시뮬레이션 데이터
+  // 가호 게이지 2배 충전 시뮬레이션 (6/24 패치로 상시 기본이 됨)
   dataMochalik: AdvancedRefineSimData[];
   hasEnhancedBonus: boolean;
   amount: Record<string, number>;
@@ -35,8 +35,6 @@ export interface AdvancedRefineTable {
 }
 
 export type AdvancedRefineTarget =
-  | 't3_0'
-  | 't3_1'
   | 't4_0'
   | 't4_1'
   | 't4_2'
@@ -47,42 +45,6 @@ export const advancedRefineTable: Record<
   Record<AdvancedRefineTarget, AdvancedRefineTable>
 > = {
   armor: {
-    t3_0: {
-      data: t3_01,
-      dataMochalik: t3_01_mochalik,
-      hasEnhancedBonus: false,
-      amount: {
-        정제된수호강석: 950,
-        찬명돌: 22,
-        최상급오레하: 18,
-        파편: 5500,
-        골드: 950,
-      },
-      breath: {
-        은총: 24,
-        축복: 12,
-        가호: 4,
-      },
-      book: '장인의재봉술1단계',
-    },
-    t3_1: {
-      data: t3_01,
-      dataMochalik: t3_01_mochalik,
-      hasEnhancedBonus: false,
-      amount: {
-        정제된수호강석: 1300,
-        찬명돌: 28,
-        최상급오레하: 20,
-        파편: 11000,
-        골드: 1800,
-      },
-      breath: {
-        은총: 36,
-        축복: 18,
-        가호: 6,
-      },
-      book: '장인의재봉술2단계',
-    },
     t4_0: {
       data: t4_01,
       dataMochalik: t4_01_mochalik,
@@ -149,42 +111,6 @@ export const advancedRefineTable: Record<
     },
   },
   weapon: {
-    t3_0: {
-      data: t3_01,
-      dataMochalik: t3_01_mochalik,
-      hasEnhancedBonus: false,
-      amount: {
-        정제된파괴강석: 1000,
-        찬명돌: 28,
-        최상급오레하: 30,
-        파편: 9000,
-        골드: 1125,
-      },
-      breath: {
-        은총: 24,
-        축복: 12,
-        가호: 4,
-      },
-      book: '장인의야금술1단계',
-    },
-    t3_1: {
-      data: t3_01,
-      dataMochalik: t3_01_mochalik,
-      hasEnhancedBonus: false,
-      amount: {
-        정제된파괴강석: 1600,
-        찬명돌: 36,
-        최상급오레하: 33,
-        파편: 17000,
-        골드: 2500,
-      },
-      breath: {
-        은총: 36,
-        축복: 18,
-        가호: 6,
-      },
-      book: '장인의야금술2단계',
-    },
     t4_0: {
       data: t4_01,
       dataMochalik: t4_01_mochalik,
@@ -254,19 +180,13 @@ export const advancedRefineTable: Record<
 
 export function getAdvancedRefineTable(
   type: 'armor' | 'weapon',
-  target: AdvancedRefineTarget,
-  mochalik = false
+  target: AdvancedRefineTarget
 ): AdvancedRefineTable {
   let costReduction = 0;
   let fragmentReduction = 0;
   let goldReduction = 0;
 
-  if (
-    target === 't3_0' ||
-    target === 't3_1' ||
-    target === 't4_0' ||
-    target === 't4_1'
-  ) {
+  if (target === 't4_0' || target === 't4_1') {
     costReduction = 0.7;
     fragmentReduction = 0.9;
     goldReduction = 0.5;
@@ -276,7 +196,8 @@ export function getAdvancedRefineTable(
 
   return {
     ...data,
-    data: mochalik ? data.dataMochalik : data.data,
+    // 6/24 패치: 선조의 가호 구슬 2배 획득(가호 게이지 2배 충전)이 상시 기본 → 항상 2배 시뮬레이션 사용
+    data: data.dataMochalik,
     amount: Object.fromEntries(
       Object.entries(data.amount).map(([name, value]) => [
         name,

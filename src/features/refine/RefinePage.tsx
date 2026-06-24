@@ -231,11 +231,14 @@ export function RefinePage({ prices }: { prices: MaterialPrices }) {
                   onChange={setApplyResearch}
                   label="영지 연구 적용"
                 />
-                <Checkbox
-                  checked={applyHyperExpress}
-                  onChange={setApplyHyperExpress}
-                  label="모챌익 성장지원 적용"
-                />
+                {/* 모챌익 익스프레스 할인은 t4_1590 11~18강 목표에만 적용 — 해당 단계일 때만 노출 */}
+                {grade === 't4_1590' && target !== undefined && target >= 11 && target <= 18 && (
+                  <Checkbox
+                    checked={applyHyperExpress}
+                    onChange={setApplyHyperExpress}
+                    label="모챌익 성장지원 적용"
+                  />
+                )}
               </div>
             </div>
           </div>

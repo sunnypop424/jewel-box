@@ -13,7 +13,6 @@ import {
   InfoTip,
   Field,
   Select,
-  Checkbox,
   PriceSourceBar,
   MaterialIcon,
   materialSortIndex,
@@ -47,8 +46,6 @@ function advancedRequired(
 type ItemType = 'weapon' | 'armor';
 
 const TARGETS: { value: AdvancedRefineTarget; label: string }[] = [
-  { value: 't3_0', label: 'T3 1~10단계' },
-  { value: 't3_1', label: 'T3 11~20단계' },
   { value: 't4_0', label: 'T4 1~10단계' },
   { value: 't4_1', label: 'T4 11~20단계' },
   { value: 't4_2', label: 'T4 21~30단계' },
@@ -80,15 +77,14 @@ export function AdvancedRefinePage({ prices }: { prices: MaterialPrices }) {
   } = prices;
   const [type, setType] = useState<ItemType>('weapon');
   const [target, setTarget] = useState<AdvancedRefineTarget | ''>('');
-  const [mochalik, setMochalik] = useState(false);
 
   const [reports, setReports] = useState<AdvancedRefineReport[] | null>(null);
   const [showAll, setShowAll] = useState(false);
   const [aggOpen, setAggOpen] = useState(false);
 
   const table = useMemo(
-    () => (target ? getAdvancedRefineTable(type, target, mochalik) : undefined),
-    [type, target, mochalik]
+    () => (target ? getAdvancedRefineTable(type, target) : undefined),
+    [type, target]
   );
 
   const materials = useMemo(
@@ -204,13 +200,6 @@ export function AdvancedRefinePage({ prices }: { prices: MaterialPrices }) {
                   options={[{ value: '', label: '선택' }, ...TARGETS]}
                 />
               </Field>
-            </div>
-            <div className="mt-4">
-              <Checkbox
-                checked={mochalik}
-                onChange={setMochalik}
-                label="모챌익 성장지원 적용"
-              />
             </div>
           </div>
 

@@ -10,7 +10,7 @@ export interface GearPiece {
   slotLabel: string;
   type: 'weapon' | 'armor';
   grade: string; // refineData 등급 키 추정 (t4_1590 등)
-  advTier: 't3' | 't4';
+  advTier: 't4';
   currentNormal: number;
   currentAdv: number;
   itemLevel?: number;
@@ -38,28 +38,20 @@ interface RawItem {
 
 // 세트 명칭/등급 → refineData 등급 키 + 상급 버킷 티어 추정.
 // 비용은 견적(근사)이며, UI에서 등급 드롭다운으로 덮어쓸 수 있다.
-function guessGrade(name: string, grade: string, itemLevel?: number): {
+function guessGrade(name: string, itemLevel?: number): {
   grade: string;
-  advTier: 't3' | 't4';
+  advTier: 't4';
 } {
   // 결단(유물 20강)/업화(고대 25강) = 같은 세트(운돌·아비도스) → t4_1590 (11~25 커버)
   // 전율(세르카 1675) = 상위 재료(위운돌·상급아비도스) → t4_1730
   if (name.includes('전율')) return { grade: 't4_1730', advTier: 't4' };
   if (name.includes('결단') || name.includes('업화'))
     return { grade: 't4_1590', advTier: 't4' };
-  if (name.includes('낙인')) return { grade: 't3_1525', advTier: 't3' };
-  if (name.includes('속삭임')) return { grade: 't3_1390', advTier: 't3' };
-  if (name.includes('송곳니') || name.includes('차원'))
-    return { grade: 't3_1250', advTier: 't3' };
 
-  // 세트명 미인식 시 등급/아이템 레벨로 추정
+  // 세트명 미인식 시 아이템 레벨로 추정 (T4 콘텐츠만 견적 대상)
   const lv = itemLevel ?? 0;
-  if (lv >= 1590 || grade === '고대' || grade === '유물') {
-    return { grade: 't4_1590', advTier: 't4' };
-  }
-  if (lv >= 1525) return { grade: 't3_1525', advTier: 't3' };
-  if (lv >= 1390) return { grade: 't3_1390', advTier: 't3' };
-  return { grade: 't3_1250', advTier: 't3' };
+  if (lv >= 1675) return { grade: 't4_1730', advTier: 't4' };
+  return { grade: 't4_1590', advTier: 't4' };
 }
 
 function parseNormal(name: string): number {
@@ -85,7 +77,7 @@ export function parseEquipment(raw: RawItem[]): GearPiece[] {
     if (!slotInfo || bySlot.has(slotInfo.slot)) continue;
     const tooltip = it.Tooltip ?? '';
     const itemLevel = parseItemLevel(tooltip);
-    const { grade, advTier } = guessGrade(it.Name ?? '', it.Grade ?? '', itemLevel);
+    const { grade, advTier } = guessGrade(it.Name ?? '', itemLevel);
     bySlot.set(slotInfo.slot, {
       slot: slotInfo.slot,
       slotLabel: slotInfo.label,

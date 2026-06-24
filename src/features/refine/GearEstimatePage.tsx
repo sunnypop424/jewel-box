@@ -68,10 +68,9 @@ const SLOTS: { slot: SlotKey; label: string; type: 'weapon' | 'armor' }[] = [
   { slot: 'gloves', label: '장갑', type: 'armor' },
 ];
 
-const ADV_BUCKETS = new Set(['t3_0', 't3_1', 't4_0', 't4_1', 't4_2', 't4_3']);
+const ADV_BUCKETS = new Set(['t4_0', 't4_1', 't4_2', 't4_3']);
 
-const advTierOf = (grade: string): 't3' | 't4' =>
-  grade.startsWith('t4') ? 't4' : 't3';
+const advTierOf = (): 't4' => 't4';
 
 // 상급 재련은 t4_1590(결단/업화)에만 존재
 const hasAdvanced = (grade: string) => grade === 't4_1590';
@@ -110,7 +109,7 @@ const presetRows = (
     slotLabel: s.label,
     type: s.type,
     grade,
-    advTier: advTierOf(grade),
+    advTier: advTierOf(),
     currentNormal: cn,
     currentAdv: ca,
     targetNormal: tn,
@@ -428,10 +427,14 @@ export function GearEstimatePage({ prices }: { prices: MaterialPrices }) {
       if (!payload || !Array.isArray(payload.rows)) return;
       const restored: Row[] = SLOTS.map((sdef, i) => {
         const a = payload.rows[i] ?? [];
-        const grade = typeof a[0] === 'string' ? a[0] : 't4_1590';
+        // 지원 등급만 허용 — 예전 링크의 제거된 T3 등급은 t4_1590으로 보정
+        const grade =
+          typeof a[0] === 'string' && GRADE_OPTIONS.some((o) => o.value === a[0])
+            ? a[0]
+            : 't4_1590';
         return {
           slot: sdef.slot, slotLabel: sdef.label, type: sdef.type,
-          grade, advTier: advTierOf(grade),
+          grade, advTier: advTierOf(),
           currentNormal: +a[1] || 0, currentAdv: +a[2] || 0,
           targetNormal: +a[3] || 0, targetAdv: +a[4] || 0, jangin: +a[5] || 0,
         };
@@ -1000,7 +1003,7 @@ export function GearEstimatePage({ prices }: { prices: MaterialPrices }) {
                         </div>
                         <Select
                           value={r.grade}
-                          onChange={(v) => setRow(r.slot, { grade: v, advTier: advTierOf(v) })}
+                          onChange={(v) => setRow(r.slot, { grade: v, advTier: advTierOf() })}
                           options={GRADE_OPTIONS}
                         />
                         {mode !== 'per-part' ? (
@@ -1169,7 +1172,7 @@ export function GearEstimatePage({ prices }: { prices: MaterialPrices }) {
                               <div className="w-full">
                                 <Select
                                   value={r.grade}
-                                  onChange={(v) => setRow(r.slot, { grade: v, advTier: advTierOf(v) })}
+                                  onChange={(v) => setRow(r.slot, { grade: v, advTier: advTierOf() })}
                                   options={GRADE_OPTIONS}
                                 />
                               </div>
@@ -1251,11 +1254,14 @@ export function GearEstimatePage({ prices }: { prices: MaterialPrices }) {
                     onChange={setApplyResearch}
                     label="영지 연구 적용"
                   />
-                  <Checkbox
-                    checked={applyMochalik}
-                    onChange={setApplyMochalik}
-                    label="모챌익 적용 (일반·상급)"
-                  />
+                  {/* 모챌익 익스프레스 할인은 t4_1590 11~18강에만 적용 — 해당 구간을 더 강화할 부위가 있을 때만 노출 */}
+                  {rows.some((r) => r.grade === 't4_1590' && r.currentNormal <= 17) && (
+                    <Checkbox
+                      checked={applyMochalik}
+                      onChange={setApplyMochalik}
+                      label="모챌익 적용 (일반재련 11~18강)"
+                    />
+                  )}
                 </div>
               </div>
 
