@@ -14,6 +14,7 @@ import {
   placeDie,
   makeDie,
   rollValue,
+  rollValueExcluding,
 } from './engine';
 import type {
   AiLevel,
@@ -37,15 +38,78 @@ export interface AiTurn {
 
 const LINES: LineIndex[] = [0, 1, 2];
 
-// 보드를 owner 관점에서 평가: 라인 승수 차이(가중 100) + 총합 차이.
+const FILL = 3.5; // 빈 슬롯 기대 충원값(주사위 평균 1~6)
+const VAR_PER_SLOT = 2.9; // 주사위 분산 근사(남은 슬롯이 만드는 불확실성)
+const PUSH_BONUS = 10; // 밀어내기로 얻는 쉴드의 기대 가치(근사)
+const TAZZA_GATE = 30; // ★3+: v1의 위치 개선 이득이 이 값 미만이면 타짜로 다시 굴림
+const VULN_W = 1.6; // 같은 값 스택이 한 번의 밀어내기에 통째로 날아갈 위험 가중
+
+function sumv(field: { value: number }[]): number {
+  let s = 0;
+  for (const d of field) s += d.value;
+  return s;
+}
+
+// 한 번의 밀어내기로 사라질 수 있는 '최대 동일값 묶음'(쉴드 제외) — 같은 눈을 쌓을수록 위험.
+function maxPushableStack(field: { value: number; shield: boolean }[]): number {
+  const byVal = new Map<number, number>();
+  for (const d of field) {
+    if (d.shield) continue;
+    byVal.set(d.value, (byVal.get(d.value) ?? 0) + d.value);
+  }
+  let max = 0;
+  for (const s of byVal.values()) if (s > max) max = s;
+  return max;
+}
+
+// 보드 평가(owner 관점) — 핵심: '지금 합'이 아니라 '남은 슬롯까지 채워졌을 때'의 기대 우열로
+// 각 라인 승리확률을 추정하고, 2라인 확보를 목표로 점수화한다. 이미 이긴/진 라인 낭비를 억제.
 function boardScore(board: Board, owner: Owner): number {
-  const r = evaluate(board, false);
   const oppo = opponentOf(owner);
-  const myWins = owner === 'me' ? r.meLineWins : r.aiLineWins;
-  const oppWins = oppo === 'me' ? r.meLineWins : r.aiLineWins;
-  const myTotal = owner === 'me' ? r.meTotal : r.aiTotal;
-  const oppTotal = owner === 'me' ? r.aiTotal : r.meTotal;
-  return (myWins - oppWins) * 100 + (myTotal - oppTotal);
+  let lineEV = 0; // 기대 승리 라인 수(확률 합 0~3)
+  let secured = 0; // 사실상 확정 승 라인
+  let lost = 0; // 사실상 패배 라인
+  let tiebreak = 0; // 실현 총합 우세(타이브레이커용)
+  let myVuln = 0; // 내 약점: 상대가 밀어낼 수 있는 동일값 스택
+  let oppVuln = 0; // 상대 약점: 내가 밀어낼 수 있는 동일값 스택
+
+  for (const line of LINES) {
+    const mine = board.lines[line][owner];
+    const opp = board.lines[line][oppo];
+    const mySum = sumv(mine);
+    const oppSum = sumv(opp);
+    const mySlots = 3 - mine.length;
+    const oppSlots = 3 - opp.length;
+    const margin = mySum + mySlots * FILL - (oppSum + oppSlots * FILL);
+    const remain = mySlots + oppSlots;
+    const std = Math.sqrt(remain * VAR_PER_SLOT) || 1e-4;
+    // 남은 슬롯이 적을수록(=확정에 가까울수록) margin이 그대로 승패로 굳는다.
+    const p =
+      remain === 0
+        ? margin > 0
+          ? 1
+          : margin < 0
+            ? 0
+            : 0.5
+        : 1 / (1 + Math.exp(-margin / (0.7 * std)));
+    lineEV += p;
+    if (p > 0.9) secured++;
+    if (p < 0.1) lost++;
+    tiebreak += mySum - oppSum;
+    // 밀어내기는 공격자 필드에 빈칸이 있어야 가능(필드락). 같은 눈을 쌓을수록 한 방에 날아갈 위험.
+    if (oppSlots > 0) myVuln += maxPushableStack(mine); // 상대가 이 라인을 밀 수 있음
+    if (mySlots > 0) oppVuln += maxPushableStack(opp); // 내가 이 라인을 밀 수 있음
+  }
+
+  // 2라인 확보가 목표. 확정 2라인이면 큰 보너스, 2라인 패배면 큰 감점.
+  let score = lineEV * 100;
+  if (secured >= 2) score += 350;
+  if (lost >= 2) score -= 350;
+  if (lineEV >= 1.6) score += 50; // 2라인 기대 근접 가산
+  score += tiebreak * 1.2; // 타이브레이커는 약하게
+  score -= myVuln * VULN_W; // 내 스택이 밀릴 위험은 감점(분산·쉴드 유도)
+  score += oppVuln * VULN_W; // 상대 스택을 밀 기회는 가점
+  return score;
 }
 
 // 굴린 값의 한 move를 보드에 적용(쉴드 배치 제외 — 별도 처리).
@@ -123,11 +187,12 @@ function scoreMove(
   if (level <= 3) {
     // 중수·상수: 2라인 승리 인지(boardScore) + push 쉴드 보너스
     let sc = boardScore(after, owner);
-    if (move.kind === 'push') sc += 6;
+    if (move.kind === 'push') sc += PUSH_BONUS;
     return sc;
   }
   // ★4+: 1-스텝 EV — 내 move 후 상대의 다음 굴림(1~6 균등) 최선 응수 기대.
-  return ev1Step(after, owner);
+  const ev = ev1Step(after, owner);
+  return move.kind === 'push' ? ev + PUSH_BONUS : ev;
 }
 
 // 내 move 후 상대 턴: 상대가 1~6 균등 굴림 → ★2 그리디 응수 → 내 관점 boardScore 평균.
@@ -145,7 +210,7 @@ function ev1Step(board: Board, owner: Owner): number {
     let bestBoard = board;
     for (const m of moves) {
       const after = applyMove(board, oppo, m, v);
-      const sc = boardScore(after, oppo) + (m.kind === 'push' ? 6 : 0);
+      const sc = boardScore(after, oppo) + (m.kind === 'push' ? PUSH_BONUS : 0);
       if (sc > bestOppScore) {
         bestOppScore = sc;
         bestBoard = after;
@@ -158,9 +223,34 @@ function ev1Step(board: Board, owner: Owner): number {
 
 // ── ★5 몬테카를로 ─────────────────────────────────────
 const MC_TOPK = 4;
-const MC_PLAYOUTS = 80;
-const MC_MAX_SIM = 300;
+const MC_PLAYOUTS = 120;
+const MC_MAX_SIM = 480;
+const MC_MARGIN = 0.04; // ★5: 롤아웃 승률이 ★4 최상위를 이 정도 넘어야 선택을 뒤집음
 const ROLLOUT_MAX_TURNS = 80;
+
+// 난이도 보정(★3+) — 밀어내기 로직은 건드리지 않고, '높은 눈이 나올 확률'만 레벨에 따라 살짝 가중.
+// AI 굴림에만 적용(플레이어는 공정). weight(v) = 1 + k*(v-3.5). ★0~2는 공정(k=0).
+// P(5 또는 6): 공정 33% → ★3 ~37% → ★4 ~40% → ★5 ~44%.
+const BIAS_K: Record<AiLevel, number> = { 0: 0, 1: 0, 2: 0, 3: 0.05, 4: 0.1, 5: 0.165 };
+
+// AI의 모든 굴림에 적용. exclude 지정 시 그 눈은 제외(타짜 재굴림 — 같은 눈 방지).
+function biasedRoll(level: AiLevel, rng: () => number, exclude?: DieValue): DieValue {
+  const k = BIAS_K[level];
+  if (k === 0) return exclude == null ? rollValue(rng) : rollValueExcluding(rng, exclude);
+  const w = [0, 0, 0, 0, 0, 0];
+  let total = 0;
+  for (let v = 1; v <= 6; v++) {
+    const wv = v === exclude ? 0 : 1 + k * (v - 3.5); // k<0.4면 항상 양수
+    w[v - 1] = wv;
+    total += wv;
+  }
+  let r = rng() * total;
+  for (let v = 1 as DieValue; v <= 6; v = (v + 1) as DieValue) {
+    r -= w[v - 1];
+    if (r < 0) return v;
+  }
+  return (exclude === 6 ? 5 : 6) as DieValue;
+}
 
 // 한 턴 그리디 진행(★2 정책): 굴림→최선 move→push면 쉴드 굴려 배치. 보드 반환.
 function greedyTurn(board: Board, owner: Owner, rng: () => number): Board {
@@ -171,7 +261,7 @@ function greedyTurn(board: Board, owner: Owner, rng: () => number): Board {
   let bestScore = -Infinity;
   for (const m of moves) {
     const after = applyMove(board, owner, m, value);
-    const sc = boardScore(after, owner) + (m.kind === 'push' ? 6 : 0);
+    const sc = boardScore(after, owner) + (m.kind === 'push' ? PUSH_BONUS : 0);
     if (sc > bestScore) {
       bestScore = sc;
       best = m;
@@ -214,8 +304,8 @@ export function decideAi(
   rng: () => number,
   owner: Owner = 'ai'
 ): AiTurn | null {
-  // 1) 첫 굴림
-  const v1 = rollValue(rng);
+  // 1) 첫 굴림 — ★3+는 높은 눈 확률을 살짝 가중(밀어내기 로직은 그대로).
+  const v1 = biasedRoll(level, rng);
 
   // 2) 타짜 사용 판단(★3+, 미사용, 이미 2라인 승 아님)
   const ev = evaluate(board, false);
@@ -226,14 +316,17 @@ export function decideAi(
   let chosen = v1;
 
   if (canTazza) {
-    const s1 = bestMoveScore(board, owner, v1, level);
-    // 현재 굴림이 '뒤지는' 상황이면 타짜로 한 번 더 굴려 더 나은 값 채택.
-    if (s1 < 0) {
-      const v2 = rollValue(rng);
+    // 일관 평가(boardScore 기반, gate=min(level,3))로 v1의 '이득'을 측정.
+    const gate = Math.min(level, 3) as AiLevel;
+    const base = boardScore(board, owner);
+    const s1 = bestMoveScore(board, owner, v1, gate);
+    // v1을 둬도 위치가 별로 나아지지 않으면(이득<문턱) 한 번 더 굴려 더 나은 값을 채택.
+    if (s1 - base < TAZZA_GATE) {
+      const v2 = biasedRoll(level, rng, v1); // 타짜 재굴림 — 같은 눈 제외 + 높은 눈 가중
+      const s2 = bestMoveScore(board, owner, v2, gate);
       rolls = [v1, v2];
       usedTazza = true;
-      const s2 = bestMoveScore(board, owner, v2, level);
-      chosen = s2 >= s1 ? v2 : v1;
+      chosen = s2 > s1 ? v2 : v1;
     }
   }
 
@@ -310,9 +403,7 @@ function pickByMonteCarlo(
   if (perMove < 8) return top[0].m; // 예산 부족 → ★4 최상위로 폴백
 
   const oppo = opponentOf(owner);
-  let best = top[0].m;
-  let bestRate = -Infinity;
-  for (const { m } of top) {
+  const rates = top.map(({ m }) => {
     const afterMove = applyMove(board, owner, m, value);
     // push면 평균 기대 쉴드(value 4)로 한 칸 채워 근사 후 롤아웃
     let start = afterMove;
@@ -326,13 +417,15 @@ function pickByMonteCarlo(
       if (w === owner) win += 1;
       else if (w === 'draw') win += 0.5;
     }
-    const rate = win / perMove;
-    if (rate > bestRate) {
-      bestRate = rate;
-      best = m;
-    }
-  }
-  return best;
+    return win / perMove;
+  });
+
+  // ★4 최상위(top[0])를 기본으로 두고, 롤아웃 승률이 '확실히'(MC_MARGIN) 더 높은 후보만 채택.
+  // → MC 노이즈로 ★4보다 약해지는 일을 방지(★5 ≥ ★4 보장).
+  let bestIdx = 0;
+  for (let i = 1; i < rates.length; i++) if (rates[i] > rates[bestIdx]) bestIdx = i;
+  if (bestIdx !== 0 && rates[bestIdx] - rates[0] < MC_MARGIN) bestIdx = 0;
+  return top[bestIdx].m;
 }
 
 // 디버그/검증용: 합법수 없음 판정(자동홀드와 동일 기준).

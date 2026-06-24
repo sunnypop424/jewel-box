@@ -106,6 +106,11 @@ export function rollValue(rng: () => number): DieValue {
   return (Math.floor(rng() * 6) + 1) as DieValue;
 }
 
+// exclude를 제외한 나머지 5개 눈에서 균등 굴림(타짜 재굴림 — 같은 눈 방지용).
+export function rollValueExcluding(rng: () => number, exclude: DieValue): DieValue {
+  return (((exclude + Math.floor(rng() * 5)) % 6) + 1) as DieValue;
+}
+
 let _idSeq = 0;
 export function makeDie(value: DieValue, owner: Owner, shield: boolean): Die {
   _idSeq += 1;

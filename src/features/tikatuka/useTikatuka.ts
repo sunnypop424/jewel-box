@@ -4,7 +4,7 @@
 // AI 턴만 '굴림 → 행동' 과정을 타이머로 쪼개 눈에 보이게 재생한다.
 
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
-import { isFieldFull, legalMoves, pushTargets, rollValue } from './engine';
+import { isFieldFull, legalMoves, pushTargets, rollValue, rollValueExcluding } from './engine';
 import { decideAi } from './ai';
 import { initialState, reducer } from './reducer';
 import type { AiLevel, DieValue, LineIndex, Owner, ShieldPlacement } from './types';
@@ -40,16 +40,23 @@ export function useTikatuka() {
   const lockRef = useRef(false); // 밀어내기 연출 중 중복 입력 차단
   const aiShieldRef = useRef<ShieldPlacement | null>(null); // AI 밀어내기 후 배치 예정 위치(원래 결정 보존)
 
-  // 1) 플레이어 턴 시작 → 굴림 연출 시간 뒤 자동 굴림 확정
+  // 1) 플레이어 턴 시작 → 굴림 연출 시간 뒤 자동 굴림 확정.
+  //    단, 내 필드가 전부 풀이면 어떤 눈이 나와도 둘 곳/밀 곳이 없으므로(필드락) 굴리지 않고 바로 패스.
+  //    (상대가 내 주사위를 밀어내 빈칸이 생기면 다음 내 턴에 다시 굴림)
   useEffect(() => {
     if (state.phase === 'rolling' && state.turn === 'me') {
+      const allFull = ([0, 1, 2] as LineIndex[]).every((l) => isFieldFull(state.board, l, 'me'));
+      if (allFull) {
+        const id = setTimeout(() => dispatch({ type: 'AUTO_HOLD' }), PASS_DELAY);
+        return () => clearTimeout(id);
+      }
       const id = setTimeout(
         () => dispatch({ type: 'ROLL', die: { value: rollValue(Math.random) } }),
         ROLL_TUMBLE
       );
       return () => clearTimeout(id);
     }
-  }, [state.phase, state.turn]);
+  }, [state.phase, state.turn, state.board]);
 
   // 2) 플레이어 합법수 없음(내 필드 전부 풀) → 자동 패스(일시적)
   useEffect(() => {
@@ -75,9 +82,9 @@ export function useTikatuka() {
     const tumbleMs = ROLL_TUMBLE + Math.floor(Math.random() * 200); // 560~760
     const ponderMs = PONDER + Math.floor(Math.random() * 750); // 850~1600
 
-    // 굴렸는데 둘 곳이 없네... 잠깐 보다가 패스. (aiReveal=null이라 그동안 트레이는 tumbling)
+    // 둘 곳/밀 곳이 없으면(AI 필드 전부 풀) 굴리지 않고 바로 패스 — 굴림 연출도 생략(트레이는 '패스' 표시).
     if (!t) {
-      at(tumbleMs + PASS_DELAY, () => dispatch({ type: 'AUTO_HOLD' }));
+      at(PASS_DELAY, () => dispatch({ type: 'AUTO_HOLD' }));
       return () => timers.forEach(clearTimeout);
     }
 
@@ -149,10 +156,12 @@ export function useTikatuka() {
     dispatch({ type: 'START', aiLevel, firstTurn });
   }, []);
 
-  const useTazza = useCallback(
-    () => dispatch({ type: 'USE_TAZZA', die: { value: rollValue(Math.random) } }),
-    []
-  );
+  const useTazza = useCallback(() => {
+    // 타짜 재굴림은 현재 눈과 다른 값으로(같은 눈 방지).
+    const cur = state.rolledDie?.value;
+    const value = cur != null ? rollValueExcluding(Math.random, cur) : rollValue(Math.random);
+    dispatch({ type: 'USE_TAZZA', die: { value } });
+  }, [state.rolledDie]);
   const chooseDie = useCallback((index: 0 | 1) => dispatch({ type: 'CHOOSE_DIE', index }), []);
   const place = useCallback((line: LineIndex) => {
     if (lockRef.current) return;

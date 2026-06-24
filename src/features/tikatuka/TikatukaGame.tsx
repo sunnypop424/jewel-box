@@ -2,10 +2,11 @@
 import { useState } from 'react';
 import { Dices, Hand, Megaphone, Sparkles, Trophy, RotateCcw, Info } from 'lucide-react';
 import { useTikatuka } from './useTikatuka';
+import { isFieldFull } from './engine';
 import { Board } from './components/Board';
 import { DiceTray } from './components/DiceTray';
 import type { RollAnim } from './components/DiceTray';
-import type { AiLevel } from './types';
+import type { AiLevel, LineIndex } from './types';
 import './tikatuka.css';
 
 const LEVELS: { lv: AiLevel; name: string; desc: string }[] = [
@@ -20,7 +21,7 @@ const LEVELS: { lv: AiLevel; name: string; desc: string }[] = [
 export function TikatukaGame({ onClose }: { onClose?: () => void }) {
   const g = useTikatuka();
   const { state } = g;
-  const [level, setLevel] = useState<AiLevel>(2);
+  const [level, setLevel] = useState<AiLevel>(3);
 
   // ── 난이도 선택 화면 ──
   if (state.phase === 'coinToss') {
@@ -56,10 +57,17 @@ export function TikatukaGame({ onClose }: { onClose?: () => void }) {
     );
   }
 
+  // 내 필드가 전부 풀이면 어떤 눈이 나와도 둘 곳/밀 곳이 없음 → 굴리지 않고 패스(굴림 연출도 생략).
+  const myAllFull =
+    state.turn === 'me' &&
+    ([0, 1, 2] as LineIndex[]).every((l) => isFieldFull(state.board, l, 'me'));
+
   // 트레이 굴림 연출 — 내 쪽은 상태에서 파생, 상대 쪽은 타이머 공개값(aiReveal)에서.
   const meAnim: RollAnim | null =
     state.turn === 'me' && state.phase === 'rolling'
-      ? { owner: 'me', values: [], tumbling: true, chosen: null }
+      ? myAllFull
+        ? null // 둘 곳 없음 — 굴리는 연출 없이 패스 대기
+        : { owner: 'me', values: [], tumbling: true, chosen: null }
       : state.turn === 'me' && state.phase === 'choosingDie' && state.rolledChoices
         ? {
             owner: 'me',
@@ -70,12 +78,19 @@ export function TikatukaGame({ onClose }: { onClose?: () => void }) {
         : state.turn === 'me' && state.phase === 'acting' && state.rolledDie
           ? { owner: 'me', values: [state.rolledDie.value], tumbling: false, chosen: null }
           : null;
-  // 상대 트레이: 굴리는 중엔 tumbling, 눈이 나오면 정착 표시.
+  // 상대 필드가 전부 풀이면 AI도 어떤 눈이든 둘 곳/밀 곳이 없음 → 굴리지 않고 패스(연출 생략).
+  const aiAllFull =
+    state.turn === 'ai' &&
+    ([0, 1, 2] as LineIndex[]).every((l) => isFieldFull(state.board, l, 'ai'));
+
+  // 상대 트레이: 굴리는 중엔 tumbling, 눈이 나오면 정착 표시. 못 굴리면(필드 풀) 연출 없이 패스.
   const aiAnim: RollAnim | null =
     state.turn === 'ai' && state.phase === 'aiThinking'
       ? g.aiReveal
         ? { owner: 'ai', values: g.aiReveal.values, tumbling: false, chosen: g.aiReveal.chosen }
-        : { owner: 'ai', values: [], tumbling: true, chosen: null }
+        : aiAllFull
+          ? null
+          : { owner: 'ai', values: [], tumbling: true, chosen: null }
       : null;
   // 굴림은 고민 없이 바로. 고민은 '눈이 나온 뒤' — 어디 놓을지/밀어낼지 정하는 동안 표시.
   const aiPondering =
@@ -129,11 +144,13 @@ export function TikatukaGame({ onClose }: { onClose?: () => void }) {
               pickable={state.phase === 'choosingDie' && state.turn === 'me'}
               onPick={g.chooseDie}
               hint={
-                state.phase === 'placingShield' && state.turn === 'me'
-                  ? '쉴드 놓을 칸 선택'
-                  : state.phase === 'choosingDie' && state.turn === 'me'
-                    ? '하나 선택'
-                    : undefined
+                state.phase === 'rolling' && myAllFull
+                  ? '둘 곳 없음 — 패스'
+                  : state.phase === 'placingShield' && state.turn === 'me'
+                    ? '쉴드 놓을 칸 선택'
+                    : state.phase === 'choosingDie' && state.turn === 'me'
+                      ? '하나 선택'
+                      : undefined
               }
             />
             <DiceTray
@@ -142,7 +159,13 @@ export function TikatukaGame({ onClose }: { onClose?: () => void }) {
               anim={aiAnim}
               shield={aiPlacingShield ? state.pendingShield : null}
               hint={
-                aiPlacingShield ? '쉴드 둘 곳 고민…' : aiPondering ? '고민 중…' : undefined
+                aiAllFull && !g.aiReveal
+                  ? '둘 곳 없음 — 패스'
+                  : aiPlacingShield
+                    ? '쉴드 둘 곳 고민…'
+                    : aiPondering
+                      ? '고민 중…'
+                      : undefined
               }
             />
           </div>
@@ -201,9 +224,10 @@ export function TikatukaGame({ onClose }: { onClose?: () => void }) {
 
 function StatusText({ state }: { state: ReturnType<typeof useTikatuka>['state'] }) {
   let msg = '';
+  const allFull = ([0, 1, 2] as LineIndex[]).every((l) => isFieldFull(state.board, l, state.turn));
   if (state.winner !== null) msg = '게임 종료';
-  else if (state.turn === 'ai') msg = '컴퓨터가 두는 중...';
-  else if (state.phase === 'rolling') msg = '주사위 굴리는 중...';
+  else if (state.turn === 'ai') msg = allFull ? '컴퓨터: 둘 곳이 없어 패스' : '컴퓨터가 두는 중...';
+  else if (state.phase === 'rolling') msg = allFull ? '둘 곳이 없어 패스합니다' : '주사위 굴리는 중...';
   else if (state.phase === 'choosingDie') msg = '두 주사위 중 선택';
   else if (state.phase === 'placingShield') msg = '쉴드 놓을 칸 선택 (낮으면 상대, 높으면 내 필드)';
   else if (state.phase === 'acting') msg = '배치할 라인 또는 밀어낼 상대 주사위 선택';
