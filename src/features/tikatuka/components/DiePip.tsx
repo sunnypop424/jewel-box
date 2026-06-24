@@ -21,7 +21,7 @@ export function DiePip({
   die: Die | null;
   // 고정 px 크기. 생략하면 부모가 width/height 유틸 클래스로 크기를 지정(반응형). pip·여백은 비율 기반이라 어느 쪽이든 스케일된다.
   size?: number;
-  className?: string; // 애니메이션 클래스(tk-pop / tk-fling / tk-settle / tk-tumble) 주입용
+  className?: string; // 애니메이션 클래스(tk-pop / tk-shatter / tk-ram-* / tk-shield-in / tk-settle / tk-tumble) 주입용
   style?: React.CSSProperties;
 }) {
   const sized: React.CSSProperties | undefined =

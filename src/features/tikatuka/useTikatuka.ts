@@ -7,12 +7,16 @@ import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { isFieldFull, legalMoves, pushTargets, rollValue } from './engine';
 import { decideAi } from './ai';
 import { initialState, reducer } from './reducer';
-import type { AiLevel, DieValue, LineIndex } from './types';
+import type { AiLevel, DieValue, LineIndex, Owner, ShieldPlacement } from './types';
 
-const ROLL_TUMBLE = 480; // 굴림(면 교체) 지속
-const SETTLE_BEAT = 620; // 정착(tk-settle 520ms) 재생 + 잠깐 멈춤 뒤 행동
-const FLING_MS = 480; // 밀어내기(날아가기) — tikatuka.css의 tk-fling과 일치
+// 굴림 자체엔 고민이 없다(걍 굴림). 고민은 '눈이 나온 뒤' — 타짜 쓸지·어디 놓을지·밀어낼지.
+const ROLL_TUMBLE = 560; // 굴림(면 교체) 지속 — 결과가 보일 만큼만 짧게
+const TAZZA_PICK = 560; // 타짜: 두 눈을 살펴본 뒤 하나 택1하는 텀
+const PONDER = 850; // 눈이 나온 뒤 '어디 놓지/밀까/타짜 쓸까' 고민하는 시간
+const FLING_MS = 560; // 밀어내기 충돌(공격 주사위 ram + 피해 주사위 shatter) — tikatuka.css와 일치
 const PASS_DELAY = 520; // 둘 곳 없음 자동 패스 연출
+const SHIELD_SHOW = 620; // 밀어내고 얻은 쉴드를 트레이에 잠깐 보여주는 시간
+const SHIELD_PONDER = 720; // 쉴드를 어디 둘지 고민하는 시간(+지터)
 
 // AI 굴림의 '정착' 시점(타이머로 비동기 공개). null이면 아직 굴리는 중(tumbling).
 export interface AiReveal {
@@ -20,11 +24,21 @@ export interface AiReveal {
   chosen: number | null;
 }
 
+// 밀어내기 충돌 연출 정보 — 들이받는 공격 주사위(value)가 victim(피해자) 칸으로 파고든다.
+export interface PushFx {
+  line: LineIndex;
+  victim: Owner; // 밀려나는 쪽(피해 주사위 소유자)
+  value: DieValue; // 공격 주사위 눈 = 피해 주사위 눈(같은 값끼리 충돌)
+}
+
 export function useTikatuka() {
   const [state, dispatch] = useReducer(reducer, undefined, () => initialState(2));
   const [aiReveal, setAiReveal] = useState<AiReveal | null>(null);
   const [flingIds, setFlingIds] = useState<string[]>([]);
+  const [pushFx, setPushFx] = useState<PushFx | null>(null);
+  const [aiShieldTarget, setAiShieldTarget] = useState<ShieldPlacement | null>(null); // AI가 쉴드 둘 칸(고민 강조)
   const lockRef = useRef(false); // 밀어내기 연출 중 중복 입력 차단
+  const aiShieldRef = useRef<ShieldPlacement | null>(null); // AI 밀어내기 후 배치 예정 위치(원래 결정 보존)
 
   // 1) 플레이어 턴 시작 → 굴림 연출 시간 뒤 자동 굴림 확정
   useEffect(() => {
@@ -57,24 +71,44 @@ export function useTikatuka() {
     const timers: ReturnType<typeof setTimeout>[] = [];
     const at = (ms: number, fn: () => void) => timers.push(setTimeout(fn, ms));
 
+    // 진짜 친구처럼 — 굴림은 바로 하지만, '눈을 본 뒤' 고민하는 시간은 매번 다르게(가끔 빨리, 가끔 길게).
+    const tumbleMs = ROLL_TUMBLE + Math.floor(Math.random() * 200); // 560~760
+    const ponderMs = PONDER + Math.floor(Math.random() * 750); // 850~1600
+
+    // 굴렸는데 둘 곳이 없네... 잠깐 보다가 패스. (aiReveal=null이라 그동안 트레이는 tumbling)
     if (!t) {
-      at(PASS_DELAY, () => dispatch({ type: 'AUTO_HOLD' }));
+      at(tumbleMs + PASS_DELAY, () => dispatch({ type: 'AUTO_HOLD' }));
       return () => timers.forEach(clearTimeout);
     }
 
-    // 굴림 연출(tumbling)은 aiReveal === null 파생으로 표시됨. 정착은 타이머로 공개.
+    // 1) 굴림은 고민 없이 바로(진입 즉시 tumbling 파생) → tumbleMs 뒤 결과 공개.
+    //    타짜면 일단 두 눈을 다 보여주고(chosen=null) '고민' 시작.
     const chosenIdx = t.usedTazza ? Math.max(0, t.rolls.indexOf(t.chosenValue)) : null;
-    at(ROLL_TUMBLE, () => setAiReveal({ values: t.rolls, chosen: chosenIdx }));
+    at(tumbleMs, () => setAiReveal({ values: t.rolls, chosen: t.usedTazza ? null : chosenIdx }));
 
-    // 행동 연출 후 커밋
-    at(ROLL_TUMBLE + SETTLE_BEAT, () => {
+    // 2) 타짜: 두 눈을 살펴본 뒤 하나 택1(강조).
+    if (t.usedTazza) {
+      at(tumbleMs + TAZZA_PICK, () => setAiReveal({ values: t.rolls, chosen: chosenIdx }));
+    }
+
+    // 3) 눈이 나온 뒤 '어디 놓지/밀까'를 고민(ponderMs)하고 행동을 커밋.
+    const actAt = tumbleMs + (t.usedTazza ? TAZZA_PICK : 0) + ponderMs;
+    at(actAt, () => {
       if (t.move.kind === 'push') {
         const victims = pushTargets(state.board, t.move.line, 'ai', t.chosenValue).map((d) => d.id);
         setFlingIds(victims);
+        setPushFx({ line: t.move.line, victim: 'me', value: t.chosenValue });
         at(FLING_MS, () => {
-          dispatch({ type: 'AI_TURN', turn: t });
           setFlingIds([]);
+          setPushFx(null);
           setAiReveal(null);
+          // 둘 곳이 있으면 쉴드를 트레이에 대기시키고(고민 → 배치) 단계적으로, 없으면 원자적 처리.
+          if (t.shieldPlacement) {
+            aiShieldRef.current = t.shieldPlacement;
+            dispatch({ type: 'AI_PUSH', turn: t });
+          } else {
+            dispatch({ type: 'AI_TURN', turn: t });
+          }
         });
       } else {
         dispatch({ type: 'AI_TURN', turn: t });
@@ -85,10 +119,31 @@ export function useTikatuka() {
     return () => timers.forEach(clearTimeout);
   }, [state.phase, state.turn, state.board, state.aiLevel, state.tazzaUsed.ai]);
 
+  // 4) AI 쉴드 배치 → 트레이에 잠깐 보여주고(SHIELD_SHOW) → 둘 칸을 고민(강조)한 뒤 배치.
+  useEffect(() => {
+    if (state.phase !== 'placingShield' || state.turn !== 'ai' || !state.pendingShield) return;
+    const plan = aiShieldRef.current;
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    const at = (ms: number, fn: () => void) => timers.push(setTimeout(fn, ms));
+
+    // 쉴드를 트레이에 한 박자 보여준 뒤, 둘 칸을 강조하며 '어디 두지' 고민.
+    at(SHIELD_SHOW, () => setAiShieldTarget(plan));
+    const placeAt = SHIELD_SHOW + SHIELD_PONDER + Math.floor(Math.random() * 520);
+    at(placeAt, () => {
+      if (plan) dispatch({ type: 'PLACE_SHIELD', line: plan.line, owner: plan.owner });
+      setAiShieldTarget(null);
+    });
+
+    return () => timers.forEach(clearTimeout);
+  }, [state.phase, state.turn, state.pendingShield]);
+
   // ── 액션 헬퍼(난수·연출 주입) ──
   const start = useCallback((aiLevel: AiLevel) => {
     setAiReveal(null);
     setFlingIds([]);
+    setPushFx(null);
+    setAiShieldTarget(null);
+    aiShieldRef.current = null;
     lockRef.current = false;
     const firstTurn = Math.random() < 0.5 ? 'me' : 'ai';
     dispatch({ type: 'START', aiLevel, firstTurn });
@@ -114,9 +169,11 @@ export function useTikatuka() {
       const shieldValue = rollValue(Math.random);
       lockRef.current = true;
       setFlingIds(victims);
+      setPushFx({ line, victim: 'ai', value: rolled });
       setTimeout(() => {
         dispatch({ type: 'PUSH', line, shieldValue });
         setFlingIds([]);
+        setPushFx(null);
         lockRef.current = false;
       }, FLING_MS);
     },
@@ -132,6 +189,9 @@ export function useTikatuka() {
   const reset = useCallback(() => {
     setAiReveal(null);
     setFlingIds([]);
+    setPushFx(null);
+    setAiShieldTarget(null);
+    aiShieldRef.current = null;
     lockRef.current = false;
     dispatch({ type: 'RESET' });
   }, []);
@@ -140,6 +200,8 @@ export function useTikatuka() {
     state,
     aiReveal,
     flingIds,
+    pushFx,
+    aiShieldTarget,
     start,
     useTazza,
     chooseDie,

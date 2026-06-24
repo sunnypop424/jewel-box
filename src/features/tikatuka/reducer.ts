@@ -31,6 +31,7 @@ export type Action =
   | { type: 'HOLD' }
   | { type: 'TIKATUKA' }
   | { type: 'AI_TURN'; turn: AiTurn }
+  | { type: 'AI_PUSH'; turn: AiTurn } // AI 밀어내기만 적용 → 쉴드는 트레이 대기(placingShield, 턴 유지)
   | { type: 'AUTO_HOLD' } // 합법수 없음 → 패스
   | { type: 'RESET' }; // 난이도 선택 화면으로
 
@@ -197,6 +198,32 @@ export function reducer(state: GameState, action: Action): GameState {
       if (state.turn !== 'me' || state.winner !== null || state.tikatukaUsed) return state;
       if (state.phase === 'gameOver' || state.phase === 'coinToss') return state;
       return { ...state, tikatukaUsed: true, log: log(state, '티카투카! (승리 시 보너스)') };
+    }
+
+    case 'AI_PUSH': {
+      // AI 밀어내기만 적용하고, 쉴드는 트레이에 대기시킨 채 턴을 AI로 유지(배치는 PLACE_SHIELD로 별도).
+      if (state.phase !== 'aiThinking' || state.turn !== 'ai') return state;
+      const t = action.turn;
+      if (t.move.kind !== 'push' || t.shieldValue == null) return state;
+      const { board, removedCount } = applyPush(state.board, t.move.line, 'ai', t.chosenValue);
+      const shield = makeDie(t.shieldValue, 'ai', true);
+      const withTazza: GameState = t.usedTazza
+        ? { ...state, tazzaUsed: { ...state.tazzaUsed, ai: true } }
+        : state;
+      let lines = [...state.log, `컴퓨터 굴림: ${t.rolls.join(' → ')}${t.usedTazza ? ' (타짜)' : ''}`];
+      lines = [
+        ...lines,
+        `컴퓨터: ${LINE_LABEL[t.move.line]} 라인 ${t.chosenValue} ${removedCount}개 밀어냄 → 쉴드 ${t.shieldValue} 획득`,
+      ];
+      return {
+        ...withTazza,
+        board,
+        pendingShield: shield,
+        phase: 'placingShield',
+        rolledDie: null,
+        rolledChoices: null,
+        log: lines.slice(-40),
+      };
     }
 
     case 'AUTO_HOLD': {

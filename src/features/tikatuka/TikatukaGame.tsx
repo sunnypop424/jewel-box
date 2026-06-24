@@ -70,12 +70,18 @@ export function TikatukaGame({ onClose }: { onClose?: () => void }) {
         : state.turn === 'me' && state.phase === 'acting' && state.rolledDie
           ? { owner: 'me', values: [state.rolledDie.value], tumbling: false, chosen: null }
           : null;
+  // 상대 트레이: 굴리는 중엔 tumbling, 눈이 나오면 정착 표시.
   const aiAnim: RollAnim | null =
     state.turn === 'ai' && state.phase === 'aiThinking'
       ? g.aiReveal
         ? { owner: 'ai', values: g.aiReveal.values, tumbling: false, chosen: g.aiReveal.chosen }
         : { owner: 'ai', values: [], tumbling: true, chosen: null }
       : null;
+  // 굴림은 고민 없이 바로. 고민은 '눈이 나온 뒤' — 어디 놓을지/밀어낼지 정하는 동안 표시.
+  const aiPondering =
+    state.turn === 'ai' && state.phase === 'aiThinking' && !!g.aiReveal;
+  // AI가 밀어내고 얻은 쉴드 — 트레이에 보여주며 둘 곳 고민.
+  const aiPlacingShield = state.turn === 'ai' && state.phase === 'placingShield';
 
   const myTurn = state.turn === 'me' && state.winner === null;
   const tazzaEnabled = myTurn && state.phase === 'acting' && !state.tazzaUsed.me;
@@ -98,6 +104,8 @@ export function TikatukaGame({ onClose }: { onClose?: () => void }) {
       <Board
         state={state}
         flingIds={g.flingIds}
+        pushFx={g.pushFx}
+        aiShieldTarget={g.aiShieldTarget}
         onPlace={g.place}
         onPush={g.push}
         onPlaceShield={g.placeShield}
@@ -128,7 +136,15 @@ export function TikatukaGame({ onClose }: { onClose?: () => void }) {
                     : undefined
               }
             />
-            <DiceTray owner="ai" active={state.turn === 'ai'} anim={aiAnim} />
+            <DiceTray
+              owner="ai"
+              active={state.turn === 'ai'}
+              anim={aiAnim}
+              shield={aiPlacingShield ? state.pendingShield : null}
+              hint={
+                aiPlacingShield ? '쉴드 둘 곳 고민…' : aiPondering ? '고민 중…' : undefined
+              }
+            />
           </div>
 
           {/* 버튼 */}
@@ -214,7 +230,7 @@ function GameBtn({
       onClick={onClick}
       disabled={disabled}
       title={tip}
-      className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+      className={`inline-flex touch-manipulation select-none items-center gap-1.5 rounded-lg px-3 py-2.5 text-xs font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
         accent
           ? 'bg-fuchsia-600 text-white hover:bg-fuchsia-500'
           : 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700'

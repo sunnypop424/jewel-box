@@ -21,21 +21,55 @@
   78% { transform: translateY(-2px) scale(1.05) rotate(-1deg); }
   100% { transform: translateY(0) scale(1) rotate(0); }
 }
-/* 밀어내기 — 살짝 눌렸다가 바깥으로 튕겨 날아감. */
-@keyframes tk-fling {
-  0% { transform: translate(0, 0) rotate(0) scale(1); opacity: 1; }
-  18% { transform: translate(0, 3px) scale(0.88); opacity: 1; }
-  100% {
-    transform: translate(var(--tk-fx, 0), -34px) rotate(var(--tk-fr, 60deg)) scale(0.65);
-    opacity: 0;
-  }
+/* 밀어내기 충돌 — 굴린 주사위가 멀리서 '딱' 하고 날아와 같은 눈끼리 부딪혀 함께 소멸. */
+/* 공격 주사위: 왼쪽(내 쪽)에서 빠르게 날아와 오른쪽 상대 칸으로 들이받는다. */
+@keyframes tk-ram-right {
+  0% { transform: translateX(-260%) scale(0.74); opacity: 0; }
+  12% { opacity: 1; }
+  44% { transform: translateX(-4%) scale(1.16); opacity: 1; } /* 빠르게 도달 */
+  50% { transform: translateX(10%) scale(1.26); opacity: 1; } /* 딱! 살짝 파고듦 */
+  60% { transform: translateX(-1%) scale(0.96); opacity: 1; } /* 반동 */
+  100% { transform: translateX(1%) scale(0.24) rotate(42deg); opacity: 0; }
+}
+/* 공격 주사위: 오른쪽(상대 쪽)에서 빠르게 날아와 왼쪽 내 칸으로. */
+@keyframes tk-ram-left {
+  0% { transform: translateX(260%) scale(0.74); opacity: 0; }
+  12% { opacity: 1; }
+  44% { transform: translateX(4%) scale(1.16); opacity: 1; }
+  50% { transform: translateX(-10%) scale(1.26); opacity: 1; }
+  60% { transform: translateX(1%) scale(0.96); opacity: 1; }
+  100% { transform: translateX(-1%) scale(0.24) rotate(-42deg); opacity: 0; }
+}
+/* 충돌 섬광 — 부딪히는 순간 임팩트 지점에서 확 퍼졌다 사라짐. */
+@keyframes tk-impact {
+  0% { transform: scale(0.2); opacity: 0; }
+  25% { opacity: 0.85; }
+  100% { transform: scale(1.9); opacity: 0; }
+}
+/* 맞은 주사위 — 충돌 직전까지 버티다가 '딱' 맞고 세게 튕겨 부서짐(--tk-kx = 넉백 방향). */
+@keyframes tk-shatter {
+  0%, 46% { transform: translate(0, 0) scale(1) rotate(0); opacity: 1; }
+  52% { transform: translate(var(--tk-kx, 7px), -4px) scale(1.22); opacity: 1; } /* 딱 맞고 튕김 */
+  66% { transform: translate(calc(var(--tk-kx, 7px) * 2.6), 2px) scale(0.8) rotate(13deg); opacity: 0.85; }
+  100% { transform: translate(calc(var(--tk-kx, 7px) * 4.2), -15px) scale(0.2) rotate(40deg); opacity: 0; }
+}
+/* 쉴드 획득 — 밀어낸 보상처럼 반짝 솟아오른다(충돌이 끝난 한 박자 뒤). */
+@keyframes tk-shield-in {
+  0% { transform: scale(0) rotate(-12deg); opacity: 0; }
+  55% { transform: scale(1.2) rotate(4deg); opacity: 1; }
+  75% { transform: scale(0.93) rotate(-2deg); }
+  100% { transform: scale(1) rotate(0); opacity: 1; }
 }
 
 .tk-tumble { animation: tk-tumble 130ms linear infinite; }
 .tk-settle { animation: tk-settle 520ms cubic-bezier(0.18, 1.1, 0.32, 1) both; }
 .tk-pop { animation: tk-place 380ms cubic-bezier(0.2, 1.15, 0.32, 1) both; }
-.tk-fling { animation: tk-fling 480ms cubic-bezier(0.42, 0, 0.7, 0.4) forwards; pointer-events: none; }
+.tk-ram-right { animation: tk-ram-right 540ms cubic-bezier(0.5, 0, 0.5, 1) forwards; }
+.tk-ram-left { animation: tk-ram-left 540ms cubic-bezier(0.5, 0, 0.5, 1) forwards; }
+.tk-shatter { animation: tk-shatter 560ms cubic-bezier(0.36, 0, 0.66, 0.4) forwards; pointer-events: none; }
+.tk-impact { animation: tk-impact 340ms 220ms ease-out both; }
+.tk-shield-in { animation: tk-shield-in 460ms 160ms cubic-bezier(0.2, 1.2, 0.34, 1) both; }
 
 @media (prefers-reduced-motion: reduce) {
-  .tk-tumble, .tk-settle, .tk-pop, .tk-fling { animation-duration: 1ms; }
+  .tk-tumble, .tk-settle, .tk-pop, .tk-ram-right, .tk-ram-left, .tk-shatter, .tk-impact, .tk-shield-in { animation-duration: 1ms; }
 }

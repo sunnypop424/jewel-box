@@ -66,7 +66,7 @@ export function DiceTray({
 
       <div className="flex flex-1 items-center justify-center gap-2">
         {shield ? (
-          <DiePip die={shield} className={`${TRAY_DIE} tk-settle`} />
+          <DiePip die={shield} className={`${TRAY_DIE} tk-shield-in`} />
         ) : anim && anim.tumbling ? (
           <DiePip die={synthDie(owner, face)} className={`${TRAY_DIE} tk-tumble`} />
         ) : anim && anim.values.length > 0 ? (
@@ -76,7 +76,7 @@ export function DiceTray({
                 key={i}
                 type="button"
                 onClick={() => onPick(i as 0 | 1)}
-                className="rounded-xl p-0.5 ring-2 ring-transparent transition hover:ring-indigo-400"
+                className="touch-manipulation select-none rounded-xl p-0.5 ring-2 ring-transparent transition hover:ring-indigo-400 active:ring-indigo-400"
               >
                 <DiePip die={synthDie(owner, v)} className={`${TRAY_DIE} tk-settle`} />
               </button>
