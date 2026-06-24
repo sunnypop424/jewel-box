@@ -1,0 +1,1 @@
+{"name":"Jewel Box","short_name":"Jewel Box","description":"로스트아크 주간 레이드 및 일정 관리 앱","start_url":"/jewel-box/","display":"standalone","background_color":"#121212","theme_color":"#121212","lang":"en","scope":"/jewel-box/","icons":[{"src":"pwa-192x192.png","sizes":"192x192","type":"image/png"},{"src":"pwa-512x512.png","sizes":"512x512","type":"image/png","purpose":"any maskable"}]}
