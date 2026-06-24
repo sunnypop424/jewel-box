@@ -714,16 +714,23 @@ async function postScheduleCreateMessage(env, { discordName, date, reason }) {
 // 8주 고정 로테이션. 아게오로스 다음 주차에 드렉탈라스로 복귀.
 // 주차 경계 = 수요일 점검. 괄호값(화구/암구/...) = 추천 카드.
 const GUARDIAN_ROTATION = [
-  { name: '드렉탈라스', card: '화구' },
-  { name: '소나벨', card: '암구' },
-  { name: '베스칼', card: '화구' },
+  { name: '쿤겔라니움', card: '뇌구' },
+  { name: '하누마탄', card: '없음' },
+  { name: '데스칼루다', card: '수구' },
+  { name: '이그렉시온', card: '화구' },
+  { name: '벨가누스', card: '세구' },
+  { name: '아카테스', card: '암구' },
+  { name: '엘버하스틱', card: '수구' },
   { name: '루멘칼리고', card: '암구' },
   { name: '가르가디스', card: '토구' },
   { name: '스콜라키아', card: '토구' },
   { name: '크라티오스', card: '뇌구' },
   { name: '아게오로스', card: '세구' },
+  { name: '드렉탈라스', card: '화구' },
+  { name: '소나벨', card: '암구' },
+  { name: '베스칼', card: '화구' },
 ];
-const GUARDIAN_ANCHOR_WED_UTC = Date.UTC(2026, 5, 3); // 2026-06-03(수) = 드렉탈라스 주차 시작
+const GUARDIAN_ANCHOR_WED_UTC = Date.UTC(2026, 5, 24); // 2026-06-24(수) = 쿤겔라니움 주차 시작
 
 // UTC 자정 타임스탬프 → "M/D (요일)" (요일은 한글 한 글자)
 function formatMonthDayWithDow(utcMidnight) {
