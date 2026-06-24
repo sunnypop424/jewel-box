@@ -925,7 +925,10 @@ export function getRefineTable(
   }
 
   if (applyResearch) {
-    // T3(낙인 등) 연구 보너스 제거됨 — 현재 T4 연구 보너스는 없음
+    // 영지 연구: t4_1590 11~14강 재련 필요 경험치 20% 감소 (장인의 기운 1.25배 충전 = 1/0.8)
+    if (itemGrade === 't4_1590' && refineTarget >= 11 && refineTarget <= 14) {
+      janginMultiplier = 1.25;
+    }
   }
 
   if (applyHyperExpress) {

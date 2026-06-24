@@ -1249,11 +1249,14 @@ export function GearEstimatePage({ prices }: { prices: MaterialPrices }) {
                     </p>
                   )}
                 <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 border-t border-zinc-100 pt-3 dark:border-zinc-800">
-                  <Checkbox
-                    checked={applyResearch}
-                    onChange={setApplyResearch}
-                    label="영지 연구 적용"
-                  />
+                  {/* 영지 연구는 t4_1590 11~14강에만 적용 — 해당 구간을 더 강화할 부위가 있을 때만 노출 */}
+                  {rows.some((r) => r.grade === 't4_1590' && r.currentNormal <= 13) && (
+                    <Checkbox
+                      checked={applyResearch}
+                      onChange={setApplyResearch}
+                      label="영지 연구 적용"
+                    />
+                  )}
                   {/* 모챌익 익스프레스 할인은 t4_1590 11~18강에만 적용 — 해당 구간을 더 강화할 부위가 있을 때만 노출 */}
                   {rows.some((r) => r.grade === 't4_1590' && r.currentNormal <= 17) && (
                     <Checkbox
