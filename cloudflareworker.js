@@ -2102,7 +2102,7 @@ export default {
           `· 가디언: **${guardian.name}**\n` +
           `· 추천 카드: **${guardian.card}**`;
 
-        return new Response(JSON.stringify({ type: 4, data: { content: resultText, flags: 64 } }), { headers: { 'Content-Type': 'application/json' } });
+        return new Response(JSON.stringify({ type: 4, data: { content: resultText } }), { headers: { 'Content-Type': 'application/json' } });
       }
 
       if (commandName === '완료') {
