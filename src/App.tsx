@@ -20,6 +20,7 @@ import {
 import { syncCharactersWithLostArkAPI, fetchProfile } from './api/lostArkApi';
 import { Modal } from './components/Modal';
 import { RouletteGame } from './components/RouletteGame';
+import { TikatukaGame } from './features/tikatuka/TikatukaGame';
 import { AuctionCalculatorModal } from './components/AuctionCalculatorModal';
 import { GatheringModal } from './components/GatheringModal';
 import { RefineHub } from './features/refine/RefineHub';
@@ -103,6 +104,7 @@ const App: React.FC = () => {
 
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isRouletteModalOpen, setIsRouletteModalOpen] = useState(false);
+    const [isTikatukaModalOpen, setIsTikatukaModalOpen] = useState(false);
     const [isCalcOpen, setIsCalcOpen] = useState(false);
     const [isGatheringModalOpen, setIsGatheringModalOpen] = useState(false);
 
@@ -632,6 +634,7 @@ const App: React.FC = () => {
                         {isGameMenuOpen && (
                             <div className="ml-3 flex flex-col gap-1 border-l border-zinc-200 pl-3 dark:border-zinc-800">
                                 <button onClick={() => setIsRouletteModalOpen(true)} className={subMenuButtonClass}>경매 룰렛</button>
+                                <button onClick={() => setIsTikatukaModalOpen(true)} className={subMenuButtonClass}>티카투카</button>
                             </div>
                         )}
 
@@ -964,6 +967,10 @@ const App: React.FC = () => {
 
                 <Modal open={isRouletteModalOpen} title="경매 아이템 룰렛" onClose={() => setIsRouletteModalOpen(false)} maxWidth="max-w-4xl">
                     <RouletteGame allUserNames={allUserNames} />
+                </Modal>
+
+                <Modal open={isTikatukaModalOpen} title="티카투카" onClose={() => setIsTikatukaModalOpen(false)} maxWidth="max-w-2xl">
+                    <TikatukaGame onClose={() => setIsTikatukaModalOpen(false)} />
                 </Modal>
 
                 <GuestAddModal
