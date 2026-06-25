@@ -21,6 +21,7 @@ import { syncCharactersWithLostArkAPI, fetchProfile } from './api/lostArkApi';
 import { Modal } from './components/Modal';
 import { RouletteGame } from './components/RouletteGame';
 import { TikatukaGame } from './features/tikatuka/TikatukaGame';
+import { TikatukaSim } from './features/tikatuka/TikatukaSim';
 import { AuctionCalculatorModal } from './components/AuctionCalculatorModal';
 import { GatheringModal } from './components/GatheringModal';
 import { RefineHub } from './features/refine/RefineHub';
@@ -532,6 +533,9 @@ const App: React.FC = () => {
         if (location.pathname === '/tikatuka') {
             return { title: '티카투카', Icon: Dices };
         }
+        if (location.pathname === '/tikatuka-sim') {
+            return { title: '티카투카 시뮬', Icon: Dices };
+        }
         return { title: '개인별 진행 현황', Icon: LayoutDashboard };
     }, [location.pathname]);
 
@@ -637,6 +641,7 @@ const App: React.FC = () => {
                             <div className="ml-3 flex flex-col gap-1 border-l border-zinc-200 pl-3 dark:border-zinc-800">
                                 <button onClick={() => setIsRouletteModalOpen(true)} className={subMenuButtonClass}>경매 룰렛</button>
                                 <button onClick={() => handleNavClick('/tikatuka')} className={`${subMenuButtonClass} ${isActive('/tikatuka') ? 'bg-zinc-100 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-100' : ''}`}>티카투카</button>
+                                <button onClick={() => handleNavClick('/tikatuka-sim')} className={`${subMenuButtonClass} ${isActive('/tikatuka-sim') ? 'bg-zinc-100 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-100' : ''}`}>티카투카 시뮬</button>
                             </div>
                         )}
 
@@ -953,6 +958,17 @@ const App: React.FC = () => {
                                         </h2>
                                     </div>
                                     <TikatukaGame />
+                                </section>
+                            } />
+
+                            <Route path="/tikatuka-sim" element={
+                                <section className="mx-auto flex w-full max-w-2xl flex-col gap-6 lg:max-w-5xl">
+                                    <div className="hidden flex-col gap-3 sm:flex-row sm:items-center sm:justify-between md:flex md:h-[38px]">
+                                        <h2 className="flex items-center gap-2 text-xl font-bold text-zinc-900 dark:text-zinc-100">
+                                            <Dices className="text-indigo-500" /> 티카투카 시뮬
+                                        </h2>
+                                    </div>
+                                    <TikatukaSim />
                                 </section>
                             } />
 

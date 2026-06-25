@@ -39,11 +39,12 @@ function ramSlot(slots: (Die | null)[], flingIds: string[], dir: 'left' | 'right
   return dir === 'right' ? hits[0] : hits[hits.length - 1];
 }
 
-// 필드를 디스플레이 슬롯 배열로. innerSide='right'면 먼저 놓은 d0이 오른쪽(안쪽).
+// 필드를 디스플레이 슬롯 배열로 — 같은 값(더블/트리플)을 묶어서 안쪽으로 정렬, 빈칸은 바깥쪽.
+// 내 필드(right)는 오름차순+오른쪽 정렬, 상대(left)는 내림차순+왼쪽 정렬 → 높은 값·묶음이 안쪽(중앙)에 온다.
 function toSlots(field: Die[], innerSide: 'left' | 'right'): (Die | null)[] {
-  const ordered: (Die | null)[] = Array.from({ length: MAX }, (_, i) => field[i] ?? null);
-  // ordered = [d0, d1, d2]. innerSide right면 d0이 맨 오른쪽에 오도록 뒤집는다.
-  return innerSide === 'right' ? ordered.reverse() : ordered;
+  const dice = [...field].sort((a, b) => (innerSide === 'right' ? a.value - b.value : b.value - a.value));
+  const pad: (Die | null)[] = Array.from({ length: MAX - dice.length }, () => null);
+  return innerSide === 'right' ? [...pad, ...dice] : [...dice, ...pad];
 }
 
 export function Board({ state, flingIds, pushFx, aiShieldTarget, adviceTarget, size, onPlace, onPush, onPlaceShield }: Props) {

@@ -307,6 +307,23 @@ function simulateToEnd(
   return evaluate(b, false).winner;
 }
 
+// 현재 보드의 예상 승률(owner 관점) — 지원모드/시뮬 표시용.
+// '지금 점수 차'를 방향으로, 남은 슬롯은 불확실성(50%로 끌어당김)으로 본 라인별 승률을
+// '3라인 중 2개 이상 승리' 확률로 환산. 빈 보드=정확히 50%, 현재 우세/열세를 직관적으로 반영.
+export function estimateWinRate(board: Board, owner: Owner): number {
+  const oppo = opponentOf(owner);
+  const p = LINES.map((line) => {
+    const me = lineSum(board.lines[line][owner]);
+    const op = lineSum(board.lines[line][oppo]);
+    const remain = 3 - board.lines[line][owner].length + (3 - board.lines[line][oppo].length);
+    if (remain === 0) return me > op ? 1 : me < op ? 0 : 0.5;
+    const std = Math.sqrt(remain * VAR_PER_SLOT) || 1e-4;
+    return 1 / (1 + Math.exp(-(me - op) / (0.7 * std)));
+  });
+  const [a, b, c] = p;
+  return a * b * c + a * b * (1 - c) + a * (1 - b) * c + (1 - a) * b * c;
+}
+
 // ── 메인: AI 1턴 의사결정 ─────────────────────────────
 export function decideAi(
   board: Board,
@@ -705,6 +722,13 @@ export function recommendMove(
 ): MoveAdvice | null {
   const moves = legalMoves(board, owner, rolledValue);
   if (moves.length === 0) return null;
+  // 알까기(밀어내기)가 가능하면 우선 추천(사용자 선호). 여러 라인이면 그중 최선을 고른다. 이때 타짜 제안은 건너뜀.
+  const pushMoves = moves.filter((m) => m.kind === 'push');
+  if (pushMoves.length > 0) {
+    const bestPush =
+      pushMoves.length === 1 ? pushMoves[0] : advBestMove(board, owner, rolledValue, pushMoves, Math.random).move;
+    return { action: bestPush.kind, line: bestPush.line, headline: moveHeadline(bestPush), factors: analyzeMove(board, owner, bestPush, rolledValue) };
+  }
   // 실제 최선 수: 루트 얕은 expectimax(상대 6눈 전수) + 끝까지 MC. 근거리 분산을 없애 가장 안정적.
   const best = advBestMove(board, owner, rolledValue, moves, Math.random).move;
 

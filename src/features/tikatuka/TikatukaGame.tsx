@@ -3,8 +3,9 @@ import { useState, useEffect } from 'react';
 import { Dices, Hand, Megaphone, Sparkles, Trophy, RotateCcw, Info, Lightbulb } from 'lucide-react';
 import { useTikatuka } from './useTikatuka';
 import { isFieldFull } from './engine';
-import { recommendMove, recommendChoose, recommendShield, recommendHold, recommendFirstShield } from './ai';
-import type { Factor, FactorTag } from './ai';
+import { recommendMove, recommendChoose, recommendShield, recommendHold, recommendFirstShield, estimateWinRate } from './ai';
+import type { Factor } from './ai';
+import { AdvicePanel } from './components/AdvicePanel';
 import { Board } from './components/Board';
 import { DiceTray } from './components/DiceTray';
 import type { RollAnim } from './components/DiceTray';
@@ -35,25 +36,6 @@ function useIsPc(): boolean {
     return () => mql.removeEventListener('change', onChange);
   }, []);
   return isPc;
-}
-
-// 근거 카테고리 — 표시 순서 + 라벨 칩 색상.
-const TAG_ORDER: FactorTag[] = ['목표', '위험', '자원', '총합', '타짜', '홀드'];
-const TAG_STYLE: Record<FactorTag, string> = {
-  목표: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
-  위험: 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300',
-  자원: 'bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300',
-  총합: 'bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300',
-  타짜: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
-  홀드: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300',
-};
-
-function FactorTagChip({ tag }: { tag: FactorTag }) {
-  return (
-    <span className={`mt-px shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold ${TAG_STYLE[tag]}`}>
-      {tag}
-    </span>
-  );
 }
 
 export function TikatukaGame({ onClose }: { onClose?: () => void }) {
@@ -190,42 +172,16 @@ export function TikatukaGame({ onClose }: { onClose?: () => void }) {
   const tikatukaEnabled =
     myTurn && !state.tikatukaUsed && state.phase !== 'rolling';
 
-  // 추천 패널(헤드라인 + 접기) — PC/모바일 공용 마크업.
+  // 추천 패널(헤드라인 + 접기) — PC/모바일 공용 컴포넌트.
   const advicePanel = advice && (
-    <div
-      className={`rounded-2xl border p-3 ${
-        advice.isHold
-          ? 'border-amber-300 bg-amber-50 dark:border-amber-800/60 dark:bg-amber-950/30'
-          : 'border-emerald-300 bg-emerald-50 dark:border-emerald-800/60 dark:bg-emerald-950/30'
-      }`}
-    >
-      <button
-        type="button"
-        onClick={() => setAdviceOpen((v) => !v)}
-        className="flex w-full items-center justify-between gap-2 text-left"
-      >
-        <span
-          className={`flex items-center gap-1.5 text-sm font-bold ${
-            advice.isHold ? 'text-amber-700 dark:text-amber-300' : 'text-emerald-700 dark:text-emerald-300'
-          }`}
-        >
-          {advice.isHold ? <Hand size={16} /> : <Lightbulb size={16} />} 추천 — {advice.headline}
-        </span>
-        <span className="shrink-0 text-[11px] font-bold text-zinc-400">근거 {adviceOpen ? '▴' : '▾'}</span>
-      </button>
-      {adviceOpen && (
-        <ul className="mt-2 flex flex-col gap-1.5 text-[12px] leading-relaxed text-zinc-700 dark:text-zinc-300">
-          {[...advice.factors]
-            .sort((a, b) => TAG_ORDER.indexOf(a.tag) - TAG_ORDER.indexOf(b.tag))
-            .map((f, i) => (
-              <li key={i} className="flex items-start gap-1.5">
-                <FactorTagChip tag={f.tag} />
-                <span>{f.text}</span>
-              </li>
-            ))}
-        </ul>
-      )}
-    </div>
+    <AdvicePanel
+      headline={advice.headline}
+      factors={advice.factors}
+      isHold={advice.isHold}
+      winRate={advice.winRate}
+      open={adviceOpen}
+      onToggle={() => setAdviceOpen((v) => !v)}
+    />
   );
 
   // ── PC(데스크톱) 레이아웃 — 트레이를 보드 양옆, 큼직하게. 모바일은 아래 기본 return 그대로(미변경). ──
@@ -657,12 +613,17 @@ interface AdviceView {
   chooseIndex?: 0 | 1; // 타짜 택1 추천
   isTazza?: boolean;
   isHold?: boolean; // 홀드 추천(보드 강조 없음, 홀드 버튼 권장)
+  winRate?: number; // 예상 승률(0~1)
 }
 
 function computeAdvice(s: GameState, assist: boolean): AdviceView | null {
   if (!assist) return null;
   if (s.turn !== 'me' || s.winner !== null) return null;
+  const base = computeAdviceBase(s);
+  return base ? { ...base, winRate: estimateWinRate(s.board, 'me') } : null;
+}
 
+function computeAdviceBase(s: GameState): AdviceView | null {
   // 2라인 리드가 고정돼 역전 불가면 홀드를 최우선 추천(더 던지지 말 것).
   if ((s.phase === 'acting' || s.phase === 'rolling') && !s.held) {
     const h = recommendHold(s.board, 'me');
