@@ -39,10 +39,21 @@ function ramSlot(slots: (Die | null)[], flingIds: string[], dir: 'left' | 'right
   return dir === 'right' ? hits[0] : hits[hits.length - 1];
 }
 
-// 필드를 디스플레이 슬롯 배열로 — 같은 값(더블/트리플)을 묶어서 안쪽으로 정렬, 빈칸은 바깥쪽.
-// 내 필드(right)는 오름차순+오른쪽 정렬, 상대(left)는 내림차순+왼쪽 정렬 → 높은 값·묶음이 안쪽(중앙)에 온다.
+// 필드를 디스플레이 슬롯 배열로 — 같은 값(더블/트리플)은 '묶어서 왼쪽', 단일은 오른쪽, 전체는 안쪽으로 압축.
+// 내 필드(right)는 오른쪽 정렬(빈칸 왼쪽), 상대(left)는 왼쪽 정렬(빈칸 오른쪽).
 function toSlots(field: Die[], innerSide: 'left' | 'right'): (Die | null)[] {
-  const dice = [...field].sort((a, b) => (innerSide === 'right' ? a.value - b.value : b.value - a.value));
+  const count = new Map<number, number>();
+  const firstOcc = new Map<number, number>();
+  field.forEach((d, i) => {
+    count.set(d.value, (count.get(d.value) ?? 0) + 1);
+    if (!firstOcc.has(d.value)) firstOcc.set(d.value, i);
+  });
+  const dice = [...field].sort((x, y) => {
+    const gx = count.get(x.value)! >= 2 ? 1 : 0;
+    const gy = count.get(y.value)! >= 2 ? 1 : 0;
+    if (gx !== gy) return gy - gx; // 묶음을 앞(왼쪽)으로
+    return firstOcc.get(x.value)! - firstOcc.get(y.value)!;
+  });
   const pad: (Die | null)[] = Array.from({ length: MAX - dice.length }, () => null);
   return innerSide === 'right' ? [...pad, ...dice] : [...dice, ...pad];
 }

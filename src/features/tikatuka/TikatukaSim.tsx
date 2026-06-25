@@ -57,8 +57,8 @@ function lineSumOf(grid: Grid, line: LineIndex, owner: Owner): number {
   const dice = grid[line][owner].filter((c): c is NonNullable<Cell> => c != null).map((c) => makeDie(c.value, owner, c.shield));
   return lineSum(dice);
 }
-// 같은 값(묶음)을 안쪽으로, 단일은 바깥쪽으로 정렬한 주사위 배열(값 크기 정렬은 안 함 — 첫 등장 순서 유지).
-function groupSorted(dice: NonNullable<Cell>[], owner: Owner): NonNullable<Cell>[] {
+// 같은 값(묶음)을 왼쪽으로, 단일은 오른쪽으로 정렬한 주사위 배열(값 크기 정렬은 안 함 — 첫 등장 순서 유지).
+function groupSorted(dice: NonNullable<Cell>[]): NonNullable<Cell>[] {
   const count = new Map<number, number>();
   const firstOcc = new Map<number, number>();
   dice.forEach((d, i) => {
@@ -68,25 +68,26 @@ function groupSorted(dice: NonNullable<Cell>[], owner: Owner): NonNullable<Cell>
   return [...dice].sort((x, y) => {
     const gx = count.get(x.value)! >= 2 ? 1 : 0;
     const gy = count.get(y.value)! >= 2 ? 1 : 0;
-    if (gx !== gy) return owner === 'me' ? gx - gy : gy - gx; // me: 묶음 오른쪽(안쪽), ai: 묶음 왼쪽(안쪽)
+    if (gx !== gy) return gy - gx; // 묶음을 앞(왼쪽)으로
     return firstOcc.get(x.value)! - firstOcc.get(y.value)!;
   });
 }
+// 안쪽으로 압축 — 내 필드는 오른쪽 정렬(빈칸 왼쪽), 상대는 왼쪽 정렬(빈칸 오른쪽). 묶음은 클러스터 왼쪽에 온다.
 const pack = (dice: NonNullable<Cell>[], owner: Owner): Cell[] => {
   const pad: Cell[] = Array(3 - dice.length).fill(null);
   return owner === 'me' ? [...pad, ...dice] : [...dice, ...pad];
 };
-// 수동 칸 입력용 — 같은 값이 있을 때만 묶고, 없으면 위치 그대로(서로 다른 값 수동 배치 보존).
+// 수동 칸 입력용 — 같은 값이 있을 때만 묶고(왼쪽), 없으면 위치 그대로(서로 다른 값 수동 배치 보존).
 function arrange(cells: Cell[], owner: Owner): Cell[] {
   const dice = cells.filter((c): c is NonNullable<Cell> => c != null);
   const count = new Map<number, number>();
   dice.forEach((d) => count.set(d.value, (count.get(d.value) ?? 0) + 1));
   if (![...count.values()].some((n) => n >= 2)) return cells; // 중복 없음 → 위치 그대로
-  return pack(groupSorted(dice, owner), owner);
+  return pack(groupSorted(dice), owner);
 }
-// 자동 적용·제거(지우기·밀어내기)용 — 항상 안쪽으로 압축(순서 유지 + 같은 값 묶음).
+// 자동 적용·제거(지우기·밀어내기)용 — 항상 안쪽으로 압축(묶음은 왼쪽).
 function compactInner(cells: Cell[], owner: Owner): Cell[] {
-  return pack(groupSorted(cells.filter((c): c is NonNullable<Cell> => c != null), owner), owner);
+  return pack(groupSorted(cells.filter((c): c is NonNullable<Cell> => c != null)), owner);
 }
 
 function loadStore(): { grid: Grid; tazza: boolean } | null {
