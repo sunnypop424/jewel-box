@@ -946,7 +946,7 @@ const App: React.FC = () => {
                             } />
 
                             <Route path="/tikatuka" element={
-                                <section className="mx-auto flex w-full max-w-2xl flex-col gap-6">
+                                <section className="mx-auto flex w-full max-w-2xl flex-col gap-6 lg:max-w-5xl">
                                     <div className="hidden flex-col gap-3 sm:flex-row sm:items-center sm:justify-between md:flex md:h-[38px]">
                                         <h2 className="flex items-center gap-2 text-xl font-bold text-zinc-900 dark:text-zinc-100">
                                             <Dices className="text-indigo-500" /> 티카투카

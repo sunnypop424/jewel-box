@@ -9,6 +9,8 @@ const MAX = 3;
 const LINE_NAMES = ['1번 라인', '2번 라인', '3번 라인'];
 // 주사위 크기 — 화면 폭에 따라 줄어들도록 clamp(모바일에서 3개+3개가 한 줄에 들어오게).
 const DIE_SIZE = 'w-[clamp(26px,8vw,38px)] h-[clamp(26px,8vw,38px)]';
+// PC(큰) 크기 — 양옆 트레이 가로 배치에서 큼직하게.
+const DIE_SIZE_LG = 'w-[clamp(48px,4vw,64px)] h-[clamp(48px,4vw,64px)]';
 
 interface Props {
   state: GameState;
@@ -16,6 +18,7 @@ interface Props {
   pushFx: PushFx | null; // 밀어내기 충돌(들이받는 공격 주사위) 연출
   aiShieldTarget: ShieldPlacement | null; // AI가 쉴드 둘 칸(고민 중 강조)
   adviceTarget: { line: LineIndex; side: Owner } | null; // 지원 모드 추천 강조 칸
+  size?: 'lg'; // 'lg'면 PC용 큰 크기
   onPlace: (line: LineIndex) => void;
   onPush: (line: LineIndex) => void;
   onPlaceShield: (line: LineIndex, owner: Owner) => void;
@@ -43,22 +46,26 @@ function toSlots(field: Die[], innerSide: 'left' | 'right'): (Die | null)[] {
   return innerSide === 'right' ? ordered.reverse() : ordered;
 }
 
-export function Board({ state, flingIds, pushFx, aiShieldTarget, adviceTarget, onPlace, onPush, onPlaceShield }: Props) {
+export function Board({ state, flingIds, pushFx, aiShieldTarget, adviceTarget, size, onPlace, onPush, onPlaceShield }: Props) {
   const myTurn = state.turn === 'me' && state.winner === null;
   const acting = myTurn && state.phase === 'acting' && !!state.rolledDie;
   const placingShield = myTurn && state.phase === 'placingShield' && !!state.pendingShield;
   const rolledValue = state.rolledDie?.value;
+  const lg = size === 'lg';
+  const dieSize = lg ? DIE_SIZE_LG : DIE_SIZE;
 
   const lines: LineIndex[] = [0, 1, 2];
 
   return (
-    <div className="flex flex-col gap-2.5">
-      {/* 진영 헤더 — 나(왼쪽) / 상대(오른쪽) */}
-      <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-1 text-xs font-bold">
-        <span className="text-indigo-600 dark:text-indigo-400">나</span>
-        <span className="text-zinc-400">VS</span>
-        <span className="text-right text-rose-600 dark:text-rose-400">상대 (컴퓨터)</span>
-      </div>
+    <div className={`flex flex-col ${lg ? 'gap-4' : 'gap-2.5'}`}>
+      {/* 진영 헤더 — 나(왼쪽) / 상대(오른쪽). PC는 상단바가 표시하므로 생략(중복 방지). */}
+      {!lg && (
+        <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-1 text-xs font-bold">
+          <span className="text-indigo-600 dark:text-indigo-400">나</span>
+          <span className="text-zinc-400">VS</span>
+          <span className="text-right text-rose-600 dark:text-rose-400">상대 (컴퓨터)</span>
+        </div>
+      )}
 
       {lines.map((line) => {
         const lr = lineResult(state.board, line);
@@ -89,12 +96,13 @@ export function Board({ state, flingIds, pushFx, aiShieldTarget, adviceTarget, o
         return (
           <div
             key={line}
-            className="grid grid-cols-[1fr_auto_1fr] items-stretch gap-1 rounded-2xl border border-zinc-200 bg-zinc-50/60 p-1.5 dark:border-zinc-800 dark:bg-zinc-900/40 sm:gap-2 sm:p-2"
+            className={`grid grid-cols-[1fr_auto_1fr] items-stretch rounded-2xl border border-zinc-200 bg-zinc-50/60 dark:border-zinc-800 dark:bg-zinc-900/40 ${lg ? 'gap-3 p-3' : 'gap-1 p-1.5 sm:gap-2 sm:p-2'}`}
           >
             {/* 내 필드 (왼쪽) — 안쪽=오른쪽. 배치/쉴드 배치 타겟 */}
             <FieldBox
               slots={toSlots(myField, 'right')}
               justify="end"
+              dieSize={dieSize}
               flingIds={flingIds}
               ram={myRam}
               highlight={canPlaceHere ? 'place' : shieldMy || aiShieldMy ? 'shield' : null}
@@ -105,21 +113,22 @@ export function Board({ state, flingIds, pushFx, aiShieldTarget, adviceTarget, o
             />
 
             {/* 라인 정보 — 나(왼쪽) : 상대(오른쪽) */}
-            <div className="flex min-w-0 flex-col items-center justify-center gap-0.5 px-0.5 sm:min-w-[84px] sm:px-1">
-              <span className="hidden text-[10px] font-bold text-zinc-400 sm:block">{LINE_NAMES[line]}</span>
+            <div className={`flex min-w-0 flex-col items-center justify-center gap-0.5 ${lg ? 'min-w-[120px] gap-1 px-2' : 'px-0.5 sm:min-w-[84px] sm:px-1'}`}>
+              <span className={`hidden font-bold text-zinc-400 sm:block ${lg ? 'text-sm' : 'text-[10px]'}`}>{LINE_NAMES[line]}</span>
               <span className="text-[10px] font-bold text-zinc-400 sm:hidden">{line + 1}라인</span>
-              <span className="text-sm font-bold tabular-nums">
+              <span className={`font-bold tabular-nums ${lg ? 'text-2xl' : 'text-sm'}`}>
                 <span className="text-indigo-500">{lr.meSum}</span>
                 <span className="mx-1 text-zinc-300">:</span>
                 <span className="text-rose-500">{lr.aiSum}</span>
               </span>
-              <LineBadge winner={lr.winner} />
+              <LineBadge winner={lr.winner} lg={lg} />
             </div>
 
             {/* 상대 필드 (오른쪽) — 안쪽=왼쪽. 밀어내기/쉴드 배치 타겟 */}
             <FieldBox
               slots={toSlots(aiField, 'left')}
               justify="start"
+              dieSize={dieSize}
               flingIds={flingIds}
               ram={aiRam}
               highlight={canPushHere ? 'push' : shieldAi || aiShieldAi ? 'shield' : null}
@@ -138,6 +147,7 @@ export function Board({ state, flingIds, pushFx, aiShieldTarget, adviceTarget, o
 function FieldBox({
   slots,
   justify,
+  dieSize,
   flingIds,
   ram,
   highlight,
@@ -146,6 +156,7 @@ function FieldBox({
 }: {
   slots: (Die | null)[];
   justify: 'start' | 'end';
+  dieSize: string;
   flingIds: string[];
   ram?: Ram | null;
   highlight: 'place' | 'push' | 'shield' | null;
@@ -183,7 +194,7 @@ function FieldBox({
           <DiePip
             key={d?.id ?? `e${i}`}
             die={d}
-            className={`${DIE_SIZE} ${anim}`}
+            className={`${dieSize} ${anim}`}
             style={
               flinging
                 ? ({ '--tk-kx': d!.owner === 'me' ? '-7px' : '7px' } as React.CSSProperties)
@@ -202,14 +213,14 @@ function FieldBox({
         >
           {slots.map((_d, i) => {
             const isRam = i === ramSlot(slots, flingIds, ram.dir);
-            if (!isRam) return <span key={`r${i}`} className={DIE_SIZE} />;
+            if (!isRam) return <span key={`r${i}`} className={dieSize} />;
             return (
-              <span key={`r${i}`} className={`relative flex ${DIE_SIZE} items-center justify-center`}>
+              <span key={`r${i}`} className={`relative flex ${dieSize} items-center justify-center`}>
                 {/* 충돌 섬광 */}
                 <span className="tk-impact absolute inset-0 rounded-full bg-amber-300/60 blur-[3px]" />
                 <DiePip
                   die={{ id: 'ram', value: ram.value, owner: ram.attacker, shield: false }}
-                  className={`${DIE_SIZE} ${ram.dir === 'right' ? 'tk-ram-right' : 'tk-ram-left'}`}
+                  className={`${dieSize} ${ram.dir === 'right' ? 'tk-ram-right' : 'tk-ram-left'}`}
                 />
               </span>
             );
@@ -220,12 +231,12 @@ function FieldBox({
   );
 }
 
-function LineBadge({ winner }: { winner: Owner | 'tie' }) {
+function LineBadge({ winner, lg }: { winner: Owner | 'tie'; lg?: boolean }) {
   const meta =
     winner === 'me'
       ? { t: '내 승', c: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300' }
       : winner === 'ai'
         ? { t: '상대 승', c: 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300' }
         : { t: '무', c: 'bg-zinc-200 text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300' };
-  return <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${meta.c}`}>{meta.t}</span>;
+  return <span className={`rounded-full font-bold ${lg ? 'px-3 py-1 text-xs' : 'px-2 py-0.5 text-[10px]'} ${meta.c}`}>{meta.t}</span>;
 }

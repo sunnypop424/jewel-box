@@ -15,6 +15,8 @@ export interface RollAnim {
 const LABEL: Record<Owner, string> = { me: '내 주사위', ai: '상대 주사위' };
 // 트레이 주사위 크기 — 화면 폭에 맞춰 스케일.
 const TRAY_DIE = 'w-[clamp(34px,11vw,46px)] h-[clamp(34px,11vw,46px)]';
+// PC(큰) 크기 — 보드 양옆 트레이용.
+const TRAY_DIE_LG = 'w-[clamp(56px,5vw,72px)] h-[clamp(56px,5vw,72px)]';
 
 function synthDie(owner: Owner, value: DieValue, shield = false): Die {
   return { id: `tray-${owner}-${value}`, value, shield, owner };
@@ -28,6 +30,7 @@ export function DiceTray({
   pickable,
   onPick,
   hint,
+  size,
 }: {
   owner: Owner;
   active: boolean; // 이 진영 차례
@@ -36,8 +39,11 @@ export function DiceTray({
   pickable?: boolean; // 타짜 택1 단계
   onPick?: (index: 0 | 1) => void;
   hint?: string; // 보조 안내문
+  size?: 'lg'; // 'lg'면 PC용 큰 트레이(보드 양옆)
 }) {
   const [face, setFace] = useState<DieValue>(1);
+  const lg = size === 'lg';
+  const trayDie = lg ? TRAY_DIE_LG : TRAY_DIE;
 
   // 굴리는 중이면 면을 빠르게 교체.
   useEffect(() => {
@@ -60,15 +66,15 @@ export function DiceTray({
 
   return (
     <div
-      className={`flex min-h-[92px] flex-col items-center gap-1.5 rounded-2xl border bg-white p-2.5 transition-colors dark:bg-zinc-900/50 ${ring}`}
+      className={`flex flex-col items-center rounded-2xl border bg-white transition-colors dark:bg-zinc-900/50 ${ring} ${lg ? 'min-h-[160px] w-[150px] shrink-0 gap-2.5 self-stretch justify-center p-4' : 'min-h-[92px] gap-1.5 p-2.5'}`}
     >
-      <span className={`text-[11px] font-bold ${tone}`}>{LABEL[owner]}</span>
+      <span className={`font-bold ${tone} ${lg ? 'text-sm' : 'text-[11px]'}`}>{LABEL[owner]}</span>
 
-      <div className="flex flex-1 items-center justify-center gap-2">
+      <div className={`flex items-center justify-center ${lg ? 'flex-1 gap-3' : 'flex-1 gap-2'}`}>
         {shield ? (
-          <DiePip die={shield} className={`${TRAY_DIE} tk-shield-in`} />
+          <DiePip die={shield} className={`${trayDie} tk-shield-in`} />
         ) : anim && anim.tumbling ? (
-          <DiePip die={synthDie(owner, face)} className={`${TRAY_DIE} tk-tumble`} />
+          <DiePip die={synthDie(owner, face)} className={`${trayDie} tk-tumble`} />
         ) : anim && anim.values.length > 0 ? (
           anim.values.map((v, i) =>
             pickable && onPick ? (
@@ -78,22 +84,22 @@ export function DiceTray({
                 onClick={() => onPick(i as 0 | 1)}
                 className="touch-manipulation select-none rounded-xl p-0.5 ring-2 ring-transparent transition hover:ring-indigo-400 active:ring-indigo-400"
               >
-                <DiePip die={synthDie(owner, v)} className={`${TRAY_DIE} tk-settle`} />
+                <DiePip die={synthDie(owner, v)} className={`${trayDie} tk-settle`} />
               </button>
             ) : (
               <DiePip
                 key={i}
                 die={synthDie(owner, v)}
-                className={`${TRAY_DIE} tk-settle ${anim.chosen != null && anim.chosen !== i ? 'opacity-40' : ''}`}
+                className={`${trayDie} tk-settle ${anim.chosen != null && anim.chosen !== i ? 'opacity-40' : ''}`}
               />
             )
           )
         ) : (
-          <span className="text-[11px] text-zinc-400">{active ? '…' : '대기'}</span>
+          <span className={`text-zinc-400 ${lg ? 'text-sm' : 'text-[11px]'}`}>{active ? '…' : '대기'}</span>
         )}
       </div>
 
-      {hint && <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400">{hint}</span>}
+      {hint && <span className={`font-bold text-amber-600 dark:text-amber-400 ${lg ? 'text-xs' : 'text-[10px]'}`}>{hint}</span>}
     </div>
   );
 }
