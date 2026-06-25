@@ -1,13 +1,14 @@
 // 티카투카 게임 루트 — 난이도 선택 / 플레이(보드+컨트롤) / 결과.
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Dices, Hand, Megaphone, Sparkles, Trophy, RotateCcw, Info, Lightbulb } from 'lucide-react';
 import { useTikatuka } from './useTikatuka';
 import { isFieldFull } from './engine';
-import { recommendMove, recommendChoose, recommendShield } from './ai';
+import { recommendMove, recommendChoose, recommendShield, recommendHold, recommendFirstShield } from './ai';
+import type { Factor, FactorTag } from './ai';
 import { Board } from './components/Board';
 import { DiceTray } from './components/DiceTray';
 import type { RollAnim } from './components/DiceTray';
-import type { AiLevel, LineIndex, Owner } from './types';
+import type { AiLevel, GameState, LineIndex, Owner } from './types';
 import './tikatuka.css';
 
 const LEVELS: { lv: AiLevel; name: string; desc: string }[] = [
@@ -19,11 +20,48 @@ const LEVELS: { lv: AiLevel; name: string; desc: string }[] = [
   { lv: 5, name: '★★★★★ 마스터', desc: '몬테카를로 탐색' },
 ];
 
+// 근거 카테고리 — 표시 순서 + 라벨 칩 색상.
+const TAG_ORDER: FactorTag[] = ['목표', '위험', '자원', '총합', '타짜', '홀드'];
+const TAG_STYLE: Record<FactorTag, string> = {
+  목표: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
+  위험: 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300',
+  자원: 'bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300',
+  총합: 'bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300',
+  타짜: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
+  홀드: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300',
+};
+
+function FactorTagChip({ tag }: { tag: FactorTag }) {
+  return (
+    <span className={`mt-px shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold ${TAG_STYLE[tag]}`}>
+      {tag}
+    </span>
+  );
+}
+
 export function TikatukaGame({ onClose }: { onClose?: () => void }) {
   const g = useTikatuka();
   const { state } = g;
   const [level, setLevel] = useState<AiLevel>(3);
   const [assist, setAssist] = useState(false); // 지원 모드: 수 추천 + 이유
+  const [adviceOpen, setAdviceOpen] = useState(false); // 추천 근거 펼침(기본 접힘 — 모바일 한 화면 유지)
+  // 지원 모드 추천 — 깊은 몬테카를로라 무거움. 페인트를 막지 않도록 렌더가 아니라 페인트 후(effect)에 계산.
+  // 보드/주사위는 즉시 보이고, 추천은 곧이어 표시됨. 상태가 바뀔 때만 재계산.
+  const [advice, setAdvice] = useState<AdviceView | null>(null);
+  useEffect(() => {
+    if (!assist) {
+      setAdvice(null);
+      return;
+    }
+    let alive = true;
+    const id = setTimeout(() => {
+      if (alive) setAdvice(computeAdvice(state, assist));
+    }, 0);
+    return () => {
+      alive = false;
+      clearTimeout(id);
+    };
+  }, [state, assist]);
 
   // ── 난이도 선택 화면 ──
   if (state.phase === 'coinToss') {
@@ -127,8 +165,6 @@ export function TikatukaGame({ onClose }: { onClose?: () => void }) {
   // AI가 밀어내고 얻은 쉴드 — 트레이에 보여주며 둘 곳 고민.
   const aiPlacingShield = state.turn === 'ai' && state.phase === 'placingShield';
 
-  // 지원 모드 — 현재 상황에 맞는 추천 수 + 근거. (내 차례, 행동 가능한 단계에서만)
-  const advice = computeAdvice(g, assist);
 
   const myTurn = state.turn === 'me' && state.winner === null;
   const tazzaEnabled = myTurn && state.phase === 'acting' && !state.tazzaUsed.me;
@@ -172,20 +208,43 @@ export function TikatukaGame({ onClose }: { onClose?: () => void }) {
         onPlaceShield={g.placeShield}
       />
 
-      {/* 지원 모드 추천 패널 */}
+      {/* 지원 모드 추천 패널 — 헤드라인만 항상 표시, 근거는 접기(기본 접힘) */}
       {advice && (
-        <div className="rounded-2xl border border-emerald-300 bg-emerald-50 p-3 dark:border-emerald-800/60 dark:bg-emerald-950/30">
-          <div className="flex items-center gap-1.5 text-sm font-bold text-emerald-700 dark:text-emerald-300">
-            <Lightbulb size={16} /> 추천 — {advice.headline}
-          </div>
-          <ul className="mt-1.5 flex flex-col gap-1 text-[12px] leading-relaxed text-emerald-900/80 dark:text-emerald-200/80">
-            {advice.factors.map((f, i) => (
-              <li key={i} className="flex gap-1.5">
-                <span className="mt-px text-emerald-500">•</span>
-                <span>{f}</span>
-              </li>
-            ))}
-          </ul>
+        <div
+          className={`rounded-2xl border p-3 ${
+            advice.isHold
+              ? 'border-amber-300 bg-amber-50 dark:border-amber-800/60 dark:bg-amber-950/30'
+              : 'border-emerald-300 bg-emerald-50 dark:border-emerald-800/60 dark:bg-emerald-950/30'
+          }`}
+        >
+          <button
+            type="button"
+            onClick={() => setAdviceOpen((v) => !v)}
+            className="flex w-full items-center justify-between gap-2 text-left"
+          >
+            <span
+              className={`flex items-center gap-1.5 text-sm font-bold ${
+                advice.isHold ? 'text-amber-700 dark:text-amber-300' : 'text-emerald-700 dark:text-emerald-300'
+              }`}
+            >
+              {advice.isHold ? <Hand size={16} /> : <Lightbulb size={16} />} 추천 — {advice.headline}
+            </span>
+            <span className="shrink-0 text-[11px] font-bold text-zinc-400">
+              근거 {adviceOpen ? '▴' : '▾'}
+            </span>
+          </button>
+          {adviceOpen && (
+            <ul className="mt-2 flex flex-col gap-1.5 text-[12px] leading-relaxed text-zinc-700 dark:text-zinc-300">
+              {[...advice.factors]
+                .sort((a, b) => TAG_ORDER.indexOf(a.tag) - TAG_ORDER.indexOf(b.tag))
+                .map((f, i) => (
+                  <li key={i} className="flex items-start gap-1.5">
+                    <FactorTagChip tag={f.tag} />
+                    <span>{f.text}</span>
+                  </li>
+                ))}
+            </ul>
+          )}
         </div>
       )}
 
@@ -401,18 +460,30 @@ function Log({ lines }: { lines: string[] }) {
 // 지원 모드 추천 — 현재 단계에 맞는 추천(+근거)과 강조 대상. 내 차례·행동 단계에서만.
 interface AdviceView {
   headline: string;
-  factors: string[];
+  factors: Factor[];
   line?: LineIndex; // 강조할 라인
   side?: Owner; // 강조할 필드(내/상대)
   chooseIndex?: 0 | 1; // 타짜 택1 추천
   isTazza?: boolean;
+  isHold?: boolean; // 홀드 추천(보드 강조 없음, 홀드 버튼 권장)
 }
 
-function computeAdvice(g: ReturnType<typeof useTikatuka>, assist: boolean): AdviceView | null {
+function computeAdvice(s: GameState, assist: boolean): AdviceView | null {
   if (!assist) return null;
-  const s = g.state;
   if (s.turn !== 'me' || s.winner !== null) return null;
 
+  // 2라인 리드가 고정돼 역전 불가면 홀드를 최우선 추천(더 던지지 말 것).
+  if ((s.phase === 'acting' || s.phase === 'rolling') && !s.held) {
+    const h = recommendHold(s.board, 'me');
+    if (h) return { headline: h.headline, factors: h.factors, isHold: true };
+  }
+
+  // 선공 첫 주사위는 쉴드 — 어느 라인 내 필드에 둘지 추천.
+  if (s.phase === 'acting' && s.rolledDie && s.rolledDie.shield) {
+    const a = recommendFirstShield(s.board, 'me', s.rolledDie.value, !s.tazzaUsed.me);
+    if (!a) return null;
+    return { headline: a.headline, factors: a.factors, line: a.line, side: a.owner };
+  }
   if (s.phase === 'acting' && s.rolledDie && !s.rolledDie.shield) {
     const a = recommendMove(s.board, 'me', s.rolledDie.value, !s.tazzaUsed.me);
     if (!a) return null;
@@ -425,7 +496,20 @@ function computeAdvice(g: ReturnType<typeof useTikatuka>, assist: boolean): Advi
     };
   }
   if (s.phase === 'choosingDie' && s.rolledChoices) {
-    const a = recommendChoose(s.board, 'me', [s.rolledChoices[0].value, s.rolledChoices[1].value]);
+    const [d0, d1] = s.rolledChoices;
+    // 선공 첫 턴 타짜 → 둘 다 쉴드. 더 높은 값을 골라 밀리지 않는 앵커로.
+    if (d0.shield) {
+      const index: 0 | 1 = d1.value > d0.value ? 1 : 0;
+      const chosen = s.rolledChoices[index].value;
+      return {
+        headline: `${chosen}를 선택`,
+        factors: [
+          { tag: '자원', text: `둘 다 쉴드예요(선공 첫 턴). 더 높은 ${chosen}을(를) 골라 밀리지 않는 고점 앵커로 쓰세요.` },
+        ],
+        chooseIndex: index,
+      };
+    }
+    const a = recommendChoose(s.board, 'me', [d0.value, d1.value]);
     return { headline: a.headline, factors: a.factors, chooseIndex: a.index };
   }
   if (s.phase === 'placingShield' && s.pendingShield) {

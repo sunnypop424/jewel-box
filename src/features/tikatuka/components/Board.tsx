@@ -200,7 +200,7 @@ function FieldBox({
         <span
           className={`pointer-events-none absolute inset-0 z-40 flex items-center gap-1 p-1 sm:gap-1.5 sm:p-1.5 ${justify === 'end' ? 'justify-end' : 'justify-start'}`}
         >
-          {slots.map((d, i) => {
+          {slots.map((_d, i) => {
             const isRam = i === ramSlot(slots, flingIds, ram.dir);
             if (!isRam) return <span key={`r${i}`} className={DIE_SIZE} />;
             return (

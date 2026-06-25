@@ -174,7 +174,7 @@ function relevantMaterials(
         const bucket = `${r.advTier}_${b}`;
         if (!ADV_BUCKETS.has(bucket)) continue;
         try {
-          const t = getAdvancedRefineTable(r.type, bucket as AdvancedRefineTarget, applyMochalik);
+          const t = getAdvancedRefineTable(r.type, bucket as AdvancedRefineTarget);
           Object.keys(t.amount).forEach((k) => set.add(k));
           Object.keys(t.breath).forEach((k) => set.add(k));
           if (t.book) set.add(t.book);

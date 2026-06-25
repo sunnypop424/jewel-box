@@ -74,7 +74,7 @@ export function useTikatuka() {
   //    모든 setState는 타이머 콜백 안에서만(효과 본문 동기 호출 금지).
   useEffect(() => {
     if (state.phase !== 'aiThinking' || state.turn !== 'ai') return;
-    const t = decideAi(state.board, state.aiLevel, state.tazzaUsed.ai, Math.random, 'ai');
+    const t = decideAi(state.board, state.aiLevel, state.tazzaUsed.ai, Math.random, 'ai', state.pendingFirstShield === 'ai');
     const timers: ReturnType<typeof setTimeout>[] = [];
     const at = (ms: number, fn: () => void) => timers.push(setTimeout(fn, ms));
 

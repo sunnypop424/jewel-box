@@ -145,4 +145,6 @@ console.log('[회귀] 수동 홀드 영구성 + 종료 판정');
 }
 
 console.log(`\n=== ${fail === 0 ? '전체 통과' : fail + '건 실패'} (assert ${pass}/${pass + fail}) ===`);
+// node 실행 전용(브라우저 앱 tsconfig엔 @types/node 없음) — 최소 선언으로 타입만 충족.
+declare const process: { exit(code: number): never } | undefined;
 if (typeof process !== 'undefined') process.exit(fail === 0 ? 0 : 1);

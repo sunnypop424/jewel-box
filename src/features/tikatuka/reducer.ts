@@ -125,7 +125,8 @@ export function reducer(state: GameState, action: Action): GameState {
     case 'USE_TAZZA': {
       if (state.phase !== 'acting' || state.turn !== 'me') return state;
       if (state.tazzaUsed.me || state.winner !== null || !state.rolledDie) return state;
-      const second = makeDie(action.die.value, 'me', false);
+      // 선공 첫 턴이면 첫 주사위가 쉴드 → 타짜 재굴림도 쉴드여야 함(현재 주사위의 쉴드 여부를 따름).
+      const second = makeDie(action.die.value, 'me', state.rolledDie.shield);
       return {
         ...state,
         rolledChoices: [state.rolledDie, second],
