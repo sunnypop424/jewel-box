@@ -629,6 +629,19 @@ function analyzeMove(board: Board, owner: Owner, move: Move, value: DieValue): F
         facts.push(F('자원', `상대 필드가 이미 꽉 차 이 라인에선 상대가 밀 수 없어요 — 안전지대의 ${pairWord}예요.`));
     } else if (value <= 2 && a < 0.4) {
       facts.push(F('목표', `낮은 눈은 이 제물 라인에 버리고, 주력 2라인 슬롯은 고눈/쉴드용으로 아껴요.`));
+      facts.push(F('자원', `팁: AI는 알까기가 가능하면 거의 항상 청소해요 — 낮은 수(1·2·3)를 이 라인에 모아두면 AI가 그 값을 굴렸을 때 청소에 턴을 낭비하도록 유도할 수 있어요.`));
+    }
+
+    // 왜 알까기 대신 배치인가 — 같은 값으로 알까기가 가능했는데도 배치가 더 나은 이유(저점 청소·변수 회피).
+    const pushLine = LINES.find((l) => canPush(board, l, owner, value));
+    if (pushLine !== undefined) {
+      const stk = board.lines[pushLine][oppo].filter((d) => !d.shield && d.value === value);
+      const stkPts = value * (2 * stk.length - 1);
+      const pword = stk.length >= 3 ? '트리플' : stk.length === 2 ? '페어' : '단일';
+      if (stkPts <= 9)
+        facts.push(F('위험', `${ADV_LINE[pushLine]} 라인 상대 ${value} ${pword}(${stkPts}점) 알까기도 가능하지만 — 낮은 청소에 ${value}를 소모하기보단 이 배치가 승률이 높아요(높은 눈 낭비·불필요한 변수 회피).`));
+      else
+        facts.push(F('위험', `${ADV_LINE[pushLine]} 라인 알까기도 가능하지만, 끝까지 계산하면 이 배치가 승률이 더 높아요(자원 보존·2라인 집중).`));
     }
 
     // 필드잠금 안내: 이 배치로 내 필드가 꽉 차면 그 라인 밀어내기·쉴드 수급 권리를 잃는다.
@@ -836,7 +849,7 @@ export function recommendHold(board: Board, owner: Owner): HoldAdvice | null {
     factors: [
       F('홀드', `${labels} 라인을 이미 이기고 있고, 그 리드가 쉴드/필드잠금으로 고정돼 있어요.`),
       F('홀드', `상대가 남은 슬롯을 최선으로 채우거나 내 비쉴드 주사위를 밀어내도 이 2라인은 뒤집히지 않아요.`),
-      F('위험', `더 던질수록 내 비쉴드 주사위가 밀릴 위험만 커져요 — 홀드로 이 판을 얼리는 게 안전해요.`),
+      F('위험', `더 던질수록 내 비쉴드 주사위가 밀릴 위험만 커져요. 강제 알까기로 괜한 변수를 만들 바엔 홀드로 판을 닫는 게 안전해요.`),
       F('홀드', `홀드는 AI가 못 쓰는 비대칭 카드예요(AI는 계속 던집니다).`),
     ],
   };

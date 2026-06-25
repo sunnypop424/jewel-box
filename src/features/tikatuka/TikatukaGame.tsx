@@ -291,9 +291,11 @@ export function TikatukaGame({ onClose }: { onClose?: () => void }) {
       <div className="flex flex-col gap-5">
         {/* 간단 상단바 — 나 / 컴퓨터 + 현재 턴. 게임 종료 시엔 결과 패널이 점수를 표시하므로 숨김(중복 방지). */}
         {state.winner === null && (
-          <div className="flex items-center justify-between gap-4">
-            <PcPlayerTag owner="me" label="나" active={myTurn} note={state.held ? '홀드 중' : undefined} />
-            <div className="flex items-center gap-3">
+          <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-4">
+            <div className="justify-self-start">
+              <PcPlayerTag owner="me" label="나" active={myTurn} note={state.held ? '홀드 중' : undefined} />
+            </div>
+            <div className="flex items-center justify-self-center gap-3">
               {state.tikatukaUsed && <span className="text-sm font-bold text-fuchsia-500">티카투카!</span>}
               <button
                 type="button"
@@ -306,7 +308,9 @@ export function TikatukaGame({ onClose }: { onClose?: () => void }) {
                 <Lightbulb size={16} /> 지원 {assist ? 'ON' : 'OFF'}
               </button>
             </div>
-            <PcPlayerTag owner="ai" label={`컴퓨터 ★${state.aiLevel}`} active={state.turn === 'ai'} />
+            <div className="justify-self-end">
+              <PcPlayerTag owner="ai" label={`컴퓨터 ★${state.aiLevel}`} active={state.turn === 'ai'} />
+            </div>
           </div>
         )}
 
