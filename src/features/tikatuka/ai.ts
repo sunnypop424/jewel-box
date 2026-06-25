@@ -253,10 +253,9 @@ const MC_MAX_SIM = 1600;
 const MC_MARGIN = 0.08; // ★5: 롤아웃 승률이 ★4 최상위를 이 정도 넘어야 선택을 뒤집음(노이즈 오버라이드 억제 → ★5 ≥ ★4 보장)
 const ROLLOUT_MAX_TURNS = 80;
 
-// 지원모드 전용 — 페인트 후 비동기로 1회만 돌아 in-game AI보다 깊게 탐색.
-// 루트 후보를 전부(라인당 1, 최대 3) + 후보당 롤아웃을 끝까지(게임 종료) 돌려 '실제 최선 수'에 수렴.
-// 깊이는 항상 '게임 끝까지'(모든 남은 수). playouts는 표본 수(정확도) — 많이 읽을수록 추천이 안정적.
-const ADV_MC: McConfig = { topK: 3, playouts: 800, maxSim: 2400 };
+// 지원모드 전용 — 페인트 후 비동기로 1회만 돈다(속도 제약 약함).
+// 루트 얕은 expectimax(상대 6눈 전수 전개) + 가지당 끝까지 MC 롤아웃. 한 후보당 6×이 표본을 읽는다.
+const ADV_PLAYOUTS_PER_BRANCH = 150;
 
 interface McConfig {
   topK: number;
@@ -470,6 +469,69 @@ function pickByMonteCarlo(
   return mcEvaluate(board, owner, value, moves, rng, undefined, shield).move;
 }
 
+// 한 진영의 '주어진 눈 1수'를 ★2 그리디로 적용(push면 기대 쉴드 4 근사 배치). 루트 expectimax의 상대 응수용.
+function greedyResponse(board: Board, owner: Owner, value: DieValue, rng: () => number): Board {
+  const moves = legalMoves(board, owner, value);
+  if (moves.length === 0) return board; // 합법수 없음 → 패스
+  let best = moves[0];
+  let bestScore = -Infinity;
+  for (const m of moves) {
+    const after = applyMove(board, owner, m, value);
+    const sc = boardScore(after, owner) + (m.kind === 'push' ? PUSH_BONUS : 0);
+    if (sc > bestScore) {
+      bestScore = sc;
+      best = m;
+    }
+  }
+  let next = applyMove(board, owner, best, value);
+  if (best.kind === 'push') {
+    const place = pickShield(next, owner, 4, 2, rng);
+    if (place) next = placeDie(next, place.line, place.owner, makeDie(4, owner, true));
+  }
+  return next;
+}
+
+// 지원모드 전용 루트 얕은 expectimax: 후보 수마다 상대의 다음 6눈을 '정확히 전개'(샘플링 X)하고,
+// 각 가지 뒤만 MC로 끝까지 롤아웃해 평균 승률을 낸다. 근거리(상대 응수)의 분산을 없애 추천이 더 안정·정확.
+function advBestMove(
+  board: Board,
+  owner: Owner,
+  value: DieValue,
+  moves: Move[],
+  rng: () => number,
+  shield = false
+): { move: Move; winRate: number } {
+  const oppo = opponentOf(owner);
+  let best = moves[0];
+  let bestRate = -1;
+  for (const m of moves) {
+    // 1) 내 수 적용(push면 기대 쉴드 4 근사 배치)
+    let b1 = applyMove(board, owner, m, value, shield);
+    if (m.kind === 'push') {
+      const pl = pickShield(b1, owner, 4, 2, rng);
+      if (pl) b1 = placeDie(b1, pl.line, pl.owner, makeDie(4, owner, true));
+    }
+    // 2) 상대의 다음 6눈을 정확히 전개 → 각 응수 뒤(내 턴)부터 MC 롤아웃
+    let acc = 0;
+    for (let w = 1 as DieValue; w <= 6; w = (w + 1) as DieValue) {
+      const b2 = greedyResponse(b1, oppo, w, rng);
+      let win = 0;
+      for (let i = 0; i < ADV_PLAYOUTS_PER_BRANCH; i++) {
+        const res = simulateToEnd(b2, owner, rng);
+        if (res === owner) win += 1;
+        else if (res === 'draw') win += 0.5;
+      }
+      acc += win / ADV_PLAYOUTS_PER_BRANCH;
+    }
+    const rate = acc / 6; // 6눈 균등 평균(상대 굴림은 공정)
+    if (rate > bestRate) {
+      bestRate = rate;
+      best = m;
+    }
+  }
+  return { move: best, winRate: bestRate };
+}
+
 // ── 지원 모드(수 추천) ─────────────────────────────────
 // 플레이어 관점으로 같은 평가 엔진을 돌려 '최선 수 + 여러 근거'를 만든다(난이도와 무관하게 항상 강한 조언).
 // 한 줄 결론(headline) + AI가 실제로 따지는 요소들(factors: 라인별 승률·2라인 목표·취약점·타이브레이커·쉴드·상대 위협)을 분해해 보여준다.
@@ -630,8 +692,8 @@ export function recommendMove(
 ): MoveAdvice | null {
   const moves = legalMoves(board, owner, rolledValue);
   if (moves.length === 0) return null;
-  // 실제 최선 수: ★5보다 깊은 전용 몬테카를로(게임 끝까지 여러 수 앞을 600판/후보 시뮬).
-  const best = mcEvaluate(board, owner, rolledValue, moves, Math.random, ADV_MC).move;
+  // 실제 최선 수: 루트 얕은 expectimax(상대 6눈 전수) + 끝까지 MC. 근거리 분산을 없애 가장 안정적.
+  const best = advBestMove(board, owner, rolledValue, moves, Math.random).move;
 
   // 타짜: 다시 굴렸을 때 기대 이득이 충분할 때만 권한다(6 같은 높은 눈은 권하지 않음).
   if (tazzaAvailable) {
@@ -663,7 +725,7 @@ export function recommendChoose(
   const evalOf = (v: DieValue): { move: Move | null; winRate: number } => {
     const ms = legalMoves(board, owner, v);
     if (ms.length === 0) return { move: null, winRate: -1 };
-    return mcEvaluate(board, owner, v, ms, Math.random, ADV_MC);
+    return advBestMove(board, owner, v, ms, Math.random);
   };
   const e0 = evalOf(choices[0]);
   const e1 = evalOf(choices[1]);
