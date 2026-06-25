@@ -39,23 +39,23 @@ function ramSlot(slots: (Die | null)[], flingIds: string[], dir: 'left' | 'right
   return dir === 'right' ? hits[0] : hits[hits.length - 1];
 }
 
-// 필드를 디스플레이 슬롯 배열로 — 같은 값(더블/트리플)은 '묶어서 왼쪽', 단일은 오른쪽, 전체는 안쪽으로 압축.
-// 내 필드(right)는 오른쪽 정렬(빈칸 왼쪽), 상대(left)는 왼쪽 정렬(빈칸 오른쪽).
+// 필드를 디스플레이 슬롯 배열로 — 실제 게임 규칙 반영:
+//  · 먼저 놓은 주사위가 안쪽(칸막이 쪽) 끝에 고정되고, 새 주사위는 바깥쪽으로 쌓인다.
+//  · 같은 눈은 한 덩어리로 묶인다(점수 보너스 묶음). 묶음 위치는 그 값이 '처음 놓인 순서'를 따르며,
+//    서로 다른 값끼리는 놓인 순서를 그대로 유지한다(값이 크다고 앞으로 당기지 않음).
+//    예) 6,4,6 으로 놓아도 두 6이 6의 첫 자리로 모여 6,6,4 가 된다.
+// 내 필드(right)는 안쪽=오른쪽, 상대(left)는 안쪽=왼쪽. 빈칸은 항상 바깥쪽.
 function toSlots(field: Die[], innerSide: 'left' | 'right'): (Die | null)[] {
-  const count = new Map<number, number>();
   const firstOcc = new Map<number, number>();
   field.forEach((d, i) => {
-    count.set(d.value, (count.get(d.value) ?? 0) + 1);
     if (!firstOcc.has(d.value)) firstOcc.set(d.value, i);
   });
-  const dice = [...field].sort((x, y) => {
-    const gx = count.get(x.value)! >= 2 ? 1 : 0;
-    const gy = count.get(y.value)! >= 2 ? 1 : 0;
-    if (gx !== gy) return gy - gx; // 묶음을 앞(왼쪽)으로
-    return firstOcc.get(x.value)! - firstOcc.get(y.value)!;
-  });
-  const pad: (Die | null)[] = Array.from({ length: MAX - dice.length }, () => null);
-  return innerSide === 'right' ? [...pad, ...dice] : [...dice, ...pad];
+  // 처음 놓인 순서로 정렬 → 같은 값이 자동으로 인접(묶음). 안정 정렬이라 같은 값끼리 놓인 순서는 유지.
+  const ordered = [...field].sort((a, b) => firstOcc.get(a.value)! - firstOcc.get(b.value)!);
+  const pad: (Die | null)[] = Array.from({ length: MAX - ordered.length }, () => null);
+  return innerSide === 'right'
+    ? [...pad, ...ordered.reverse()] // 안쪽=오른쪽 → 먼저 놓은(묶음 기준) 주사위가 맨 오른쪽
+    : [...ordered, ...pad]; // 안쪽=왼쪽 → 먼저 놓은 주사위가 맨 왼쪽
 }
 
 export function Board({ state, flingIds, pushFx, aiShieldTarget, adviceTarget, size, onPlace, onPush, onPlaceShield }: Props) {

@@ -1,96 +1,93 @@
-// 티카투카 시뮬 — 실전 인게임 보조. 사용자가 보드(3x3 내/상대)와 굴린 주사위를 수동 입력하면
-// 게임과 같은 추천 엔진(끝까지 시뮬 MC)이 최선 수 + 근거를 보여준다. (상대 주사위 굴림 입력은 불필요)
-import { useState, useEffect } from 'react';
-import { Info, RotateCcw, ShieldCheck, Check, Trash2 } from 'lucide-react';
-import { createEmptyBoard, lineSum, makeDie } from './engine';
-import {
-  recommendMove,
-  recommendShield,
-  recommendFirstShield,
-  recommendChoose,
-  recommendHold,
-  estimateWinRate,
-} from './ai';
+// 티카투카 시뮬 — 실전 인게임 보조. 선공부터 턴을 번갈아 잡고, '현재 턴' 기준으로 보드 클릭을 해석한다.
+//  · 내 턴: 내 필드 클릭 = 놓기 / 상대 필드 클릭 = 알까기. 상대 턴: 상대 필드 = 놓기 / 내 필드 = 알까기.
+//  · 알까기는 미는 쪽(현재 턴)의 그 라인 필드가 꽉 차면 불가(필드잠금). 불가능한 칸은 비활성화.
+//  · 알까기 성공 → 미는 쪽이 쉴드 1개 획득. 값을 입력하면(내 쉴드면 추천 칸 강조) 칸 클릭해 배치(어느 필드든).
+//  · 선공측의 '첫 주사위'는 쉴드로 자동. 행동을 마치면 턴이 자동으로 넘어간다(필요 시 수동 전환).
+//  · 타짜: 두 눈을 입력하면 어느 쪽이 좋은지 추천 → 선택하면 그 값으로 진행(게임당 1회 소진).
+import { useState, useEffect, useRef } from 'react';
+import { Info, RotateCcw, Undo2, ShieldCheck, Flag, Sparkles, X, ArrowLeftRight, Loader2 } from 'lucide-react';
+import { createEmptyBoard, lineSum, makeDie, opponentOf } from './engine';
+import { estimateWinRate } from './ai';
 import type { Factor } from './ai';
 import type { Board, Die, DieValue, LineIndex, Owner } from './types';
 import { DiePip } from './components/DiePip';
 import { AdvicePanel, WinRateBar } from './components/AdvicePanel';
 
 const LINES: LineIndex[] = [0, 1, 2];
-const SLOTS = [0, 1, 2];
 const VALUES: DieValue[] = [1, 2, 3, 4, 5, 6];
-const STORE_KEY = 'tikatukaSim_v2';
+const STORE_KEY = 'tikatukaSim_v5';
 // 보드 주사위 크기 — 모바일 clamp, PC 큼직.
 const DIE = 'h-[clamp(34px,9vw,44px)] w-[clamp(34px,9vw,44px)] lg:h-14 lg:w-14';
 
-type Mode = 'normal' | 'shield' | 'pick';
-// 칸 한 개 — 비었으면 null, 채워졌으면 값+쉴드.
-type Cell = { value: DieValue; shield: boolean } | null;
-type Grid = { me: Cell[]; ai: Cell[] }[]; // 3 라인, 각 me/ai = 길이3
+// 주사위 한 개(값 + 쉴드 여부 + 소유자). 필드는 '배치 순서' 배열 — [0]이 먼저 놓은 것(가장 안쪽).
+// owner = 놓은 쪽. 일반 주사위는 자기 필드 주인과 같지만, 쉴드는 상대 필드에 둘 수 있어 필드와 다를 수 있다
+// (예: 내가 알까기로 얻은 쉴드를 상대 필드에 배치 → 필드는 상대지만 owner는 나 → 내 색으로 표시).
+type Piece = { value: DieValue; shield: boolean; owner: Owner };
+type Field = Piece[];
+type Grid = { me: Field; ai: Field }[]; // 3 라인
+// 알까기 직후 획득한 쉴드 배치 대기 — pusher가 얻은 쪽, value는 사용자가 입력(실게임에서 본 난수 값).
+type Pending = { pusher: Owner; value: DieValue | null };
+// 필드 클릭이 의미하는 동작.
+type FieldAct = 'place' | 'push' | 'shield' | null;
+// 되돌리기 스냅샷.
+type Snap = { grid: Grid; firstShield: Owner | null; turn: Owner; pending: Pending | null };
 
 interface SimAdvice {
-  kind: 'place' | 'push' | 'shield' | 'tazza' | 'choose' | 'hold' | 'none';
+  kind: string;
   headline: string;
   factors: Factor[];
-  isHold?: boolean;
   line?: LineIndex;
   side?: Owner;
-  chooseIndex?: 0 | 1;
+  chooseIndex?: 0 | 1; // 타짜 택1 추천(0=첫 눈, 1=둘째 눈)
 }
 
 function emptyGrid(): Grid {
-  return LINES.map(() => ({ me: [null, null, null], ai: [null, null, null] }));
+  return LINES.map(() => ({ me: [], ai: [] }));
 }
-// 시뮬 그리드 → 엔진 보드(빈 칸 제외, 위치 무관 — 점수/추천은 순서 영향 없음).
+// 시뮬 그리드 → 엔진 보드(배치 순서 그대로). 쉴드 소유자는 점수/추천에 영향 없어 필드 주인으로 만든다.
 function gridToBoard(grid: Grid): Board {
   const b = createEmptyBoard();
   LINES.forEach((line) => {
     (['me', 'ai'] as Owner[]).forEach((owner) => {
-      grid[line][owner].forEach((cell) => {
-        if (cell) b.lines[line][owner].push(makeDie(cell.value, owner, cell.shield));
-      });
+      grid[line][owner].forEach((p) => b.lines[line][owner].push(makeDie(p.value, owner, p.shield)));
     });
   });
   return b;
 }
-function lineSumOf(grid: Grid, line: LineIndex, owner: Owner): number {
-  const dice = grid[line][owner].filter((c): c is NonNullable<Cell> => c != null).map((c) => makeDie(c.value, owner, c.shield));
-  return lineSum(dice);
+function fieldSum(field: Field, owner: Owner): number {
+  return lineSum(field.map((p) => makeDie(p.value, owner, p.shield)));
 }
-// 같은 값(묶음)을 왼쪽으로, 단일은 오른쪽으로 정렬한 주사위 배열(값 크기 정렬은 안 함 — 첫 등장 순서 유지).
-function groupSorted(dice: NonNullable<Cell>[]): NonNullable<Cell>[] {
-  const count = new Map<number, number>();
+// 표시 슬롯 — 게임 Board.toSlots와 동일 규칙: 같은 값은 '처음 놓인 순서'로 묶고, 먼저 놓은 게 안쪽.
+function displaySlots(field: Field, owner: Owner): (Piece | null)[] {
   const firstOcc = new Map<number, number>();
-  dice.forEach((d, i) => {
-    count.set(d.value, (count.get(d.value) ?? 0) + 1);
-    if (!firstOcc.has(d.value)) firstOcc.set(d.value, i);
+  field.forEach((p, i) => {
+    if (!firstOcc.has(p.value)) firstOcc.set(p.value, i);
   });
-  return [...dice].sort((x, y) => {
-    const gx = count.get(x.value)! >= 2 ? 1 : 0;
-    const gy = count.get(y.value)! >= 2 ? 1 : 0;
-    if (gx !== gy) return gy - gx; // 묶음을 앞(왼쪽)으로
-    return firstOcc.get(x.value)! - firstOcc.get(y.value)!;
-  });
+  const ordered = [...field].sort((a, b) => firstOcc.get(a.value)! - firstOcc.get(b.value)!);
+  const pad: (Piece | null)[] = Array.from({ length: 3 - ordered.length }, () => null);
+  return owner === 'me' ? [...pad, ...ordered.reverse()] : [...ordered, ...pad];
 }
-// 안쪽으로 압축 — 내 필드는 오른쪽 정렬(빈칸 왼쪽), 상대는 왼쪽 정렬(빈칸 오른쪽). 묶음은 클러스터 왼쪽에 온다.
-const pack = (dice: NonNullable<Cell>[], owner: Owner): Cell[] => {
-  const pad: Cell[] = Array(3 - dice.length).fill(null);
-  return owner === 'me' ? [...pad, ...dice] : [...dice, ...pad];
-};
-// 수동 칸 입력용 — 같은 값이 있을 때만 묶고(왼쪽), 없으면 위치 그대로(서로 다른 값 수동 배치 보존).
-function arrange(cells: Cell[], owner: Owner): Cell[] {
-  const dice = cells.filter((c): c is NonNullable<Cell> => c != null);
-  const count = new Map<number, number>();
-  dice.forEach((d) => count.set(d.value, (count.get(d.value) ?? 0) + 1));
-  if (![...count.values()].some((n) => n >= 2)) return cells; // 중복 없음 → 위치 그대로
-  return pack(groupSorted(dice), owner);
+function addPiece(grid: Grid, line: LineIndex, owner: Owner, p: Piece): Grid {
+  return grid.map((ln, i) => (i !== line ? ln : { ...ln, [owner]: [...ln[owner], p] }));
 }
-// 자동 적용·제거(지우기·밀어내기)용 — 항상 안쪽으로 압축(묶음은 왼쪽).
-function compactInner(cells: Cell[], owner: Owner): Cell[] {
-  return pack(groupSorted(cells.filter((c): c is NonNullable<Cell> => c != null)), owner);
+function removeMatching(grid: Grid, line: LineIndex, owner: Owner, value: DieValue): Grid {
+  return grid.map((ln, i) =>
+    i !== line ? ln : { ...ln, [owner]: ln[owner].filter((p) => p.shield || p.value !== value) }
+  );
+}
+// 한 진영의 3개 필드가 모두 가득 — 둘 곳도 없고, 필드잠금으로 알까기도 불가 → 그 턴은 자동 패스 대상.
+function allFull(grid: Grid, owner: Owner): boolean {
+  return LINES.every((l) => grid[l][owner].length >= 3);
 }
 
-function loadStore(): { grid: Grid; tazza: boolean } | null {
+function loadStore(): {
+  grid: Grid;
+  firstTurn: Owner;
+  turn: Owner;
+  started: boolean;
+  firstShield: Owner | null;
+  tazza: boolean;
+} | null {
   if (typeof window === 'undefined') return null;
   try {
     const raw = localStorage.getItem(STORE_KEY);
@@ -105,118 +102,232 @@ function loadStore(): { grid: Grid; tazza: boolean } | null {
 
 export function TikatukaSim() {
   const initial = loadStore();
+  // 새로고침하면 항상 선공 선택부터 — started는 복원하지 않는다(저장값 무시).
+  const [started, setStarted] = useState<boolean>(false);
+  const [firstTurn, setFirstTurn] = useState<Owner>(() => initial?.firstTurn ?? 'me');
+  const [turn, setTurn] = useState<Owner>(() => initial?.turn ?? 'me'); // 현재 턴(행동 주체)
+  // 아직 첫 쉴드를 놓지 않은 선공측(놓으면 null). 선공측 첫 주사위 = 쉴드.
+  const [firstShield, setFirstShield] = useState<Owner | null>(() => initial?.firstShield ?? null);
   const [grid, setGrid] = useState<Grid>(() => initial?.grid ?? emptyGrid());
   const [tazza, setTazza] = useState<boolean>(() => initial?.tazza ?? true);
-  const [mode, setMode] = useState<Mode>('normal');
-  const [v1, setV1] = useState<DieValue | null>(null);
-  const [v2, setV2] = useState<DieValue | null>(null);
-  // 칸 편집 picker.
-  const [editing, setEditing] = useState<{ line: LineIndex; owner: Owner; slot: number } | null>(null);
-  const [editShield, setEditShield] = useState(false);
-  // 추천(비동기).
+  const [value, setValue] = useState<DieValue | null>(null);
+  const [pending, setPending] = useState<Pending | null>(null);
+  const [tazzaMode, setTazzaMode] = useState(false); // 타짜 택1 입력 중
+  const [t2, setT2] = useState<DieValue | null>(null); // 타짜 둘째 눈(첫 눈 = value)
+  const [past, setPast] = useState<Snap[]>([]);
   const [advice, setAdvice] = useState<SimAdvice | null>(null);
   const [adviceOpen, setAdviceOpen] = useState(false);
   const [winRate, setWinRate] = useState<number | null>(null);
+  const [computing, setComputing] = useState(false); // 워커가 최선 수 탐색 중
+  const workerRef = useRef<Worker | null>(null);
+  const reqIdRef = useRef(0);
 
   useEffect(() => {
     try {
-      localStorage.setItem(STORE_KEY, JSON.stringify({ grid, tazza }));
+      localStorage.setItem(STORE_KEY, JSON.stringify({ grid, firstTurn, turn, started, firstShield, tazza }));
     } catch {
       /* 무시 */
     }
-  }, [grid, tazza]);
+  }, [grid, firstTurn, turn, started, firstShield, tazza]);
 
-  // 추천 — 무거운 MC라 페인트 후 비동기로(렌더 차단 방지).
+  // 깊은 탐색 워커 — 메인 스레드를 막지 않고 최선 수를 비동기 계산. 최신 요청(reqId)만 반영.
   useEffect(() => {
-    let alive = true;
-    const id = setTimeout(() => {
-      if (!alive) return;
-      const board = gridToBoard(grid);
-      setAdvice(computeSimAdvice(board, mode, v1, v2, tazza));
-      setWinRate(estimateWinRate(board, 'me'));
-    }, 0);
-    return () => {
-      alive = false;
-      clearTimeout(id);
+    const w = new Worker(new URL('./advisor.worker.ts', import.meta.url), { type: 'module' });
+    w.onmessage = (e: MessageEvent<{ id: number; winRate: number; advice: SimAdvice | null }>) => {
+      if (e.data.id !== reqIdRef.current) return;
+      setWinRate(e.data.winRate); // 정밀 승률(MC)로 갱신
+      setAdvice(e.data.advice);
+      setComputing(false);
     };
-  }, [grid, mode, v1, v2, tazza]);
+    workerRef.current = w;
+    return () => {
+      w.terminate();
+      workerRef.current = null;
+    };
+  }, []);
 
-  const resetRolled = () => {
-    setV1(null);
-    setV2(null);
-  };
+  // 추천 요청 — 예상 승률은 즉시(가벼움), 최선 수는 워커에 위임(무거운 탐색). 입력이 바뀌면 디바운스 후 요청.
+  // 추천은 '내 턴'에만(상대 턴엔 기록만). 내가 얻은 쉴드 배치만 추천(상대 쉴드는 관찰 기록).
+  useEffect(() => {
+    if (!started) return;
+    const board = gridToBoard(grid);
+    setWinRate(estimateWinRate(board, 'me')); // 즉시 거친 추정 — 워커가 정밀 MC 승률로 갱신
 
-  // 칸 직접 설정 — 같은 값 있으면 묶음 정렬, 없으면 위치 그대로(수동 배치 보존).
-  const setCell = (line: LineIndex, owner: Owner, slot: number, cell: Cell) => {
-    setGrid((g) =>
-      g.map((ln, li) =>
-        li !== line ? ln : { ...ln, [owner]: arrange(ln[owner].map((c, si) => (si === slot ? cell : c)), owner) }
-      )
-    );
-  };
-  const setField = (line: LineIndex, owner: Owner, cells: Cell[]) => {
-    setGrid((g) => g.map((ln, li) => (li !== line ? ln : { ...ln, [owner]: cells })));
-  };
-  // 자동 적용 — 추가 후 항상 안쪽으로 압축(+같은 값 묶음).
-  const addToLine = (line: LineIndex, owner: Owner, value: DieValue, shield: boolean) => {
-    setGrid((g) =>
-      g.map((ln, li) => {
-        if (li !== line) return ln;
-        if (ln[owner].filter((c) => c != null).length >= 3) return ln;
-        return { ...ln, [owner]: compactInner([...ln[owner], { value, shield }], owner) };
-      })
-    );
-  };
-
-  const openEdit = (line: LineIndex, owner: Owner, slot: number) => {
-    setEditing({ line, owner, slot });
-    setEditShield(grid[line][owner][slot]?.shield ?? false);
-  };
-
-  // 추천대로 자동 적용.
-  const applyAdvice = () => {
-    if (!advice) return;
-    if (advice.kind === 'place' && advice.line != null && v1 != null) {
-      addToLine(advice.line, 'me', v1, false);
-      resetRolled();
-    } else if (advice.kind === 'push' && advice.line != null && v1 != null) {
-      // 상대 매칭(비쉴드) 제거 후, 받은 쉴드 값 입력 유도.
-      setGrid((g) =>
-        g.map((ln, li) =>
-          li !== advice.line
-            ? ln
-            : { ...ln, ai: compactInner(ln.ai.map((c) => (c && !c.shield && c.value === v1 ? null : c)), 'ai') }
-        )
-      );
-      setMode('shield');
-      resetRolled();
-    } else if (advice.kind === 'shield' && advice.line != null && advice.side != null && v1 != null) {
-      addToLine(advice.line, advice.side, v1, true);
-      setMode('normal'); // 쉴드 배치 후 바로 일반 모드로.
-      resetRolled();
-    } else if (advice.kind === 'choose' && advice.chooseIndex != null) {
-      const chosen = advice.chooseIndex === 0 ? v1 : v2;
-      setMode('normal');
-      setV1(chosen);
-      setV2(null);
-      setTazza(false); // 타짜 택1을 적용했으니 보유 타짜 소진.
+    // 어떤 추천을 계산할지(없으면 승률만 갱신). 추천은 내 턴 / 내가 얻은 쉴드일 때만.
+    let advReq:
+      | { kind: 'move'; value: DieValue; tazza: boolean }
+      | { kind: 'choose'; value: DieValue; value2: DieValue }
+      | { kind: 'shield'; value: DieValue }
+      | null = null;
+    if (pending && pending.value != null) {
+      if (pending.pusher === 'me') advReq = { kind: 'shield', value: pending.value };
+    } else if (pending || turn !== 'me') {
+      advReq = null;
+    } else if (tazzaMode) {
+      if (value != null && t2 != null) advReq = { kind: 'choose', value, value2: t2 };
+    } else if (value != null) {
+      advReq = { kind: 'move', value, tazza };
     }
+
+    setAdvice(null); // 입력이 바뀌었으니 이전 추천 강조 제거(워커 결과로 다시 채움)
+    setComputing(advReq != null);
+    const id = ++reqIdRef.current;
+    const t = setTimeout(() => workerRef.current?.postMessage({ id, board, turn, advReq }), 200);
+    return () => clearTimeout(t);
+  }, [grid, value, t2, tazzaMode, tazza, pending, turn, started]);
+
+  const snapshot = (): Snap => ({ grid, firstShield, turn, pending });
+  const undo = () => {
+    if (!past.length) return;
+    const s = past[past.length - 1];
+    setGrid(s.grid);
+    setFirstShield(s.firstShield);
+    setTurn(s.turn);
+    setPending(s.pending);
+    setPast(past.slice(0, -1));
+    setValue(null);
+    setTazzaMode(false);
+    setT2(null);
   };
 
-  const canApply =
-    advice != null &&
-    (advice.kind === 'place' || advice.kind === 'push' || advice.kind === 'shield' || advice.kind === 'choose');
+  const begin = (ft: Owner) => {
+    setFirstTurn(ft);
+    setTurn(ft);
+    setFirstShield(ft);
+    setGrid(emptyGrid());
+    setPast([]);
+    setPending(null);
+    setValue(null);
+    setTazza(true); // 새 게임 = 타짜(게임당 1회) 새로 보유
+    setTazzaMode(false);
+    setT2(null);
+    setStarted(true);
+  };
+
+  // 행동 후 턴 넘기기 — desired가 둘 곳 없으면(전 필드 풀) 상대로 자동 패스(둘 곳 생길 때까지 상대 턴 지속).
+  // 둘 다 풀이면 보드 가득 → 더 둘 수 없음(종료).
+  const advanceFrom = (g: Grid, desired: Owner) => {
+    const t = allFull(g, desired) && !allFull(g, opponentOf(desired)) ? opponentOf(desired) : desired;
+    setTurn(t);
+    setValue(null);
+    setTazzaMode(false);
+    setT2(null);
+  };
+
+  // 라인 자동 판정 — 상대 라인에 같은 값(비쉴드)이 있으면 알까기 강제, 없으면 내 필드 놓기.
+  // 따라서 한 라인엔 (놓기=내 필드) 또는 (알까기=상대 필드) 중 하나만 켜진다. 미는 쪽 필드가 꽉 차면
+  // 알까기 불가(필드잠금), 놓기도 내 필드가 꽉 차면 불가. (쉴드 배치 대기 중엔 어느 필드든 빈자리에 배치.)
+  const fieldActionOf = (line: LineIndex, owner: Owner): FieldAct => {
+    if (pending && pending.value != null) return grid[line][owner].length < 3 ? 'shield' : null;
+    if (pending || tazzaMode || value == null) return null;
+    const opp = opponentOf(turn);
+    const oppMatch = grid[line][opp].some((p) => !p.shield && p.value === value);
+    const ownFull = grid[line][turn].length >= 3;
+    if (owner === turn) return !ownFull && !oppMatch ? 'place' : null; // 매칭 없으면 놓기
+    return oppMatch && !ownFull ? 'push' : null; // 매칭 있으면 알까기(필드잠금 아니면)
+  };
+
+  const onField = (line: LineIndex, owner: Owner) => {
+    const act = fieldActionOf(line, owner);
+    if (!act) return;
+    setPast((p) => [...p, snapshot()].slice(-40));
+
+    if (act === 'shield') {
+      const ng = addPiece(grid, line, owner, { value: pending!.value!, shield: true, owner: pending!.pusher });
+      setGrid(ng);
+      setPending(null);
+      advanceFrom(ng, opponentOf(turn)); // 쉴드 배치로 그 턴 종료 → 다음 턴(둘 곳 없으면 자동 패스)
+      return;
+    }
+    if (act === 'place') {
+      const isShield = firstShield === owner; // 선공측 첫 주사위 → 쉴드
+      const ng = addPiece(grid, line, owner, { value: value!, shield: isShield, owner });
+      setGrid(ng);
+      if (isShield) setFirstShield(null);
+      advanceFrom(ng, opponentOf(turn));
+      return;
+    }
+    // act === 'push' — 상대 필드(owner)의 같은 값 제거. 미는 쪽=turn → 쉴드 획득(값 입력 후 배치). 턴 유지.
+    setGrid(removeMatching(grid, line, owner, value!));
+    setPending({ pusher: turn, value: null });
+  };
+
+  const applyTazza = (chosen: DieValue) => {
+    setValue(chosen);
+    setT2(null);
+    setTazzaMode(false);
+    setTazza(false);
+  };
+
+  // ── 선공 선택 화면 ──
+  if (!started) {
+    return (
+      <div className="flex flex-col gap-4">
+        <Intro />
+        <div className="rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900/50">
+          <div className="mb-3 flex items-center gap-2 text-sm font-bold text-zinc-700 dark:text-zinc-200 lg:text-base">
+            <Flag size={16} className="text-indigo-500" /> 선공(먼저 두는 쪽)을 고르세요
+          </div>
+          <p className="mb-3 text-[11px] text-zinc-500 lg:text-sm">
+            선공측의 첫 주사위는 쉴드로 자동 처리되고, 이후 턴이 번갈아 진행됩니다.
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              onClick={() => begin('me')}
+              className="rounded-xl border-2 border-indigo-300 bg-indigo-50 py-4 text-base font-bold text-indigo-700 hover:border-indigo-500 dark:border-indigo-800/60 dark:bg-indigo-950/30 dark:text-indigo-200"
+            >
+              선공: 나
+            </button>
+            <button
+              onClick={() => begin('ai')}
+              className="rounded-xl border-2 border-rose-300 bg-rose-50 py-4 text-base font-bold text-rose-700 hover:border-rose-500 dark:border-rose-800/60 dark:bg-rose-950/30 dark:text-rose-200"
+            >
+              선공: 상대
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const needShieldValue = pending != null && pending.value == null;
+  const placingShield = pending != null && pending.value != null;
+  const meName = turn === 'me' ? '내' : '상대';
+  const meFull = allFull(grid, 'me');
+  const aiFull = allFull(grid, 'ai');
+  const boardFull = meFull && aiFull;
 
   return (
     <div className="flex flex-col gap-4">
-      {/* 사용법 */}
-      <div className="flex gap-2 rounded-xl bg-indigo-50 p-3 text-[11px] leading-relaxed text-indigo-900/80 dark:bg-indigo-950/30 dark:text-indigo-200/80 lg:text-sm">
-        <Info size={16} className="mt-0.5 shrink-0 text-indigo-500" />
-        <span>
-          인게임 보드를 그대로 입력하세요. 각 칸(3×3 내 필드 / 3×3 상대 필드)을 탭해 값과 <b>쉴드</b>를 지정하고,
-          아래에 <b>지금 내가 처리할 주사위</b>(일반/쉴드/타짜 택1)와 <b>타짜 보유</b>를 고르면 최선 수를 추천해요.
-          상대가 둔 결과는 상대 필드에 반영만 하면 됩니다. (상대 굴림 입력 불필요)
-        </span>
+      {/* 턴 표시 + 수동 전환 + 자동 패스 안내 */}
+      <div className="flex flex-col gap-1 rounded-xl border border-zinc-200 bg-white px-3 py-2 dark:border-zinc-800 dark:bg-zinc-900/50">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 text-sm font-bold">
+            <span className="text-zinc-500">현재 턴</span>
+            <span
+              className={`rounded-full px-2.5 py-0.5 text-xs text-white ${turn === 'me' ? 'bg-indigo-500' : 'bg-rose-500'}`}
+            >
+              {turn === 'me' ? '나' : '상대'}
+            </span>
+          </div>
+          <button
+            onClick={() => advanceFrom(grid, opponentOf(turn))}
+            disabled={pending != null}
+            title="홀드 등 수동으로 턴을 넘겨요"
+            className="inline-flex items-center gap-1 rounded-lg bg-zinc-100 px-2.5 py-1.5 text-xs font-bold text-zinc-600 hover:bg-zinc-200 disabled:opacity-40 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+          >
+            <ArrowLeftRight size={13} /> 턴 넘기기
+          </button>
+        </div>
+        {boardFull ? (
+          <span className="text-[11px] font-bold text-amber-600 dark:text-amber-400">
+            보드가 가득 찼어요 — 한 판 종료. 점수로 승패가 갈립니다.
+          </span>
+        ) : meFull ? (
+          <span className="text-[11px] text-zinc-500">내 필드가 가득 — 상대가 알까기로 칸을 비울 때까지 상대 턴이 계속돼요.</span>
+        ) : aiFull ? (
+          <span className="text-[11px] text-zinc-500">상대 필드가 가득 — 내가 알까기로 칸을 비울 때까지 내 턴이 계속돼요.</span>
+        ) : null}
       </div>
 
       {/* 예상 승률 */}
@@ -227,7 +338,7 @@ export function TikatukaSim() {
         </div>
       )}
 
-      {/* 편집 보드 */}
+      {/* 보드 */}
       <div className="flex flex-col gap-2.5 lg:gap-4">
         <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-1 text-xs font-bold lg:text-base">
           <span className="text-indigo-600 dark:text-indigo-400">내 필드</span>
@@ -236,20 +347,20 @@ export function TikatukaSim() {
         </div>
 
         {LINES.map((line) => {
-          const meSum = lineSumOf(grid, line, 'me');
-          const aiSum = lineSumOf(grid, line, 'ai');
+          const meSum = fieldSum(grid[line].me, 'me');
+          const aiSum = fieldSum(grid[line].ai, 'ai');
           const winner: Owner | 'tie' = meSum > aiSum ? 'me' : aiSum > meSum ? 'ai' : 'tie';
           return (
             <div
               key={line}
               className="grid grid-cols-[1fr_auto_1fr] items-stretch gap-1 rounded-2xl border border-zinc-200 bg-zinc-50/60 p-1.5 dark:border-zinc-800 dark:bg-zinc-900/40 sm:gap-2 sm:p-2 lg:gap-3 lg:p-3"
             >
-              <FieldCells
-                cells={grid[line].me}
+              <SimField
+                field={grid[line].me}
                 owner="me"
-                editingSlot={editing?.line === line && editing.owner === 'me' ? editing.slot : null}
+                action={fieldActionOf(line, 'me')}
                 advice={advice?.line === line && advice.side === 'me'}
-                onTap={(slot) => openEdit(line, 'me', slot)}
+                onClick={() => onField(line, 'me')}
               />
               <div className="flex min-w-0 flex-col items-center justify-center gap-0.5 px-0.5 lg:min-w-[110px] lg:gap-1">
                 <span className="text-[10px] font-bold text-zinc-400 lg:text-sm">{line + 1}번</span>
@@ -260,236 +371,203 @@ export function TikatukaSim() {
                 </span>
                 <LineBadge winner={winner} />
               </div>
-              <FieldCells
-                cells={grid[line].ai}
+              <SimField
+                field={grid[line].ai}
                 owner="ai"
-                editingSlot={editing?.line === line && editing.owner === 'ai' ? editing.slot : null}
+                action={fieldActionOf(line, 'ai')}
                 advice={advice?.line === line && advice.side === 'ai'}
-                onTap={(slot) => openEdit(line, 'ai', slot)}
+                onClick={() => onField(line, 'ai')}
               />
             </div>
           );
         })}
       </div>
 
-      {/* 칸 편집 picker */}
-      {editing && (
-        <div className="rounded-2xl border border-indigo-300 bg-indigo-50 p-3 dark:border-indigo-800/60 dark:bg-indigo-950/30">
-          <div className="mb-2 flex items-center justify-between">
-            <span className="text-sm font-bold text-indigo-700 dark:text-indigo-300">
-              {editing.line + 1}번 라인 {editing.owner === 'me' ? '내' : '상대'} 필드 · {editing.slot + 1}번 칸
-            </span>
-            <button onClick={() => setEditing(null)} className="text-xs font-bold text-zinc-400 hover:text-zinc-600">
-              닫기
-            </button>
+      {/* 컨트롤 — 쉴드 값 입력 / 쉴드 배치 / 일반 입력 */}
+      {needShieldValue ? (
+        <div className="flex flex-col gap-2 rounded-2xl border border-amber-300 bg-amber-50 p-3 dark:border-amber-800/60 dark:bg-amber-950/30 lg:p-4">
+          <div className="flex items-center gap-1.5 text-sm font-bold text-amber-700 dark:text-amber-300">
+            <ShieldCheck size={16} /> {pending!.pusher === 'me' ? '내' : '상대'} 알까기 성공 — 획득한 쉴드 값을 고르세요
           </div>
+          <ValueRow label="쉴드 값" value={null} onPick={(v) => setPending((pd) => (pd ? { ...pd, value: v } : pd))} />
+          <p className="text-[11px] text-amber-700/80 dark:text-amber-300/70">
+            실제 게임에서 굴려 나온 쉴드 값을 입력하면 {pending!.pusher === 'me' ? '추천 칸이 강조됩니다.' : '배치할 칸을 클릭하세요.'}
+          </p>
+        </div>
+      ) : placingShield ? (
+        <div className="rounded-2xl border border-amber-300 bg-amber-50 p-3 text-sm font-bold text-amber-700 dark:border-amber-800/60 dark:bg-amber-950/30 dark:text-amber-300">
+          {pending!.pusher === 'me' ? '내' : '상대'} 쉴드 {pending!.value} 배치 —{' '}
+          {pending!.pusher === 'me' ? '추천 칸(또는 원하는 칸)을' : '상대가 둔 칸을'} 클릭하세요
+        </div>
+      ) : (
+        <div className="flex flex-col gap-3 rounded-2xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900/50 lg:p-4">
           <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm font-bold text-zinc-600 dark:text-zinc-300 lg:text-base">{meName} 주사위</span>
             <button
               onClick={() => {
-                const next = !editShield;
-                setEditShield(next);
-                const cur = grid[editing.line][editing.owner][editing.slot];
-                if (cur) setCell(editing.line, editing.owner, editing.slot, { ...cur, shield: next });
+                setTazzaMode((v) => !v);
+                setT2(null);
               }}
-              className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2.5 text-sm font-bold transition-colors ${
-                editShield ? 'bg-amber-500 text-white' : 'bg-zinc-200 text-zinc-500 dark:bg-zinc-700 dark:text-zinc-300'
+              disabled={!tazza && !tazzaMode}
+              className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-xs font-bold shadow-sm transition disabled:cursor-not-allowed disabled:opacity-40 ${
+                tazzaMode
+                  ? 'bg-fuchsia-700 text-white ring-2 ring-fuchsia-300 dark:ring-fuchsia-700'
+                  : 'bg-fuchsia-600 text-white hover:bg-fuchsia-500 active:bg-fuchsia-700'
               }`}
             >
-              <ShieldCheck size={16} /> 쉴드 {editShield ? 'ON' : 'OFF'}
+              <Sparkles size={14} /> 타짜 택1{tazzaMode ? ' 닫기' : ''}
             </button>
-            {VALUES.map((v) => {
-              const cur = grid[editing.line][editing.owner][editing.slot];
-              const sel = cur?.value === v;
-              return (
-                <button
-                  key={v}
-                  onClick={() => {
-                    setCell(editing.line, editing.owner, editing.slot, { value: v, shield: editShield });
-                    setEditing(null);
-                  }}
-                  className={`inline-flex h-11 w-11 items-center justify-center rounded-lg border text-base font-bold transition-colors lg:h-12 lg:w-12 lg:text-lg ${
-                    sel
-                      ? 'border-indigo-500 bg-indigo-500 text-white'
-                      : 'border-zinc-300 bg-white text-zinc-700 hover:border-indigo-400 hover:bg-indigo-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200'
-                  }`}
-                >
-                  {v}
-                </button>
-              );
-            })}
             <button
-              onClick={() => {
-                const cleared = grid[editing.line][editing.owner].map((c, si) => (si === editing.slot ? null : c));
-                setField(editing.line, editing.owner, compactInner(cleared, editing.owner));
-                setEditing(null);
-              }}
-              className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2.5 text-sm font-bold text-zinc-500 hover:bg-zinc-200 dark:hover:bg-zinc-700"
+              onClick={() => setTazza((t) => !t)}
+              className={`ml-auto inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold transition-colors ${
+                tazza ? 'bg-amber-500 text-white' : 'bg-zinc-200 text-zinc-500 dark:bg-zinc-700 dark:text-zinc-300'
+              }`}
             >
-              <Trash2 size={16} /> 지우기
+              타짜 보유 {tazza ? 'O' : 'X'}
             </button>
           </div>
-          <p className="mt-1.5 text-[11px] text-zinc-500">쉴드면 먼저 쉴드 ON 후 값을 누르세요. 값을 누르면 칸이 채워져요.</p>
-        </div>
-      )}
 
-      {/* 내 주사위 입력 */}
-      <div className="flex flex-col gap-3 rounded-2xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900/50 lg:p-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-sm font-bold text-zinc-600 dark:text-zinc-300 lg:text-base">내 주사위</span>
-          <Segmented
-            options={[
-              { key: 'normal', label: '일반' },
-              { key: 'shield', label: '쉴드' },
-              { key: 'pick', label: '타짜 택1' },
-            ]}
-            value={mode}
-            onChange={(k) => {
-              setMode(k as Mode);
-              resetRolled();
-            }}
-          />
-          <button
-            onClick={() => setTazza((t) => !t)}
-            className={`ml-auto inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold transition-colors ${
-              tazza ? 'bg-amber-500 text-white' : 'bg-zinc-200 text-zinc-500 dark:bg-zinc-700 dark:text-zinc-300'
-            }`}
-          >
-            타짜 보유 {tazza ? 'O' : 'X'}
-          </button>
-        </div>
-
-        {mode === 'pick' ? (
-          <div className="flex flex-col gap-2">
-            <ValueRow label="첫 눈" value={v1} onPick={setV1} />
-            <ValueRow label="둘째 눈" value={v2} onPick={setV2} />
-          </div>
-        ) : (
-          <ValueRow label={mode === 'shield' ? '쉴드 값' : '굴린 값'} value={v1} onPick={setV1} />
-        )}
-      </div>
-
-      {/* 추천 */}
-      {advice && advice.kind !== 'none' && (
-        <div className="flex flex-col gap-2">
-          <AdvicePanel
-            headline={advice.headline}
-            factors={advice.factors}
-            isHold={advice.isHold}
-            open={adviceOpen}
-            onToggle={() => setAdviceOpen((v) => !v)}
-          />
-          {canApply && (
-            <button
-              onClick={applyAdvice}
-              className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-emerald-600 py-2.5 text-sm font-bold text-white hover:bg-emerald-500 lg:py-3 lg:text-base"
-            >
-              <Check size={16} /> 이대로 두기 (보드에 반영)
-            </button>
+          {tazzaMode ? (
+            <div className="flex flex-col gap-2">
+              <ValueRow label="첫 눈" value={value} onPick={setValue} />
+              <ValueRow label="둘째 눈" value={t2} onPick={setT2} />
+              {value != null && t2 != null ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-[11px] font-bold text-zinc-500">선택 적용:</span>
+                  {([value, t2] as DieValue[]).map((v, i) => {
+                    const rec = advice?.kind === 'choose' && advice.chooseIndex === i;
+                    return (
+                      <button
+                        key={i}
+                        onClick={() => applyTazza(v)}
+                        className={`inline-flex items-center gap-1 rounded-lg px-3 py-2 text-sm font-bold transition-colors ${
+                          rec
+                            ? 'bg-emerald-600 text-white hover:bg-emerald-500'
+                            : 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700'
+                        }`}
+                      >
+                        {v} 사용 {rec && <span className="rounded-full bg-white/25 px-1.5 py-px text-[9px]">추천</span>}
+                      </button>
+                    );
+                  })}
+                  <button
+                    onClick={() => {
+                      setTazzaMode(false);
+                      setT2(null);
+                    }}
+                    className="inline-flex items-center gap-1 rounded-lg px-2.5 py-2 text-xs font-bold text-zinc-400 hover:text-zinc-600"
+                  >
+                    <X size={14} /> 취소
+                  </button>
+                </div>
+              ) : (
+                <p className="text-[11px] text-zinc-500">타짜로 굴린 두 눈을 입력하면 어느 쪽이 좋은지 추천해요.</p>
+              )}
+            </div>
+          ) : (
+            <>
+              <ValueRow label="굴린 값" value={value} onPick={setValue} />
+              <p className="text-[11px] text-zinc-500">
+                값을 고르면 둘 곳·밀 곳이 자동으로 켜져요 — 켜진 칸을 클릭하세요. 상대 라인에 같은 값이 있으면
+                알까기, 없으면 놓기로 자동 판정합니다.
+              </p>
+            </>
           )}
         </div>
       )}
-      {advice && advice.kind === 'none' && (
-        <div className="rounded-2xl border border-zinc-200 bg-zinc-50 p-3 text-sm font-bold text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900/50">
-          {advice.headline}
-        </div>
-      )}
 
-      {/* 컨트롤 */}
-      <button
-        onClick={() => {
-          setGrid(emptyGrid());
-          resetRolled();
-          setEditing(null);
-          setTazza(true);
-        }}
-        className="inline-flex items-center justify-center gap-1.5 self-start rounded-xl bg-zinc-100 px-4 py-2.5 text-sm font-bold text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
-      >
-        <RotateCcw size={15} /> 보드 초기화
-      </button>
+      {/* 추천 / 계산 중 */}
+      {computing ? (
+        <div className="flex items-center gap-2 rounded-2xl border border-zinc-200 bg-white px-3 py-3 text-sm font-bold text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900/50">
+          <Loader2 size={16} className="animate-spin text-indigo-500" />
+          최선 수를 깊게 탐색 중… (오래 걸릴 수 있어요)
+        </div>
+      ) : advice ? (
+        <AdvicePanel
+          headline={advice.headline}
+          factors={advice.factors}
+          open={adviceOpen}
+          onToggle={() => setAdviceOpen((v) => !v)}
+        />
+      ) : null}
+
+      {/* 컨트롤 버튼 */}
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          onClick={undo}
+          disabled={!past.length}
+          className="inline-flex items-center gap-1.5 rounded-xl bg-zinc-100 px-4 py-2.5 text-sm font-bold text-zinc-600 hover:bg-zinc-200 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+        >
+          <Undo2 size={15} /> 되돌리기
+        </button>
+        <button
+          onClick={() => {
+            // 선공 선택 화면으로 — 선공을 다시 고르면 보드가 새로 시작된다.
+            setStarted(false);
+            setGrid(emptyGrid());
+            setPast([]);
+            setPending(null);
+            setValue(null);
+            setTazzaMode(false);
+            setT2(null);
+          }}
+          className="inline-flex items-center gap-1.5 rounded-xl bg-zinc-100 px-4 py-2.5 text-sm font-bold text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+        >
+          <RotateCcw size={15} /> 보드 초기화 (선공부터)
+        </button>
+      </div>
     </div>
   );
 }
 
-// ── 추천 계산(게임 computeAdvice와 동일 우선순위) ──
-function computeSimAdvice(
-  board: Board,
-  mode: Mode,
-  v1: DieValue | null,
-  v2: DieValue | null,
-  tazza: boolean
-): SimAdvice | null {
-  const hold = recommendHold(board, 'me');
-  if (hold) return { kind: 'hold', headline: hold.headline, factors: hold.factors, isHold: true };
-
-  if (mode === 'pick') {
-    if (v1 == null || v2 == null) return null;
-    const a = recommendChoose(board, 'me', [v1, v2]);
-    return { kind: 'choose', headline: a.headline, factors: a.factors, chooseIndex: a.index };
-  }
-  if (mode === 'shield') {
-    if (v1 == null) return null;
-    const empty = board.lines.every((l) => l.me.length === 0 && l.ai.length === 0);
-    const a = empty ? recommendFirstShield(board, 'me', v1, tazza) : recommendShield(board, 'me', v1);
-    if (!a) return { kind: 'none', headline: '쉴드를 둘 칸이 없어요(모든 필드 가득).', factors: [] };
-    return { kind: 'shield', headline: a.headline, factors: a.factors, line: a.line, side: a.owner };
-  }
-  if (v1 == null) return null;
-  const a = recommendMove(board, 'me', v1, tazza);
-  if (!a) return { kind: 'none', headline: '둘 곳·밀 곳이 없어요 — 패스/홀드 상황.', factors: [] };
-  return {
-    kind: a.action,
-    headline: a.headline,
-    factors: a.factors,
-    line: a.line,
-    side: a.action === 'push' ? 'ai' : a.action === 'place' ? 'me' : undefined,
-  };
-}
-
-// ── 한 필드(3 칸) — 항상 3칸 표시, 각 칸 탭해서 편집 ──
-function FieldCells({
-  cells,
+// ── 한 필드 — 통째로 클릭. action(현재 가능한 동작)에 따라 색/활성 결정. 같은 눈 묶음 체인 표시 ──
+function SimField({
+  field,
   owner,
-  editingSlot,
+  action,
   advice,
-  onTap,
+  onClick,
 }: {
-  cells: Cell[];
+  field: Field;
   owner: Owner;
-  editingSlot: number | null;
+  action: FieldAct;
   advice?: boolean;
-  onTap: (slot: number) => void;
+  onClick: () => void;
 }) {
-  const ring = advice ? 'ring-2 ring-emerald-400 bg-emerald-50 dark:bg-emerald-950/30' : '';
+  const slots = displaySlots(field, owner);
+  const ring = advice
+    ? 'ring-2 ring-emerald-400 bg-emerald-50 dark:bg-emerald-950/30'
+    : action === 'place'
+      ? 'ring-1 ring-indigo-300 hover:ring-2 hover:ring-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/30'
+      : action === 'push'
+        ? 'ring-1 ring-rose-300 hover:ring-2 hover:ring-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30'
+        : action === 'shield'
+          ? 'ring-1 ring-amber-300 hover:ring-2 hover:ring-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/30'
+          : '';
   return (
-    <div
-      className={`relative flex items-center gap-1 rounded-xl p-1 sm:gap-1.5 sm:p-1.5 ${owner === 'me' ? 'justify-end' : 'justify-start'} ${ring}`}
+    <button
+      type="button"
+      disabled={action == null}
+      onClick={onClick}
+      className={`relative flex touch-manipulation items-center gap-1 rounded-xl p-1 transition-colors disabled:cursor-default sm:gap-1.5 sm:p-1.5 ${owner === 'me' ? 'justify-end' : 'justify-start'} ${ring}`}
     >
       {advice && (
         <span className="pointer-events-none absolute -top-2 left-1/2 z-30 -translate-x-1/2 rounded-full bg-emerald-500 px-1.5 py-px text-[9px] font-bold text-white shadow">
           추천
         </span>
       )}
-      {SLOTS.map((i) => {
-        const cell = cells[i];
-        const die: Die | null = cell ? makeDie(cell.value, owner, cell.shield) : null;
-        const editing = editingSlot === i;
-        return (
-          <button
+      {slots.map((p, i) => {
+        const die: Die | null = p ? makeDie(p.value, p.owner, p.shield) : null;
+        return die ? (
+          <DiePip key={i} die={die} className={DIE} />
+        ) : (
+          <span
             key={i}
-            type="button"
-            onClick={() => onTap(i)}
-            title="탭해서 값/쉴드 지정"
-            className={`touch-manipulation rounded-lg ${editing ? 'ring-2 ring-indigo-400' : ''}`}
-          >
-            {die ? (
-              <DiePip die={die} className={DIE} />
-            ) : (
-              <span className={`block rounded-lg border-2 border-dashed border-zinc-300 dark:border-zinc-700 ${DIE}`} />
-            )}
-          </button>
+            className={`block rounded-lg border-2 border-dashed border-zinc-300 dark:border-zinc-700 ${DIE}`}
+          />
         );
       })}
-    </div>
+    </button>
   );
 }
 
@@ -524,34 +602,6 @@ function ValueRow({
   );
 }
 
-function Segmented({
-  options,
-  value,
-  onChange,
-}: {
-  options: { key: string; label: string }[];
-  value: string;
-  onChange: (key: string) => void;
-}) {
-  return (
-    <div className="inline-flex rounded-lg bg-zinc-100 p-0.5 dark:bg-zinc-800">
-      {options.map((o) => (
-        <button
-          key={o.key}
-          onClick={() => onChange(o.key)}
-          className={`rounded-md px-3 py-1.5 text-xs font-bold transition-colors lg:text-sm ${
-            value === o.key
-              ? 'bg-white text-indigo-600 shadow-sm dark:bg-zinc-700 dark:text-indigo-300'
-              : 'text-zinc-500 hover:text-zinc-700 dark:text-zinc-400'
-          }`}
-        >
-          {o.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
 function LineBadge({ winner }: { winner: Owner | 'tie' }) {
   const meta =
     winner === 'me'
@@ -560,4 +610,16 @@ function LineBadge({ winner }: { winner: Owner | 'tie' }) {
         ? { t: '상대 승', c: 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300' }
         : { t: '무', c: 'bg-zinc-200 text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300' };
   return <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${meta.c}`}>{meta.t}</span>;
+}
+
+function Intro() {
+  return (
+    <div className="flex gap-2 rounded-xl bg-indigo-50 p-3 text-[11px] leading-relaxed text-indigo-900/80 dark:bg-indigo-950/30 dark:text-indigo-200/80 lg:text-sm">
+      <Info size={16} className="mt-0.5 shrink-0 text-indigo-500" />
+      <span>
+        인게임 진행을 그대로 따라 입력하는 보조 도구예요. <b>선공</b>을 고르면 턴이 번갈아 진행되고, 매 턴 값을 골라
+        켜진 칸을 클릭하면(같은 값이 있으면 알까기·없으면 놓기로 자동 판정) 추천과 예상 승률을 알려줍니다.
+      </span>
+    </div>
+  );
 }

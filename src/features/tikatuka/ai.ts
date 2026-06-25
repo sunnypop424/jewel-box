@@ -263,21 +263,29 @@ interface McConfig {
   maxSim: number;
 }
 
-// 한 턴 그리디 진행(★2 정책): 굴림→최선 move→push면 쉴드 굴려 배치. 보드 반환.
-function greedyTurn(board: Board, owner: Owner, rng: () => number): Board {
+// 시뮬(정밀 탐색) 설정 — 게임/지원모드는 ADV_DEFAULT(현행 유지), 시뮬 워커가 강한 값을 주입한다.
+export interface AdvCfg {
+  playouts: number; // 메인 롤아웃 수/branch
+  respLevel: AiLevel; // 내 수 직후 '상대 즉답' 정책. 5=몬테카를로(★5). 깊은 롤아웃엔 ★5 중첩 불가 → 즉답 ply에서만.
+  rolloutLevel: AiLevel; // 끝까지 롤아웃(양측) 정책. 2=속도, 4=1-step EV(더 강하지만 매우 느림).
+  expandShield: boolean; // 알까기로 얻는 쉴드를 1~6 전수로 펼쳐 평균(true) / 4로 근사(false)
+}
+const ADV_DEFAULT: AdvCfg = {
+  playouts: ADV_PLAYOUTS_PER_BRANCH,
+  respLevel: 2,
+  rolloutLevel: 2,
+  expandShield: false,
+};
+// 상대 즉답을 ★5(MC)로 둘 때의 가벼운 MC 예산(즉답 ply는 수십~수백 번 호출되므로 가볍게).
+const RESP_MC: McConfig = { topK: 3, playouts: 120, maxSim: 360 };
+
+// 한 턴 그리디 진행: 굴림→최선 move(정책 level)→push면 쉴드 굴려 배치. 보드 반환.
+// level 2면 boardScore 그리디(★2, 기존), 4면 1-step EV(★4)로 더 강하게 둔다.
+function greedyTurn(board: Board, owner: Owner, rng: () => number, level: AiLevel = 2): Board {
   const value = rollValue(rng);
   const moves = legalMoves(board, owner, value);
   if (moves.length === 0) return board; // 합법수 없음 → 패스
-  let best = moves[0];
-  let bestScore = -Infinity;
-  for (const m of moves) {
-    const after = applyMove(board, owner, m, value);
-    const sc = boardScore(after, owner) + (m.kind === 'push' ? PUSH_BONUS : 0);
-    if (sc > bestScore) {
-      bestScore = sc;
-      best = m;
-    }
-  }
+  const best = argmaxMove(moves, (m) => scoreMove(board, owner, m, value, level));
   let next = applyMove(board, owner, best, value);
   if (best.kind === 'push') {
     const sv = rollValue(rng);
@@ -287,11 +295,12 @@ function greedyTurn(board: Board, owner: Owner, rng: () => number): Board {
   return next;
 }
 
-// 보드 끝까지 양측 ★2 그리디로 시뮬 → 승자.
+// 보드 끝까지 양측 그리디(정책 level)로 시뮬 → 승자.
 function simulateToEnd(
   board: Board,
   startTurn: Owner,
-  rng: () => number
+  rng: () => number,
+  level: AiLevel = 2
 ): Owner | 'draw' {
   let b = board;
   let turn = startTurn;
@@ -299,7 +308,7 @@ function simulateToEnd(
   let idle = 0;
   while (!isBoardFull(b) && turns < ROLLOUT_MAX_TURNS && idle < 2) {
     const before = b;
-    b = greedyTurn(b, turn, rng);
+    b = greedyTurn(b, turn, rng, level);
     idle = b === before ? idle + 1 : 0;
     turn = opponentOf(turn);
     turns += 1;
@@ -322,6 +331,26 @@ export function estimateWinRate(board: Board, owner: Owner): number {
   });
   const [a, b, c] = p;
   return a * b * c + a * b * (1 - c) + a * (1 - b) * c + (1 - a) * b * c;
+}
+
+// 현재 보드의 정밀 승률(owner 관점) — 닫힌형 근사 대신 끝까지 MC로 직접 추정.
+// startTurn부터 양측 정책(level)으로 playouts판 끝까지 시뮬한 승(무=0.5) 평균. 표본이 클수록 참값에 근접.
+export function mcWinRate(
+  board: Board,
+  owner: Owner,
+  startTurn: Owner,
+  playouts: number,
+  level: AiLevel = 2,
+  rng: () => number = Math.random
+): number {
+  if (playouts <= 0) return estimateWinRate(board, owner);
+  let win = 0;
+  for (let i = 0; i < playouts; i++) {
+    const w = simulateToEnd(board, startTurn, rng, level);
+    if (w === owner) win += 1;
+    else if (w === 'draw') win += 0.5;
+  }
+  return win / playouts;
 }
 
 // ── 메인: AI 1턴 의사결정 ─────────────────────────────
@@ -508,6 +537,24 @@ function greedyResponse(board: Board, owner: Owner, value: DieValue, rng: () => 
   return next;
 }
 
+// 상대 즉답(내 수 직후) 강한 정책 — level 5면 몬테카를로(★5), 아니면 scoreMove(level) argmax.
+// push면 얻는 쉴드 값을 샘플(1~6)해 배치(여러 응수·롤아웃에 걸쳐 평균됨).
+function strongResponse(board: Board, owner: Owner, value: DieValue, rng: () => number, level: AiLevel): Board {
+  const moves = legalMoves(board, owner, value);
+  if (moves.length === 0) return board;
+  const best =
+    level >= 5
+      ? mcEvaluate(board, owner, value, moves, rng, RESP_MC).move
+      : argmaxMove(moves, (m) => scoreMove(board, owner, m, value, level));
+  let next = applyMove(board, owner, best, value);
+  if (best.kind === 'push') {
+    const sv = rollValue(rng);
+    const place = pickShield(next, owner, sv, 5, rng);
+    if (place) next = placeDie(next, place.line, place.owner, makeDie(sv, owner, true));
+  }
+  return next;
+}
+
 // 지원모드 전용 루트 얕은 expectimax: 후보 수마다 상대의 다음 6눈을 '정확히 전개'(샘플링 X)하고,
 // 각 가지 뒤만 MC로 끝까지 롤아웃해 평균 승률을 낸다. 근거리(상대 응수)의 분산을 없애 추천이 더 안정·정확.
 function advBestMove(
@@ -516,31 +563,41 @@ function advBestMove(
   value: DieValue,
   moves: Move[],
   rng: () => number,
-  shield = false
+  shield = false,
+  cfg: AdvCfg = ADV_DEFAULT
 ): { move: Move; winRate: number } {
   const oppo = opponentOf(owner);
   let best = moves[0];
   let bestRate = -1;
   for (const m of moves) {
-    // 1) 내 수 적용(push면 기대 쉴드 4 근사 배치)
-    let b1 = applyMove(board, owner, m, value, shield);
+    // 1) 내 수 적용 → 보드(들). push로 얻는 쉴드는 정밀이면 1~6 전수(각 최선 배치)로 펼치고, 아니면 4 근사 1개.
+    const myBoards: Board[] = [];
     if (m.kind === 'push') {
-      const pl = pickShield(b1, owner, 4, 2, rng);
-      if (pl) b1 = placeDie(b1, pl.line, pl.owner, makeDie(4, owner, true));
-    }
-    // 2) 상대의 다음 6눈을 정확히 전개 → 각 응수 뒤(내 턴)부터 MC 롤아웃
-    let acc = 0;
-    for (let w = 1 as DieValue; w <= 6; w = (w + 1) as DieValue) {
-      const b2 = greedyResponse(b1, oppo, w, rng);
-      let win = 0;
-      for (let i = 0; i < ADV_PLAYOUTS_PER_BRANCH; i++) {
-        const res = simulateToEnd(b2, owner, rng);
-        if (res === owner) win += 1;
-        else if (res === 'draw') win += 0.5;
+      const afterPush = applyMove(board, owner, m, value, shield);
+      const svs: DieValue[] = cfg.expandShield ? [1, 2, 3, 4, 5, 6] : [4];
+      for (const sv of svs) {
+        const pl = pickShield(afterPush, owner, sv, cfg.expandShield ? 5 : 2, rng);
+        myBoards.push(pl ? placeDie(afterPush, pl.line, pl.owner, makeDie(sv, owner, true)) : afterPush);
       }
-      acc += win / ADV_PLAYOUTS_PER_BRANCH;
+    } else {
+      myBoards.push(applyMove(board, owner, m, value, shield));
     }
-    const rate = acc / 6; // 6눈 균등 평균(상대 굴림은 공정)
+    // 2) (내 보드 × 상대 다음 6눈) 각각: 상대 즉답(강 정책) → 끝까지 롤아웃(정책 level) 평균
+    let acc = 0;
+    for (const b1 of myBoards) {
+      for (let w = 1 as DieValue; w <= 6; w = (w + 1) as DieValue) {
+        const b2 =
+          cfg.respLevel > 2 ? strongResponse(b1, oppo, w, rng, cfg.respLevel) : greedyResponse(b1, oppo, w, rng);
+        let win = 0;
+        for (let i = 0; i < cfg.playouts; i++) {
+          const res = simulateToEnd(b2, owner, rng, cfg.rolloutLevel);
+          if (res === owner) win += 1;
+          else if (res === 'draw') win += 0.5;
+        }
+        acc += win / cfg.playouts;
+      }
+    }
+    const rate = acc / (myBoards.length * 6); // 내 쉴드 분포 × 상대 6눈 균등 평균
     if (rate > bestRate) {
       bestRate = rate;
       best = m;
@@ -718,7 +775,8 @@ export function recommendMove(
   board: Board,
   owner: Owner,
   rolledValue: DieValue,
-  tazzaAvailable: boolean
+  tazzaAvailable: boolean,
+  cfg: AdvCfg = ADV_DEFAULT // 시뮬은 강한 설정 주입(깊은 롤아웃·★5 응수·쉴드 전수). 게임/지원모드는 기본값.
 ): MoveAdvice | null {
   const moves = legalMoves(board, owner, rolledValue);
   if (moves.length === 0) return null;
@@ -726,11 +784,13 @@ export function recommendMove(
   const pushMoves = moves.filter((m) => m.kind === 'push');
   if (pushMoves.length > 0) {
     const bestPush =
-      pushMoves.length === 1 ? pushMoves[0] : advBestMove(board, owner, rolledValue, pushMoves, Math.random).move;
+      pushMoves.length === 1
+        ? pushMoves[0]
+        : advBestMove(board, owner, rolledValue, pushMoves, Math.random, false, cfg).move;
     return { action: bestPush.kind, line: bestPush.line, headline: moveHeadline(bestPush), factors: analyzeMove(board, owner, bestPush, rolledValue) };
   }
   // 실제 최선 수: 루트 얕은 expectimax(상대 6눈 전수) + 끝까지 MC. 근거리 분산을 없애 가장 안정적.
-  const best = advBestMove(board, owner, rolledValue, moves, Math.random).move;
+  const best = advBestMove(board, owner, rolledValue, moves, Math.random, false, cfg).move;
 
   // 타짜: 다시 굴렸을 때 기대 이득이 충분할 때만 권한다(6 같은 높은 눈은 권하지 않음).
   if (tazzaAvailable) {
@@ -756,13 +816,14 @@ export function recommendMove(
 export function recommendChoose(
   board: Board,
   owner: Owner,
-  choices: [DieValue, DieValue]
+  choices: [DieValue, DieValue],
+  cfg: AdvCfg = ADV_DEFAULT
 ): ChooseAdvice {
   // 각 후보 눈을 깊은 몬테카를로로 끝까지 시뮬해 승률로 비교(실제 최선).
   const evalOf = (v: DieValue): { move: Move | null; winRate: number } => {
     const ms = legalMoves(board, owner, v);
     if (ms.length === 0) return { move: null, winRate: -1 };
-    return advBestMove(board, owner, v, ms, Math.random);
+    return advBestMove(board, owner, v, ms, Math.random, false, cfg);
   };
   const e0 = evalOf(choices[0]);
   const e1 = evalOf(choices[1]);
