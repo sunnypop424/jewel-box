@@ -2,7 +2,7 @@
 // 턴이 상대에게 넘어가는 순간(또는 종료)에만 canonical 상태를 Firestore에 기록한다.
 // 상대 수는 onSnapshot으로 받아 관점 변환 후 그대로 반영(AI 자동턴 로직 없음).
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { isFieldFull, legalMoves, rollValue, rollValueExcluding } from '../engine';
+import { isFieldFull, legalMoves, pushTargets, rollValue, rollValueExcluding } from '../engine';
 import { initialState, reducer, type Action } from '../reducer';
 import { fromCanonical, toCanonical } from './perspective';
 import {
@@ -14,10 +14,26 @@ import {
   type Seat,
   type TikatukaRoom,
 } from './room';
-import type { GameState, LineIndex } from '../types';
+import type { PushFx } from '../useTikatuka';
+import type { Board, DieValue, GameState, LineIndex, Owner } from '../types';
 
 const ROLL_TUMBLE = 520;
 const PASS_DELAY = 480;
+const FLING_MS = 560; // 밀어내기 충돌 연출(tikatuka.css와 일치)
+
+// 두 보드를 비교해 사라진(밀려난) 주사위를 찾음 — 상대 수신 시 밀어내기 연출 복원용.
+function findRemoved(oldB: Board, newB: Board): { ids: string[]; line: LineIndex; victim: Owner; value: DieValue } | null {
+  for (let line = 0 as LineIndex; line < 3; line = (line + 1) as LineIndex) {
+    for (const owner of ['me', 'ai'] as Owner[]) {
+      const newIds = new Set(newB.lines[line][owner].map((d) => d.id));
+      const removed = oldB.lines[line][owner].filter((d) => !newIds.has(d.id));
+      if (removed.length > 0) {
+        return { ids: removed.map((d) => d.id), line, victim: owner, value: removed[0].value };
+      }
+    }
+  }
+  return null;
+}
 
 export interface OnlineGame {
   state: GameState; // 로컬 관점(me = 내 좌석)
@@ -25,6 +41,8 @@ export interface OnlineGame {
   myTurn: boolean;
   opponentName: string;
   opponentStale: boolean;
+  flingIds: string[];
+  pushFx: PushFx | null;
   // 액션
   place: (line: LineIndex) => void;
   push: (line: LineIndex) => void;
@@ -47,18 +65,22 @@ export function useTikatukaOnline(code: string, seat: Seat): OnlineGame {
   const seqRef = useRef(0); // 마지막으로 반영한 room.seq
   const codeRef = useRef(code);
   codeRef.current = code;
+  // 밀어내기 연출(공용 Board에 전달).
+  const [flingIds, setFlingIds] = useState<string[]>([]);
+  const [pushFx, setPushFx] = useState<PushFx | null>(null);
+  // 연출 지연 중 다음 상태가 오면 먼저 비우기 위한 보류 핸들.
+  const pendingRef = useRef<{ timer: ReturnType<typeof setTimeout>; next: GameState } | null>(null);
 
   const commit = useCallback(
     (next: GameState, fromRemote: boolean) => {
       localRef.current = next;
       setLocal(next);
       if (fromRemote) return;
-      // 핸드오프(상대 턴) 또는 종료 → canonical 기록.
-      if (next.turn === 'ai' || next.winner !== null) {
-        const expected = seqRef.current;
-        seqRef.current = expected + 1; // 낙관적
-        writeMove(codeRef.current, expected, toCanonical(next, seat)).catch((e) => console.error(e));
-      }
+      // 내 턴의 모든 중간 변화(굴림·타짜·선택·배치)를 매번 기록 → 상대가 내 주사위 상태를
+      // 실시간으로 본다. 티카투카 선언도 즉시 전달되어 '둘 중 한 명만' 규칙이 강제된다.
+      const expected = seqRef.current;
+      seqRef.current = expected + 1; // 낙관적
+      writeMove(codeRef.current, expected, toCanonical(next, seat)).catch((e) => console.error(e));
     },
     [seat]
   );
@@ -70,13 +92,36 @@ export function useTikatukaOnline(code: string, seat: Seat): OnlineGame {
     [commit]
   );
 
-  // 방 구독 — 상대 수/초기 상태 수신 시 관점 변환해 로컬 반영.
+  // 방 구독 — 더 새로운 상태(seq 증가)만 반영. 상대가 밀어냈으면 연출 후 적용.
   useEffect(() => {
     const unsub = subscribeRoom(code, (r) => {
       setRoom(r);
-      if (r?.state && r.seq !== seqRef.current) {
-        seqRef.current = r.seq;
-        const next = fromCanonical(r.state, seat);
+      if (!r?.state || r.seq <= seqRef.current) return;
+      seqRef.current = r.seq;
+      // 연출 대기 중이던 이전 상태가 있으면 먼저 즉시 반영(되감김 방지).
+      if (pendingRef.current) {
+        clearTimeout(pendingRef.current.timer);
+        localRef.current = pendingRef.current.next;
+        setLocal(pendingRef.current.next);
+        pendingRef.current = null;
+        setFlingIds([]);
+        setPushFx(null);
+      }
+      const next = fromCanonical(r.state, seat);
+      const removed = findRemoved(localRef.current.board, next.board);
+      if (removed) {
+        // 사라진 주사위를 잠깐 더 보여주며 충돌 연출 → FLING_MS 후 새 상태 적용.
+        setFlingIds(removed.ids);
+        setPushFx({ line: removed.line, victim: removed.victim, value: removed.value });
+        const timer = setTimeout(() => {
+          setFlingIds([]);
+          setPushFx(null);
+          localRef.current = next;
+          setLocal(next);
+          pendingRef.current = null;
+        }, FLING_MS);
+        pendingRef.current = { timer, next };
+      } else {
         localRef.current = next;
         setLocal(next);
       }
@@ -130,7 +175,15 @@ export function useTikatukaOnline(code: string, seat: Seat): OnlineGame {
     (line: LineIndex) => {
       const rolled = localRef.current.rolledDie?.value;
       if (rolled == null) return;
-      run({ type: 'PUSH', line, shieldValue: rollValue(Math.random) });
+      // 내가 미는 연출도 먼저 보여주고(상대도 수신 시 동일 연출) 커밋.
+      const victims = pushTargets(localRef.current.board, line, 'me', rolled).map((d) => d.id);
+      setFlingIds(victims);
+      setPushFx({ line, victim: 'ai', value: rolled });
+      setTimeout(() => {
+        setFlingIds([]);
+        setPushFx(null);
+        run({ type: 'PUSH', line, shieldValue: rollValue(Math.random) });
+      }, FLING_MS);
     },
     [run]
   );
@@ -163,6 +216,8 @@ export function useTikatukaOnline(code: string, seat: Seat): OnlineGame {
     myTurn: local.turn === 'me' && local.winner === null && room?.status === 'playing',
     opponentName,
     opponentStale: !!opponentStale,
+    flingIds,
+    pushFx,
     place,
     push,
     useTazza,

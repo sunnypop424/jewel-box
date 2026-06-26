@@ -19,10 +19,29 @@ import {
 import { fetchPlayer } from './playerStore';
 import { levelForTp } from './tp';
 import { cardClass, inputClass, btnPrimary, btnDark } from './ui';
+import type { GameState, Owner } from './types';
 
 interface Session {
   code: string;
   seat: Seat;
+}
+
+// 한 진영의 트레이 굴림 표시 — 내 턴/상대 턴 모두 같은 로직으로(상대 주사위도 보이게).
+function trayAnim(s: GameState, owner: Owner): RollAnim | null {
+  if (s.turn !== owner) return null;
+  if (s.phase === 'rolling' || s.phase === 'aiThinking') return { owner, values: [], tumbling: true, chosen: null };
+  if (s.phase === 'choosingDie' && s.rolledChoices)
+    return { owner, values: [s.rolledChoices[0].value, s.rolledChoices[1].value], tumbling: false, chosen: null };
+  if (s.phase === 'acting' && s.rolledDie) return { owner, values: [s.rolledDie.value], tumbling: false, chosen: null };
+  return null;
+}
+
+// 한 진영의 트레이 쉴드 표시(배치 대기 또는 선공 첫 쉴드 주사위).
+function trayShield(s: GameState, owner: Owner) {
+  if (s.turn !== owner) return null;
+  if (s.phase === 'placingShield') return s.pendingShield;
+  if (s.phase === 'acting' && s.rolledDie?.shield) return s.rolledDie;
+  return null;
 }
 
 export function TikatukaPvp({ myName }: { myName: string }) {
@@ -234,18 +253,13 @@ function PvpRoom({
     );
   }
 
-  // 진행 화면.
-  const meAnim: RollAnim | null =
-    state.turn === 'me' && state.phase === 'rolling'
-      ? { owner: 'me', values: [], tumbling: true, chosen: null }
-      : state.turn === 'me' && state.phase === 'choosingDie' && state.rolledChoices
-        ? { owner: 'me', values: [state.rolledChoices[0].value, state.rolledChoices[1].value], tumbling: false, chosen: null }
-        : state.turn === 'me' && state.phase === 'acting' && state.rolledDie
-          ? { owner: 'me', values: [state.rolledDie.value], tumbling: false, chosen: null }
-          : null;
+  // 진행 화면. 내/상대 트레이 모두 상태에서 파생 → 양쪽 주사위 상태가 다 보인다.
+  const meAnim = trayAnim(state, 'me');
+  const aiAnim = trayAnim(state, 'ai');
 
   const tazzaEnabled = g.myTurn && state.phase === 'acting' && !state.tazzaUsed.me;
   const tikatukaEnabled = canDeclareTikatuka(state, 'me') && room?.status === 'playing';
+  const declaredBy = state.tikatukaUsed.me ? myName : state.tikatukaUsed.ai ? g.opponentName : null;
 
   return (
     <div className="flex flex-col gap-4">
@@ -259,6 +273,13 @@ function PvpRoom({
           {g.opponentName}
         </span>
       </div>
+
+      {/* 티카투카 선언 표시(둘 중 한 명만) */}
+      {declaredBy && (
+        <div className="flex items-center justify-center gap-1.5 rounded-xl bg-fuchsia-50 px-3 py-2 text-sm font-bold text-fuchsia-600 dark:bg-fuchsia-950/30 dark:text-fuchsia-300">
+          <Megaphone size={15} /> {declaredBy} 티카투카 선언!
+        </div>
+      )}
 
       {/* 상대 이탈 안내 */}
       {g.opponentStale && (
@@ -274,8 +295,8 @@ function PvpRoom({
 
       <Board
         state={state}
-        flingIds={[]}
-        pushFx={null}
+        flingIds={g.flingIds}
+        pushFx={g.pushFx}
         aiShieldTarget={null}
         adviceTarget={null}
         onPlace={g.place}
@@ -289,13 +310,7 @@ function PvpRoom({
             owner="me"
             active={state.turn === 'me'}
             anim={meAnim}
-            shield={
-              state.phase === 'placingShield' && state.turn === 'me'
-                ? state.pendingShield
-                : state.turn === 'me' && state.phase === 'acting' && state.rolledDie?.shield
-                  ? state.rolledDie
-                  : null
-            }
+            shield={trayShield(state, 'me')}
             pickable={state.phase === 'choosingDie' && state.turn === 'me'}
             onPick={g.chooseDie}
             hint={
@@ -306,7 +321,21 @@ function PvpRoom({
                   : undefined
             }
           />
-          <DiceTray owner="ai" active={state.turn === 'ai'} anim={null} hint={!g.myTurn ? '상대 차례…' : undefined} />
+          <DiceTray
+            owner="ai"
+            active={state.turn === 'ai'}
+            anim={aiAnim}
+            shield={trayShield(state, 'ai')}
+            hint={
+              state.turn === 'ai' && state.phase === 'choosingDie'
+                ? '상대 타짜 — 선택 중…'
+                : state.turn === 'ai' && state.phase === 'placingShield'
+                  ? '상대 쉴드 배치 중…'
+                  : !g.myTurn
+                    ? '상대 차례…'
+                    : undefined
+            }
+          />
         </div>
 
         <div className="flex flex-wrap items-center justify-center gap-2">
@@ -353,10 +382,28 @@ function PvpResult({
   const headline = draw ? '무승부' : iWon ? '승리!' : '패배';
   const color = draw ? 'text-zinc-500' : iWon ? 'text-indigo-600 dark:text-indigo-300' : 'text-rose-600 dark:text-rose-300';
 
+  const oppName = (seat === 'host' ? room.guest?.name : room.host.name) ?? '상대';
+  const winCls = 'text-indigo-600 dark:text-indigo-300';
+  const loseCls = 'text-rose-600 dark:text-rose-300';
+  const drawCls = 'text-zinc-500';
+  const myLabel = draw ? '무승부' : iWon ? '승리' : '패배';
+  const oppLabel = draw ? '무승부' : iWon ? '패배' : '승리';
+  const myCls = draw ? drawCls : iWon ? winCls : loseCls;
+  const oppCls = draw ? drawCls : iWon ? loseCls : winCls;
+
   return (
     <div className={`${cardClass} flex flex-col items-center gap-4 py-8 text-center`}>
       <Trophy size={40} className={color} />
       <span className={`text-3xl font-black ${color}`}>{headline}</span>
+      <div className="flex items-center justify-center gap-2 text-sm font-bold">
+        <span className={myCls}>
+          {myName} <span className="text-xs">({myLabel})</span>
+        </span>
+        <span className="text-zinc-300">vs</span>
+        <span className={oppCls}>
+          {oppName} <span className="text-xs">({oppLabel})</span>
+        </span>
+      </div>
       {r.reason === 'forfeit' && <span className="text-xs font-bold text-amber-500">{iWon ? '상대 기권/이탈로 승리' : '기권/이탈 처리'}</span>}
       {tp != null && (
         <div className="rounded-lg bg-zinc-50 px-6 py-3 dark:bg-zinc-800/60">

@@ -7,6 +7,7 @@ import { TikatukaPvp } from './TikatukaPvp';
 import { TikatukaLeaderboard } from './TikatukaLeaderboard';
 import {
   fetchPlayer,
+  fetchLeaderboard,
   applyResult,
   saveActiveRanked,
   clearActiveRanked,
@@ -32,6 +33,18 @@ type View = (typeof MODE_TABS)[number][0];
 export function TikatukaHub({ allUserNames }: { allUserNames: string[] }) {
   const [name, setName] = useState<string>(() => localStorage.getItem(NAME_KEY) ?? '');
   const [view, setView] = useState<View>('ranked');
+  const [recordedNames, setRecordedNames] = useState<string[]>([]);
+
+  // 게임 기록(랭크/PvP)이 1개 이상 있는 사람 이름도 선택 리스트에 노출 → 직접입력 후 플레이한 사람 포함.
+  useEffect(() => {
+    fetchLeaderboard()
+      .then((players) =>
+        setRecordedNames(players.filter((p) => p.winsAi + p.lossesAi + p.winsPvp + p.lossesPvp > 0).map((p) => p.name))
+      )
+      .catch(() => {});
+  }, []);
+
+  const pickNames = Array.from(new Set([...allUserNames, ...recordedNames])).sort((a, b) => a.localeCompare(b, 'ko'));
 
   const setNamePersist = (n: string) => {
     setName(n);
@@ -69,7 +82,7 @@ export function TikatukaHub({ allUserNames }: { allUserNames: string[] }) {
 
       {!name ? (
         <div className={CHROME}>
-          <NamePicker allUserNames={allUserNames} onPick={setNamePersist} />
+          <NamePicker allUserNames={pickNames} onPick={setNamePersist} />
         </div>
       ) : view === 'ranked' ? (
         <RankedView myName={name} />
@@ -113,7 +126,7 @@ function NamePicker({ allUserNames, onPick }: { allUserNames: string[]; onPick: 
               {n}
             </option>
           ))}
-          <option value={MANUAL}>직접입력…</option>
+          <option value={MANUAL}>직접입력</option>
         </select>
       </label>
 
