@@ -1,6 +1,6 @@
 // 티카투카 랭킹보드 — AI 랭크전 / 1:1 대전 각각 별도 TP 순위.
 import { useEffect, useMemo, useState } from 'react';
-import { Trophy, RefreshCw, Bot, Swords, X } from 'lucide-react';
+import { Trophy, RefreshCw, Bot, Swords, X, Flame } from 'lucide-react';
 import { fetchLeaderboard, type TikatukaPlayer, type RankPool } from './playerStore';
 import { levelForTp } from './tp';
 
@@ -53,12 +53,14 @@ export function TikatukaLeaderboard({ myName }: { myName?: string }) {
     const tpKey = pool === 'ai' ? 'tpAi' : 'tpPvp';
     const winKey = pool === 'ai' ? 'winsAi' : 'winsPvp';
     const lossKey = pool === 'ai' ? 'lossesAi' : 'lossesPvp';
+    const streakKey = pool === 'ai' ? 'streakAi' : 'streakPvp';
     return players
       .map((p) => ({
         name: p.name,
         tp: p[tpKey],
         wins: p[winKey],
         losses: p[lossKey],
+        streak: p[streakKey],
         level: levelForTp(p[tpKey]),
       }))
       .filter((r) => r.wins + r.losses > 0 || r.tp > 0)
@@ -144,8 +146,18 @@ export function TikatukaLeaderboard({ myName }: { myName?: string }) {
                   Lv.{r.level}
                 </span>
               </span>
-              <span className="text-center text-xs tabular-nums text-zinc-400">
-                {r.wins}승 {r.losses}패
+              <span className="flex flex-col items-center gap-0.5 text-center text-xs tabular-nums text-zinc-400">
+                <span>
+                  {r.wins}승 {r.losses}패
+                </span>
+                {r.streak >= 2 && (
+                  <span
+                    className="inline-flex items-center gap-0.5 rounded-full bg-orange-100 px-1.5 py-0.5 text-[10px] font-bold text-orange-600 dark:bg-orange-900/40 dark:text-orange-300"
+                    title={`${r.streak}연승 중`}
+                  >
+                    <Flame size={10} /> {r.streak}연승
+                  </span>
+                )}
               </span>
               <span className="text-center text-sm font-bold tabular-nums text-indigo-600 dark:text-indigo-300">
                 {r.tp.toLocaleString()} TP
