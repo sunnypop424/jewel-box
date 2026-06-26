@@ -1,6 +1,6 @@
 // 티카투카 1:1 온라인 대전 — 로비(방 만들기/참여/대기방 목록) + 실시간 대국.
 import { useEffect, useRef, useState } from 'react';
-import { Dices, Megaphone, Swords, Trophy, RotateCcw, Copy, Users, LogOut, WifiOff } from 'lucide-react';
+import { Dices, Megaphone, Swords, Trophy, RotateCcw, Copy, Users, LogOut, WifiOff, Check } from 'lucide-react';
 import { Board } from './components/Board';
 import { DiceTray, type RollAnim } from './components/DiceTray';
 import { EmotePicker, EmoteBubble } from './components/Emote';
@@ -266,9 +266,14 @@ function PvpRoom({
     <div className="flex flex-col gap-4">
       {/* 상단: 나 vs 상대 + 턴 (감정표현 말풍선은 각 이름표 옆으로) */}
       <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 text-sm font-bold">
-        <div className="relative justify-self-start">
-          <span className={`inline-block rounded-xl border px-3 py-2 ${g.myTurn ? 'border-indigo-400 bg-indigo-50 text-indigo-600 dark:border-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-300' : 'border-zinc-200 text-zinc-500 dark:border-zinc-800'}`}>
-            {myName} {g.myTurn && <span className="ml-1 rounded-full bg-indigo-500 px-1.5 py-0.5 text-[10px] text-white">내 차례</span>}
+        <div className="relative min-w-0 justify-self-start">
+          <span className={`flex max-w-full items-center gap-1 rounded-xl border px-3 py-2 ${g.myTurn ? 'border-indigo-400 bg-indigo-50 text-indigo-600 dark:border-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-300' : 'border-zinc-200 text-zinc-500 dark:border-zinc-800'}`}>
+            <span className="min-w-[3.5em] truncate">{myName}</span>
+            {g.myTurn && (
+              <span className="inline-flex shrink-0 items-center justify-center rounded-full bg-indigo-500 p-0.5 text-white" title="내 차례">
+                <Check size={12} strokeWidth={3} />
+              </span>
+            )}
           </span>
           {g.myEmote && <EmoteBubble key={g.myEmote.n} kind={g.myEmote.kind} side="left" />}
         </div>
@@ -276,8 +281,8 @@ function PvpRoom({
         <div className="justify-self-center">
           <EmotePicker onSend={g.sendEmote} />
         </div>
-        <div className="relative justify-self-end">
-          <span className={`inline-block rounded-xl border px-3 py-2 ${!g.myTurn ? 'border-rose-400 bg-rose-50 text-rose-600 dark:border-rose-600 dark:bg-rose-950/40 dark:text-rose-300' : 'border-zinc-200 text-zinc-500 dark:border-zinc-800'}`}>
+        <div className="relative min-w-0 justify-self-end">
+          <span className={`block max-w-full truncate rounded-xl border px-3 py-2 ${!g.myTurn ? 'border-rose-400 bg-rose-50 text-rose-600 dark:border-rose-600 dark:bg-rose-950/40 dark:text-rose-300' : 'border-zinc-200 text-zinc-500 dark:border-zinc-800'}`}>
             {g.opponentName}
           </span>
           {g.oppEmote && <EmoteBubble key={g.oppEmote.n} kind={g.oppEmote.kind} side="right" />}
