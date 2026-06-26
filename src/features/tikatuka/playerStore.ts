@@ -14,6 +14,12 @@ export interface ActiveRanked {
   startedAt: string;
 }
 
+// 상대별 1:1 전적(head-to-head). 무승부는 미집계(전체 winsPvp/lossesPvp와 동일 규칙).
+export interface H2HRecord {
+  wins: number;
+  losses: number;
+}
+
 export interface TikatukaPlayer {
   name: string;
   tpAi: number;
@@ -24,6 +30,7 @@ export interface TikatukaPlayer {
   lossesAi: number;
   winsPvp: number;
   lossesPvp: number;
+  h2h?: { [opponent: string]: H2HRecord }; // 1:1 상대별 전적
   activeRanked?: ActiveRanked | null;
   updatedAt: string;
 }
@@ -41,9 +48,24 @@ export function emptyPlayer(name: string): TikatukaPlayer {
     lossesAi: 0,
     winsPvp: 0,
     lossesPvp: 0,
+    h2h: {},
     activeRanked: null,
     updatedAt: new Date().toISOString(),
   };
+}
+
+// 상대별 전적 1건 반영(순수). 무승부는 미반영. PvP 종료 처리(room.ts)에서 사용.
+export function recordH2H(
+  h2h: TikatukaPlayer['h2h'],
+  opponent: string,
+  won: boolean,
+  isDraw?: boolean
+): { [opponent: string]: H2HRecord } {
+  const next: { [k: string]: H2HRecord } = { ...(h2h ?? {}) };
+  if (isDraw) return next;
+  const r = next[opponent] ?? { wins: 0, losses: 0 };
+  next[opponent] = { wins: r.wins + (won ? 1 : 0), losses: r.losses + (won ? 0 : 1) };
+  return next;
 }
 
 function normalize(name: string, data: Partial<TikatukaPlayer> | undefined): TikatukaPlayer {

@@ -15,7 +15,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../../../firebase';
 import { initialState, reducer } from '../reducer';
-import { computeApply, emptyPlayer, type TikatukaPlayer } from '../playerStore';
+import { computeApply, emptyPlayer, recordH2H, type TikatukaPlayer } from '../playerStore';
 import type { GameState, Owner } from '../types';
 
 export type Seat = 'host' | 'guest';
@@ -240,7 +240,11 @@ async function finalizeInTx(
     declared: hostDeclared,
     rankedStar: null,
   });
-  tx.set(hostRef, { ...hostOut.player, updatedAt: new Date().toISOString() });
+  tx.set(hostRef, {
+    ...hostOut.player,
+    h2h: guestName ? recordH2H(hostOut.player.h2h, guestName, winnerSeat === 'host', isDraw) : hostOut.player.h2h,
+    updatedAt: new Date().toISOString(),
+  });
 
   if (guestRef && guestName) {
     const gp: TikatukaPlayer = { ...emptyPlayer(guestName), ...(guestSnap && guestSnap.exists() ? (guestSnap.data() as Partial<TikatukaPlayer>) : {}), name: guestName };
@@ -250,7 +254,11 @@ async function finalizeInTx(
       declared: guestDeclared,
       rankedStar: null,
     });
-    tx.set(guestRef, { ...gOut.player, updatedAt: new Date().toISOString() });
+    tx.set(guestRef, {
+      ...gOut.player,
+      h2h: recordH2H(gOut.player.h2h, hostName, winnerSeat === 'guest', isDraw),
+      updatedAt: new Date().toISOString(),
+    });
   }
 
   tx.update(ref, {
