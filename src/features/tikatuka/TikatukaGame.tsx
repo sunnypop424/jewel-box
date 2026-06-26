@@ -1,7 +1,7 @@
 // 티카투카 게임 루트 — 난이도 선택 / 플레이(보드+컨트롤) / 결과.
 // mode='free': 기존 AI 자유전(TP 무관). mode='ranked': TP 레벨로 ★ 자동 매칭, 종료 시 TP 반영(콜백).
 import { useState, useEffect, useRef } from 'react';
-import { Dices, Hand, Megaphone, Sparkles, Trophy, RotateCcw, Info, Lightbulb } from 'lucide-react';
+import { Dices, Hand, Megaphone, Sparkles, Trophy, RotateCcw, Info, Lightbulb, Check } from 'lucide-react';
 import { useTikatuka } from './useTikatuka';
 import { isFieldFull } from './engine';
 import { canDeclareTikatuka } from './reducer';
@@ -580,8 +580,11 @@ function PcPlayerTag({ owner, label, active, note }: { owner: Owner; label: stri
     <div className={`flex items-center gap-2 rounded-2xl border px-4 py-2.5 ${ring}`}>
       <span className={`text-base font-bold ${tone}`}>{label}</span>
       {active && (
-        <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold text-white ${owner === 'me' ? 'bg-indigo-500' : 'bg-rose-500'}`}>
-          TURN
+        <span
+          className={`inline-flex shrink-0 items-center justify-center rounded-full p-0.5 text-white ${owner === 'me' ? 'bg-indigo-500' : 'bg-rose-500'}`}
+          title={owner === 'me' ? '내 차례' : '상대 차례'}
+        >
+          <Check size={14} strokeWidth={3} />
         </span>
       )}
       {note && <span className="text-xs font-bold text-indigo-500">{note}</span>}
