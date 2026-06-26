@@ -1,7 +1,7 @@
 // 티카투카 허브 — RefineHub와 동일한 셸 패턴(타이틀 + Segmented 탭).
 // 모드: 랭크전 / 자유전 / 1:1 대전 / 랭킹보드. 이름은 헤더의 작은 컨트롤로 관리.
 import { useEffect, useRef, useState } from 'react';
-import { Dices, UserRound, Pencil } from 'lucide-react';
+import { Dices, UserRound, Pencil, Flame } from 'lucide-react';
 import { TikatukaGame } from './TikatukaGame';
 import { TikatukaPvp } from './TikatukaPvp';
 import { TikatukaLeaderboard } from './TikatukaLeaderboard';
@@ -14,7 +14,7 @@ import {
   type ActiveRanked,
   type ApplyResultOutcome,
 } from './playerStore';
-import { starForTp, levelForTp, tpToNextLevel } from './tp';
+import { matchStar, typicalStarForTp, levelForTp, tpToNextLevel } from './tp';
 import { cardClass, inputClass, btnPrimary, CHROME } from './ui';
 import { cleanupStaleRooms, deleteMyLeftoverRoom } from './online/room';
 import { Segmented } from '../refine/refineUi';
@@ -175,7 +175,7 @@ function RankedView({ myName }: { myName: string }) {
       setGameKey((k) => k + 1);
       setPhase('play');
     } else {
-      setStar(starForTp(p.tpAi));
+      setStar(matchStar(p.tpAi));
       setResume(undefined);
       setPhase('intro');
     }
@@ -220,7 +220,7 @@ function RankedView({ myName }: { myName: string }) {
   const handleReplay = async () => {
     const p = await fetchPlayer(myName);
     setTp(p.tpAi);
-    setStar(starForTp(p.tpAi));
+    setStar(matchStar(p.tpAi));
     begin();
   };
 
@@ -250,8 +250,15 @@ function RankedView({ myName }: { myName: string }) {
             <span className="text-sm font-bold text-zinc-600 dark:text-zinc-300">{tp.toLocaleString()} TP</span>
             {next != null && <span className="text-xs text-zinc-400">다음 레벨까지 {next.toLocaleString()} TP</span>}
           </div>
-          <div className="rounded-lg bg-zinc-50 px-4 py-2 text-sm font-bold text-zinc-600 dark:bg-zinc-800/60 dark:text-zinc-300">
-            매칭 상대 난이도 <span className="text-amber-500">★{star}</span>
+          <div className="flex flex-col items-center gap-1.5">
+            <div className="rounded-lg bg-zinc-50 px-4 py-2 text-sm font-bold text-zinc-600 dark:bg-zinc-800/60 dark:text-zinc-300">
+              매칭 상대 난이도 <span className="text-amber-500">★{star}</span>
+            </div>
+            {star >= 3 && star > typicalStarForTp(tp) && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2.5 py-1 text-xs font-bold text-rose-600 dark:bg-rose-950/40 dark:text-rose-300">
+                <Flame size={12} /> 도전 매칭 · 이기면 보너스 TP
+              </span>
+            )}
           </div>
           <button onClick={begin} className={`${btnPrimary} w-full`}>
             랭크전 시작

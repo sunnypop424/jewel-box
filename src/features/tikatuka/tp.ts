@@ -45,6 +45,43 @@ export function starForTp(tp: number): AiLevel {
   return starForLevel(levelForTp(tp));
 }
 
+// ── 랭크전 매칭 변동 ──────────────────────────────────
+// 레벨마다 ★1~5에 가중치를 둔 분포에서 무작위 추첨 → 같은 레벨이라도 매번 난이도가 달라짐.
+// 낮은 레벨은 낮은 ★ 위주(가끔 높은 ★), 높은 레벨은 높은 ★ 위주.
+// 행 = 레벨(1~10), 열 = [★1, ★2, ★3, ★4, ★5] 가중치(합은 임의 — 내부에서 정규화).
+const MATCH_WEIGHTS: Record<number, [number, number, number, number, number]> = {
+  1: [60, 25, 10, 4, 1],
+  2: [40, 35, 18, 5, 2],
+  3: [20, 35, 30, 12, 3],
+  4: [10, 25, 35, 22, 8],
+  5: [5, 18, 37, 28, 12],
+  6: [3, 12, 33, 35, 17],
+  7: [2, 7, 26, 38, 27],
+  8: [1, 4, 18, 39, 38],
+  9: [1, 2, 12, 33, 52],
+  10: [0, 1, 7, 27, 65],
+};
+
+// TP에 맞춘 실제 매칭 ★(레벨별 가중 무작위, ★1~5). 매칭 시점에 1회만 호출(intro·다시하기).
+export function matchStar(tp: number, rng: () => number = Math.random): AiLevel {
+  const w = MATCH_WEIGHTS[levelForTp(tp)] ?? MATCH_WEIGHTS[1];
+  const total = w.reduce((a, b) => a + b, 0);
+  let roll = rng() * total;
+  for (let i = 0; i < w.length; i++) {
+    roll -= w[i];
+    if (roll < 0) return (i + 1) as AiLevel; // i=0 → ★1 … i=4 → ★5
+  }
+  return 5;
+}
+
+// 레벨에서 가장 흔한 매칭 ★(분포 최빈값) — '도전 매칭'(평소보다 강한 상대) 판정 기준.
+export function typicalStarForTp(tp: number): AiLevel {
+  const w = MATCH_WEIGHTS[levelForTp(tp)] ?? MATCH_WEIGHTS[1];
+  let best = 0;
+  for (let i = 1; i < w.length; i++) if (w[i] > w[best]) best = i;
+  return (best + 1) as AiLevel;
+}
+
 // 다음 레벨까지 남은 TP(최고 레벨이면 null).
 export function tpToNextLevel(tp: number): number | null {
   const lv = levelForTp(tp);
