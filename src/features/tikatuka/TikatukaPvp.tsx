@@ -13,6 +13,7 @@ import {
   deleteRoom,
   cleanupStaleRooms,
   subscribeOpenRooms,
+  getRoom,
   MY_ROOM_KEY,
   type Seat,
   type TikatukaRoom,
@@ -45,12 +46,72 @@ function trayShield(s: GameState, owner: Owner) {
   return null;
 }
 
+// 진행 중 세션(code+seat)을 보관 — 새로고침/재진입 시 같은 방으로 재접속(상태는 방에서 그대로 복원).
+const PVP_SESSION_KEY = 'tikatuka_pvp_session_v1';
+
 export function TikatukaPvp({ myName }: { myName: string }) {
   const [session, setSession] = useState<Session | null>(null);
+  // 저장된 세션이 있을 때만 복귀 확인 중(없으면 곧장 로비 — 깜빡임 방지).
+  const [restoring, setRestoring] = useState(
+    () => typeof localStorage !== 'undefined' && !!localStorage.getItem(PVP_SESSION_KEY)
+  );
+
+  // 새로고침 복귀 — 저장된 진행 중 세션이 있고 방이 살아있으면(내 좌석 일치) 재접속.
+  useEffect(() => {
+    let alive = true;
+    const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(PVP_SESSION_KEY) : null;
+    if (!raw) {
+      setRestoring(false);
+      return;
+    }
+    (async () => {
+      try {
+        const saved = JSON.parse(raw) as { code: string; seat: Seat; name: string };
+        if (saved.name !== myName) throw new Error('다른 사용자');
+        const room = await getRoom(saved.code);
+        const seatName = saved.seat === 'host' ? room?.host?.name : room?.guest?.name;
+        const live = !!room && (room.status === 'playing' || room.status === 'finished') && seatName === myName;
+        if (alive && live) setSession({ code: saved.code, seat: saved.seat });
+        else localStorage.removeItem(PVP_SESSION_KEY);
+      } catch {
+        localStorage.removeItem(PVP_SESSION_KEY);
+      } finally {
+        if (alive) setRestoring(false);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [myName]);
+
+  const enter = (s: Session) => {
+    try {
+      localStorage.setItem(PVP_SESSION_KEY, JSON.stringify({ ...s, name: myName }));
+    } catch {
+      /* localStorage 사용 불가 — 재접속만 불가, 게임은 정상 */
+    }
+    setSession(s);
+  };
+  const leave = () => {
+    try {
+      localStorage.removeItem(PVP_SESSION_KEY);
+    } catch {
+      /* no-op */
+    }
+    setSession(null);
+  };
+
+  if (restoring) {
+    return (
+      <div className={`${cardClass} flex items-center justify-center gap-2 py-8 text-sm font-bold text-zinc-500`}>
+        <Dices size={16} className="animate-spin text-indigo-400" /> 불러오는 중…
+      </div>
+    );
+  }
   return session ? (
-    <PvpRoom code={session.code} seat={session.seat} myName={myName} onLeaveLobby={() => setSession(null)} />
+    <PvpRoom code={session.code} seat={session.seat} myName={myName} onLeaveLobby={leave} />
   ) : (
-    <Lobby myName={myName} onEnter={setSession} />
+    <Lobby myName={myName} onEnter={enter} />
   );
 }
 

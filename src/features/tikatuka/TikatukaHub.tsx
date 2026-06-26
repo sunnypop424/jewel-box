@@ -21,6 +21,7 @@ import { Segmented } from '../refine/refineUi';
 import type { AiLevel, GameState, ResultDetail } from './types';
 
 const NAME_KEY = 'tikatuka_name_v1';
+const VIEW_KEY = 'tikatuka_view_v1'; // 선택 탭 보관 — 새로고침 시 같은 탭으로 복귀(1:1 재접속 보장)
 
 const MODE_TABS = [
   ['ranked', '랭크전'],
@@ -32,7 +33,18 @@ type View = (typeof MODE_TABS)[number][0];
 
 export function TikatukaHub({ allUserNames }: { allUserNames: string[] }) {
   const [name, setName] = useState<string>(() => localStorage.getItem(NAME_KEY) ?? '');
-  const [view, setView] = useState<View>('ranked');
+  const [view, setView] = useState<View>(() => {
+    const saved = typeof localStorage !== 'undefined' ? localStorage.getItem(VIEW_KEY) : null;
+    return (MODE_TABS.some(([v]) => v === saved) ? saved : 'ranked') as View;
+  });
+  const setViewPersist = (v: View) => {
+    setView(v);
+    try {
+      localStorage.setItem(VIEW_KEY, v);
+    } catch {
+      /* localStorage 사용 불가 — 탭 복귀만 불가, 동작은 정상 */
+    }
+  };
   const [recordedNames, setRecordedNames] = useState<string[]>([]);
 
   // 게임 기록(랭크/PvP)이 1개 이상 있는 사람 이름도 선택 리스트에 노출 → 직접입력 후 플레이한 사람 포함.
@@ -64,7 +76,7 @@ export function TikatukaHub({ allUserNames }: { allUserNames: string[] }) {
         <h2 className="hidden items-center gap-2 text-xl font-bold text-zinc-900 dark:text-zinc-100 md:flex">
           <Dices className="text-indigo-500" /> 티카투카
         </h2>
-        {name && <Segmented size="md" options={MODE_TABS} value={view} onChange={setView} />}
+        {name && <Segmented size="md" options={MODE_TABS} value={view} onChange={setViewPersist} />}
         {name && (
           <div className="flex items-center gap-2 sm:ml-auto">
             <span className="inline-flex items-center gap-1.5 rounded-full bg-indigo-50 px-3 py-1.5 text-sm font-bold text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300">
@@ -197,8 +209,9 @@ function RankedView({ myName }: { myName: string }) {
   const handleStateChange = (s: GameState) => {
     stateRef.current = s;
     if (star == null) return;
-    const boundary = (s.phase === 'rolling' || s.phase === 'aiThinking') && s.rolledDie === null && s.winner === null;
-    if (!boundary) return;
+    // 진행 중 매 상태 저장 → 새로고침 시 굴린 주사위·AI 수까지 그대로 복원(재굴림 방지).
+    // 시작 전(coinToss)·종료(winner)는 제외 — 종료는 handleFinish가 clearActiveRanked로 정리.
+    if (s.phase === 'coinToss' || s.winner !== null) return;
     const active: ActiveRanked = { state: s, star, startedAt: new Date().toISOString() };
     saveActiveRanked(myName, active).catch((e) => console.error(e));
   };
