@@ -1,9 +1,11 @@
 // 보드 — 3라인 × (내 필드[왼쪽] | 라인 정보 | 상대 필드[오른쪽]).
 // 먼저 놓은 주사위가 안쪽(중앙)에 오도록 배치. 클릭 타겟 하이라이트 + 실시간 합·승패.
+import { ChevronsLeft, ChevronsRight, Minus } from 'lucide-react';
 import { canPush, isFieldFull, lineResult } from '../engine';
 import type { Die, DieValue, GameState, LineIndex, Owner, ShieldPlacement } from '../types';
 import type { PushFx } from '../useTikatuka';
 import { DiePip } from './DiePip';
+import { DiceGroupOverlay } from './DiceGroupOverlay';
 
 const MAX = 3;
 const LINE_NAMES = ['1번 라인', '2번 라인', '3번 라인'];
@@ -113,6 +115,7 @@ export function Board({ state, flingIds, pushFx, aiShieldTarget, adviceTarget, s
             {/* 내 필드 (왼쪽) — 안쪽=오른쪽. 배치/쉴드 배치 타겟 */}
             <FieldBox
               slots={toSlots(myField, 'right')}
+              owner="me"
               justify="end"
               dieSize={dieSize}
               flingIds={flingIds}
@@ -139,6 +142,7 @@ export function Board({ state, flingIds, pushFx, aiShieldTarget, adviceTarget, s
             {/* 상대 필드 (오른쪽) — 안쪽=왼쪽. 밀어내기/쉴드 배치 타겟 */}
             <FieldBox
               slots={toSlots(aiField, 'left')}
+              owner="ai"
               justify="start"
               dieSize={dieSize}
               flingIds={flingIds}
@@ -158,6 +162,7 @@ export function Board({ state, flingIds, pushFx, aiShieldTarget, adviceTarget, s
 
 function FieldBox({
   slots,
+  owner,
   justify,
   dieSize,
   flingIds,
@@ -167,6 +172,7 @@ function FieldBox({
   onClick,
 }: {
   slots: (Die | null)[];
+  owner: Owner;
   justify: 'start' | 'end';
   dieSize: string;
   flingIds: string[];
@@ -216,6 +222,9 @@ function FieldBox({
         );
       })}
 
+      {/* 묶음(같은 눈) 강조 — `][` + 묶음 값 원. absolute라 주사위 크기·간격·필드 폭에 영향 없음. */}
+      <DiceGroupOverlay slots={slots} owner={owner} justify={justify} dieSize={dieSize} />
+
       {/* 들이받는 공격 주사위 — 굴린 주사위는 '하나'다. 같은 값이 여러 개 밀려나도 ram은 한 개만,
           공격 방향에서 가장 가까운 피해 주사위 자리로 날아와 부딪히고(나머지는 그 충격으로 함께 부서짐).
           slots 레이아웃을 그대로 미러링(같은 gap·padding·justify)해 그 자리에 정확히 겹친다. */}
@@ -243,12 +252,19 @@ function FieldBox({
   );
 }
 
+// 승패 = 고정폭 아이콘(승자 진영 쪽 화살표). 내 승=<<(왼쪽/indigo), 상대 승=>>(오른쪽/rose), 무=—(회색).
+// 글자 수에 따라 폭이 달라지던 텍스트 라벨을 대체해 라인마다 가운데 칸 폭을 균일하게 한다.
 function LineBadge({ winner, lg }: { winner: Owner | 'tie'; lg?: boolean }) {
   const meta =
     winner === 'me'
-      ? { t: '내 승', c: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300' }
+      ? { Icon: ChevronsLeft, c: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300' }
       : winner === 'ai'
-        ? { t: '상대 승', c: 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300' }
-        : { t: '무', c: 'bg-zinc-200 text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300' };
-  return <span className={`rounded-full font-bold ${lg ? 'px-3 py-1 text-xs' : 'px-2 py-0.5 text-[10px]'} ${meta.c}`}>{meta.t}</span>;
+        ? { Icon: ChevronsRight, c: 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300' }
+        : { Icon: Minus, c: 'bg-zinc-200 text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300' };
+  const { Icon } = meta;
+  return (
+    <span className={`inline-flex items-center justify-center rounded-full ${lg ? 'p-1.5' : 'p-1'} ${meta.c}`}>
+      <Icon size={lg ? 18 : 14} strokeWidth={2.5} />
+    </span>
+  );
 }

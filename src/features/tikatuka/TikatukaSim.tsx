@@ -5,12 +5,13 @@
 //  · 선공측의 '첫 주사위'는 쉴드로 자동. 행동을 마치면 턴이 자동으로 넘어간다(필요 시 수동 전환).
 //  · 타짜: 두 눈을 입력하면 어느 쪽이 좋은지 추천 → 선택하면 그 값으로 진행(게임당 1회 소진).
 import { useState, useEffect, useRef } from 'react';
-import { Info, RotateCcw, Undo2, ShieldCheck, Flag, Sparkles, X, ArrowLeftRight, Loader2 } from 'lucide-react';
+import { Info, RotateCcw, Undo2, ShieldCheck, Flag, Sparkles, X, ArrowLeftRight, Loader2, ChevronsLeft, ChevronsRight, Minus } from 'lucide-react';
 import { createEmptyBoard, lineSum, makeDie, opponentOf } from './engine';
 import { estimateWinRate } from './ai';
 import type { Factor } from './ai';
 import type { Board, Die, DieValue, LineIndex, Owner } from './types';
 import { DiePip } from './components/DiePip';
+import { DiceGroupOverlay } from './components/DiceGroupOverlay';
 import { AdvicePanel, WinRateBar } from './components/AdvicePanel';
 
 const LINES: LineIndex[] = [0, 1, 2];
@@ -567,6 +568,14 @@ function SimField({
           />
         );
       })}
+
+      {/* 묶음(같은 눈) 강조 — `][` + 묶음 값 원. absolute라 주사위 크기·간격·필드 폭에 영향 없음. */}
+      <DiceGroupOverlay
+        slots={slots.map((p) => (p ? { value: p.value } : null))}
+        owner={owner}
+        justify={owner === 'me' ? 'end' : 'start'}
+        dieSize={DIE}
+      />
     </button>
   );
 }
@@ -602,14 +611,20 @@ function ValueRow({
   );
 }
 
+// 승패 = 고정폭 아이콘(승자 진영 쪽 화살표). 내 승=<<(인디고), 상대 승=>>(로즈), 무=—(회색).
 function LineBadge({ winner }: { winner: Owner | 'tie' }) {
   const meta =
     winner === 'me'
-      ? { t: '내 승', c: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300' }
+      ? { Icon: ChevronsLeft, c: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300' }
       : winner === 'ai'
-        ? { t: '상대 승', c: 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300' }
-        : { t: '무', c: 'bg-zinc-200 text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300' };
-  return <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${meta.c}`}>{meta.t}</span>;
+        ? { Icon: ChevronsRight, c: 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300' }
+        : { Icon: Minus, c: 'bg-zinc-200 text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300' };
+  const { Icon } = meta;
+  return (
+    <span className={`inline-flex items-center justify-center rounded-full p-1 ${meta.c}`}>
+      <Icon size={14} strokeWidth={2.5} />
+    </span>
+  );
 }
 
 function Intro() {
