@@ -131,10 +131,11 @@ export function Board({ state, flingIds, pushFx, aiShieldTarget, adviceTarget, s
             <div className={`flex min-w-0 flex-col items-center justify-center gap-0.5 ${lg ? 'min-w-[120px] gap-1 px-2' : 'px-0.5 sm:min-w-[84px] sm:px-1'}`}>
               <span className={`hidden font-bold text-zinc-400 sm:block ${lg ? 'text-sm' : 'text-[10px]'}`}>{LINE_NAMES[line]}</span>
               <span className="text-[10px] font-bold text-zinc-400 sm:hidden">{line + 1}라인</span>
+              {/* 점수 — 자릿수가 달라도 라인 폭이 어긋나지 않게 각 수를 고정폭 셀로(콜론 기준 정렬). */}
               <span className={`font-bold tabular-nums ${lg ? 'text-2xl' : 'text-sm'}`}>
-                <span className="text-indigo-500">{lr.meSum}</span>
+                <span className="inline-block w-[1.3em] text-right text-indigo-500">{lr.meSum}</span>
                 <span className="mx-1 text-zinc-300">:</span>
-                <span className="text-rose-500">{lr.aiSum}</span>
+                <span className="inline-block w-[1.3em] text-left text-rose-500">{lr.aiSum}</span>
               </span>
               <LineBadge winner={lr.winner} lg={lg} />
             </div>

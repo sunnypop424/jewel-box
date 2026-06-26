@@ -365,10 +365,11 @@ export function TikatukaSim() {
               />
               <div className="flex min-w-0 flex-col items-center justify-center gap-0.5 px-0.5 lg:min-w-[110px] lg:gap-1">
                 <span className="text-[10px] font-bold text-zinc-400 lg:text-sm">{line + 1}번</span>
+                {/* 점수 — 자릿수가 달라도 라인 폭이 어긋나지 않게 각 수를 고정폭 셀로(콜론 기준 정렬). */}
                 <span className="font-bold tabular-nums lg:text-2xl">
-                  <span className="text-indigo-500">{meSum}</span>
+                  <span className="inline-block w-[1.3em] text-right text-indigo-500">{meSum}</span>
                   <span className="mx-1 text-zinc-300">:</span>
-                  <span className="text-rose-500">{aiSum}</span>
+                  <span className="inline-block w-[1.3em] text-left text-rose-500">{aiSum}</span>
                 </span>
                 <LineBadge winner={winner} />
               </div>

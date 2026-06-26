@@ -124,10 +124,15 @@ export function rollValueExcluding(rng: () => number, exclude: DieValue): DieVal
   return (((exclude + Math.floor(rng() * 5)) % 6) + 1) as DieValue;
 }
 
+// 주사위 id는 세션(클라이언트)마다 고유 prefix를 붙여 전역 유일성을 보장한다.
+// (1:1 온라인은 host/guest가 각자 0부터 카운트 → `d3` 같은 id가 양쪽에서 충돌하면,
+//  밀어내기로 사라진 주사위 id가 다른 라인의 동명 주사위와 잘못 매칭되어 엉뚱한 라인이
+//  같이 부서지는 듯 보였다가 되돌아오는 버그가 났다. prefix로 충돌을 차단.)
+const _idPrefix = Math.random().toString(36).slice(2, 8);
 let _idSeq = 0;
 export function makeDie(value: DieValue, owner: Owner, shield: boolean): Die {
   _idSeq += 1;
-  return { id: `d${_idSeq}`, value, shield, owner };
+  return { id: `d${_idPrefix}_${_idSeq}`, value, shield, owner };
 }
 
 // ── 배치 ──────────────────────────────────────────────
