@@ -7,7 +7,7 @@ import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { isFieldFull, legalMoves, pushTargets, rollValue, rollValueExcluding } from './engine';
 import { decideAi } from './ai';
 import { initialState, reducer } from './reducer';
-import type { AiLevel, DieValue, LineIndex, Owner, ShieldPlacement } from './types';
+import type { AiLevel, DieValue, GameState, LineIndex, Owner, ShieldPlacement } from './types';
 
 // 굴림 자체엔 고민이 없다(걍 굴림). 고민은 '눈이 나온 뒤' — 타짜 쓸지·어디 놓을지·밀어낼지.
 const ROLL_TUMBLE = 560; // 굴림(면 교체) 지속 — 결과가 보일 만큼만 짧게
@@ -31,8 +31,9 @@ export interface PushFx {
   value: DieValue; // 공격 주사위 눈 = 피해 주사위 눈(같은 값끼리 충돌)
 }
 
-export function useTikatuka() {
-  const [state, dispatch] = useReducer(reducer, undefined, () => initialState(2));
+// initial: 저장된 게임 복원(랭크전 새로고침 재개)용. 없으면 난이도 선택 화면에서 시작.
+export function useTikatuka(initial?: GameState) {
+  const [state, dispatch] = useReducer(reducer, undefined, () => initial ?? initialState(2));
   const [aiReveal, setAiReveal] = useState<AiReveal | null>(null);
   const [flingIds, setFlingIds] = useState<string[]>([]);
   const [pushFx, setPushFx] = useState<PushFx | null>(null);

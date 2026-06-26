@@ -68,8 +68,21 @@ export function lineResult(board: Board, line: LineIndex): LineResult {
   return { meSum, aiSum, winner };
 }
 
+// 보드 위 전체 주사위 개수(양 진영·쉴드 포함) — 티카투카 베팅 선언 조건(10개+) 판정용.
+export function totalDice(board: Board): number {
+  let n = 0;
+  for (const line of board.lines) n += line.me.length + line.ai.length;
+  return n;
+}
+
 // 승패·타이브레이커 일괄 계산(쉴드 포함). 티카투카 보너스는 reducer가 주입.
-export function evaluate(board: Board, tikatukaUsed: boolean): ResultDetail {
+// tikatukaUsed: 하위호환으로 boolean(=me 선언)도 허용, 신규는 {me,ai} 맵.
+export function evaluate(
+  board: Board,
+  tikatukaUsed: boolean | { me: boolean; ai: boolean } = false
+): ResultDetail {
+  const declared =
+    typeof tikatukaUsed === 'boolean' ? { me: tikatukaUsed, ai: false } : tikatukaUsed;
   const lines = LINES.map((l) => lineResult(board, l)) as [
     LineResult,
     LineResult,
@@ -96,7 +109,7 @@ export function evaluate(board: Board, tikatukaUsed: boolean): ResultDetail {
     aiLineWins,
     meTotal,
     aiTotal,
-    tikatukaBonus: tikatukaUsed && winner === 'me',
+    tikatukaBonus: (winner === 'me' || winner === 'ai') && declared[winner],
     winner,
   };
 }
