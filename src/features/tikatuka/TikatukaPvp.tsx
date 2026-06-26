@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Dices, Megaphone, Swords, Trophy, RotateCcw, Copy, Users, LogOut, WifiOff } from 'lucide-react';
 import { Board } from './components/Board';
 import { DiceTray, type RollAnim } from './components/DiceTray';
+import { EmotePicker, EmoteBubble } from './components/Emote';
 import { canDeclareTikatuka } from './reducer';
 import { useTikatukaOnline } from './online/useTikatukaOnline';
 import {
@@ -263,15 +264,24 @@ function PvpRoom({
 
   return (
     <div className="flex flex-col gap-4">
-      {/* 상단: 나 vs 상대 + 턴 */}
+      {/* 상단: 나 vs 상대 + 턴 (감정표현 말풍선은 각 이름표 옆으로) */}
       <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 text-sm font-bold">
-        <span className={`justify-self-start rounded-xl border px-3 py-2 ${g.myTurn ? 'border-indigo-400 bg-indigo-50 text-indigo-600 dark:border-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-300' : 'border-zinc-200 text-zinc-500 dark:border-zinc-800'}`}>
-          {myName} {g.myTurn && <span className="ml-1 rounded-full bg-indigo-500 px-1.5 py-0.5 text-[10px] text-white">내 차례</span>}
-        </span>
-        <span className="justify-self-center text-zinc-300">VS</span>
-        <span className={`justify-self-end rounded-xl border px-3 py-2 ${!g.myTurn ? 'border-rose-400 bg-rose-50 text-rose-600 dark:border-rose-600 dark:bg-rose-950/40 dark:text-rose-300' : 'border-zinc-200 text-zinc-500 dark:border-zinc-800'}`}>
-          {g.opponentName}
-        </span>
+        <div className="relative justify-self-start">
+          <span className={`inline-block rounded-xl border px-3 py-2 ${g.myTurn ? 'border-indigo-400 bg-indigo-50 text-indigo-600 dark:border-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-300' : 'border-zinc-200 text-zinc-500 dark:border-zinc-800'}`}>
+            {myName} {g.myTurn && <span className="ml-1 rounded-full bg-indigo-500 px-1.5 py-0.5 text-[10px] text-white">내 차례</span>}
+          </span>
+          {g.myEmote && <EmoteBubble key={g.myEmote.n} kind={g.myEmote.kind} side="left" />}
+        </div>
+        {/* 가운데: 감정표현 버튼(자유전 '지원 ON/OFF' 자리와 동일한 위치·디자인) */}
+        <div className="justify-self-center">
+          <EmotePicker onSend={g.sendEmote} />
+        </div>
+        <div className="relative justify-self-end">
+          <span className={`inline-block rounded-xl border px-3 py-2 ${!g.myTurn ? 'border-rose-400 bg-rose-50 text-rose-600 dark:border-rose-600 dark:bg-rose-950/40 dark:text-rose-300' : 'border-zinc-200 text-zinc-500 dark:border-zinc-800'}`}>
+            {g.opponentName}
+          </span>
+          {g.oppEmote && <EmoteBubble key={g.oppEmote.n} kind={g.oppEmote.kind} side="right" />}
+        </div>
       </div>
 
       {/* 티카투카 선언 표시(둘 중 한 명만) */}

@@ -8,14 +8,19 @@ import { fromCanonical, toCanonical } from './perspective';
 import {
   finalizeForfeit,
   heartbeat,
+  sendEmote,
   STALE_MS,
   subscribeRoom,
   writeMove,
   type Seat,
   type TikatukaRoom,
 } from './room';
+import type { EmoteKind, EmoteState } from '../components/Emote';
 import type { PushFx } from '../useTikatuka';
 import type { Board, DieValue, GameState, LineIndex, Owner } from '../types';
+
+const EMOTE_TTL = 4500; // 말풍선 표시 시간(ms) — tikatuka.css의 tk-emote 애니메이션(4400ms)보다 살짝 길게
+const EMOTE_COOLDOWN = 1200; // 연속 전송 쿨다운(ms)
 
 const ROLL_TUMBLE = 520;
 const PASS_DELAY = 480;
@@ -43,6 +48,10 @@ export interface OnlineGame {
   opponentStale: boolean;
   flingIds: string[];
   pushFx: PushFx | null;
+  // 감정표현
+  myEmote: EmoteState | null;
+  oppEmote: EmoteState | null;
+  sendEmote: (kind: EmoteKind) => void;
   // 액션
   place: (line: LineIndex) => void;
   push: (line: LineIndex) => void;
@@ -71,6 +80,13 @@ export function useTikatukaOnline(code: string, seat: Seat): OnlineGame {
   // 연출 지연 중 다음 상태가 오면 먼저 비우기 위한 보류 핸들.
   const pendingRef = useRef<{ timer: ReturnType<typeof setTimeout>; next: GameState } | null>(null);
 
+  // 감정표현 — 게임 상태와 분리된 채널(턴 무관). 내 것/상대 것 각각 잠깐 표시.
+  const [myEmote, setMyEmote] = useState<EmoteState | null>(null);
+  const [oppEmote, setOppEmote] = useState<EmoteState | null>(null);
+  const oppEmoteSeen = useRef<number | null>(null); // 마지막으로 반영한 상대 emote nonce
+  const emoteInit = useRef(false); // 첫 스냅샷의 묵은 emote 재생 방지
+  const emoteCooldown = useRef(0);
+
   const commit = useCallback(
     (next: GameState, fromRemote: boolean) => {
       localRef.current = next;
@@ -96,6 +112,15 @@ export function useTikatukaOnline(code: string, seat: Seat): OnlineGame {
   useEffect(() => {
     const unsub = subscribeRoom(code, (r) => {
       setRoom(r);
+      // 감정표현 감지 — seq를 올리지 않으므로 아래 seq early-return보다 먼저 처리.
+      const sig = r?.emote?.[oppSeat] ?? null;
+      if (!emoteInit.current) {
+        emoteInit.current = true;
+        oppEmoteSeen.current = sig?.n ?? null; // 입장 시점의 묵은 emote는 발화하지 않음
+      } else if (sig && sig.n !== oppEmoteSeen.current) {
+        oppEmoteSeen.current = sig.n;
+        setOppEmote({ kind: sig.kind, n: sig.n });
+      }
       if (!r?.state || r.seq <= seqRef.current) return;
       seqRef.current = r.seq;
       // 연출 대기 중이던 이전 상태가 있으면 먼저 즉시 반영(되감김 방지).
@@ -127,7 +152,7 @@ export function useTikatukaOnline(code: string, seat: Seat): OnlineGame {
       }
     });
     return unsub;
-  }, [code, seat]);
+  }, [code, seat, oppSeat]);
 
   // 하트비트 — 5s 주기 + 마운트/가시성 변화 시.
   useEffect(() => {
@@ -145,6 +170,30 @@ export function useTikatukaOnline(code: string, seat: Seat): OnlineGame {
       document.removeEventListener('visibilitychange', onVis);
     };
   }, [code, seat]);
+
+  // 감정표현 말풍선 자동 소멸(내 것/상대 것 각각). nonce가 바뀌면 타이머 재시작.
+  useEffect(() => {
+    if (!myEmote) return;
+    const id = setTimeout(() => setMyEmote(null), EMOTE_TTL);
+    return () => clearTimeout(id);
+  }, [myEmote]);
+  useEffect(() => {
+    if (!oppEmote) return;
+    const id = setTimeout(() => setOppEmote(null), EMOTE_TTL);
+    return () => clearTimeout(id);
+  }, [oppEmote]);
+
+  // 감정표현 전송 — 쿨다운 + 내 말풍선 즉시 로컬 표시(서버 왕복 없이).
+  const sendEmoteFn = useCallback(
+    (kind: EmoteKind) => {
+      const t = Date.now();
+      if (t < emoteCooldown.current) return;
+      emoteCooldown.current = t + EMOTE_COOLDOWN;
+      setMyEmote({ kind, n: t });
+      sendEmote(codeRef.current, seat, kind).catch(() => {});
+    },
+    [seat]
+  );
 
   // 내 턴 자동 굴림(연출 없이 짧게) — useTikatuka effect1과 동일 취지.
   useEffect(() => {
@@ -218,6 +267,9 @@ export function useTikatukaOnline(code: string, seat: Seat): OnlineGame {
     opponentStale: !!opponentStale,
     flingIds,
     pushFx,
+    myEmote,
+    oppEmote,
+    sendEmote: sendEmoteFn,
     place,
     push,
     useTazza,

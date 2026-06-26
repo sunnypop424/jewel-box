@@ -16,9 +16,16 @@ import {
 import { db } from '../../../firebase';
 import { initialState, reducer } from '../reducer';
 import { computeApply, emptyPlayer, recordH2H, type TikatukaPlayer } from '../playerStore';
+import type { EmoteKind } from '../components/Emote';
 import type { GameState, Owner } from '../types';
 
 export type Seat = 'host' | 'guest';
+
+// 감정표현 신호 — 게임 상태(state/seq)와 분리된 채널. n은 변화 감지용 nonce.
+export interface EmoteSignal {
+  kind: EmoteKind;
+  n: number;
+}
 
 export interface TikatukaRoom {
   code: string;
@@ -33,6 +40,7 @@ export interface TikatukaRoom {
   updatedAt: string;
   result?: { winnerSeat: Seat | 'draw'; reason: 'normal' | 'forfeit' };
   tpApplied?: boolean;
+  emote?: { host?: EmoteSignal | null; guest?: EmoteSignal | null }; // 좌석별 마지막 감정표현
 }
 
 const COL = collection(db, 'tikatukaRooms');
@@ -122,6 +130,13 @@ export function subscribeRoom(code: string, cb: (room: TikatukaRoom | null) => v
 
 export async function heartbeat(code: string, seat: Seat): Promise<void> {
   await updateDoc(doc(COL, code.toUpperCase()), { [`heartbeat.${seat}`]: Date.now() });
+}
+
+// 감정표현 전송 — 전용 필드만 갱신(트랜잭션·seq 미터치). 턴과 무관하게 아무 때나 보낼 수 있다.
+export async function sendEmote(code: string, seat: Seat, kind: EmoteKind): Promise<void> {
+  await updateDoc(doc(COL, code.toUpperCase()), {
+    [`emote.${seat}`]: { kind, n: Date.now() },
+  }).catch(() => {});
 }
 
 // 턴 좌석이 자기 행동 결과(canonical, host 관점)를 기록. seq 가드로 더블쓰기 방지.
