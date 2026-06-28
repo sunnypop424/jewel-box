@@ -242,7 +242,6 @@ export function TikatukaSim() {
   });
   const [savedCount, setSavedCount] = useState(0);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
-  const [eventCount, setEventCount] = useState(0); // 진행 중 경기의 기록된 수(버튼 활성용 — ref를 렌더에서 못 읽으므로 상태로 미러)
   const gameRef = useRef<SimGameLog | null>(null); // 진행 중 경기
   const pendingPushRef = useRef<Omit<SimMoveEvent, 'seq'> | null>(null); // 알까기 수(쉴드 배치까지 합쳐 1수로 기록)
   const tazzaShotRef = useRef<{ rolled: [DieValue, DieValue]; chosen: DieValue } | null>(null); // 직전 타짜 택1
@@ -267,7 +266,6 @@ export function TikatukaSim() {
     pendingPushRef.current = null;
     tazzaShotRef.current = null;
     savedIdRef.current = null;
-    setEventCount(0);
     gameRef.current = record
       ? { v: 1, id: genGameId(), player: readPlayerName(), star, firstTurn: ft, startedAt: new Date().toISOString(), endedAt: '', events: [], outcome: null }
       : null;
@@ -278,7 +276,6 @@ export function TikatukaSim() {
     if (!g || !record) return;
     g.events.push({ seq: g.events.length, ...ev });
     if (savedIdRef.current === g.id) savedIdRef.current = null; // 저장 이후 내용 바뀜 → 재저장 허용
-    setEventCount(g.events.length);
   };
   // 내 수일 때 어드바이저 맥락(추천/승률/추천을 따랐는지).
   const adviceCtx = (act: 'place' | 'push', line: LineIndex) => ({
@@ -286,37 +283,29 @@ export function TikatukaSim() {
     followedAdvice: advice ? advice.kind === act && (advice.line === undefined || advice.line === line) : undefined,
     winRateBefore: winRate,
   });
-  // 진행 중 경기를 현재 판세(임시 결과)로 RTDB에 갱신(같은 id 덮어쓰기). 매 수마다 자동 호출 → 조용히 적재.
-  // 성공은 알리지 않고(상태 줄의 저장 수만 갱신), 실패만 표시. 마지막 수가 곧 최종 판세라 별도 '종료' 처리 불필요.
+  // 완성된 경기만 저장한다 — 한쪽 진영의 3필드가 모두 차면(보드 가득 또는 홀드 종료) 그게 곧 경기 종료다.
+  // 미완성/중도 포기 경기는 RTDB에 아예 안 남긴다(저장 안 함 = 따로 지울 필요도 없음). 매 수 직후 onField에서 호출.
   const finalizeAndSave = useCallback(async (g: Grid) => {
     const game = gameRef.current;
-    if (!record || !game || game.events.length === 0 || savedIdRef.current === game.id) return;
+    if (!record || !game || game.events.length === 0) return;
+    if (!(allFull(g, 'me') || allFull(g, 'ai'))) return; // 미완성 → 저장 안 함
+    if (savedIdRef.current === game.id) return; // 같은 내용 중복 저장 방지(새 수가 들어오면 pushEvent가 해제)
     const r = evaluate(gridToBoard(g), false);
     const finalized: SimGameLog = {
       ...game,
       endedAt: new Date().toISOString(),
       outcome: { winner: r.winner, meLineWins: r.meLineWins, aiLineWins: r.aiLineWins, meTotal: r.meTotal, aiTotal: r.aiTotal },
     };
-    savedIdRef.current = game.id; // 낙관적 잠금(같은 내용 중복 저장 방지 — 새 수가 들어오면 pushEvent가 해제)
+    savedIdRef.current = game.id;
     try {
       await saveSimGame(finalized);
       savedIdsRef.current.add(game.id);
-      setSavedCount(savedIdsRef.current.size); // 고유 경기 수
+      setSavedCount(savedIdsRef.current.size); // 고유(완성) 경기 수
     } catch {
       savedIdRef.current = null; // 실패 → 재시도 허용
       setSaveMsg('저장 실패 — RTDB 권한/네트워크 확인');
     }
   }, [record]);
-  // 보드가 가득 차면(자연 종료) 즉시 저장(디바운스 대기 없이).
-  const maybeAutoFinalize = (g: Grid) => {
-    if (allFull(g, 'me') && allFull(g, 'ai')) void finalizeAndSave(g);
-  };
-  // 자동 저장 — 매 수 후 잠깐 멈추면 진행 중 경기를 RTDB에 갱신한다(버튼 없이 알아서). 디바운스로 연속 입력은 한 번만.
-  useEffect(() => {
-    if (!record || eventCount === 0) return;
-    const t = setTimeout(() => void finalizeAndSave(grid), 600);
-    return () => clearTimeout(t);
-  }, [grid, eventCount, record, finalizeAndSave]);
 
   // PiP 토글 바를 항상 맨 위에 붙이고, PiP가 열려 있으면 시뮬 본체를 PiP 창으로 포털한다(본체는 그대로 마운트 유지).
   const renderWithPip = (content: ReactNode) => {
@@ -461,7 +450,7 @@ export function TikatukaSim() {
       setGrid(ng);
       setPending(null);
       advanceFrom(ng, opponentOf(turn)); // 쉴드 배치로 그 턴 종료 → 다음 턴(둘 곳 없으면 자동 패스)
-      maybeAutoFinalize(ng);
+      void finalizeAndSave(ng); // 완성됐으면 저장(미완성이면 내부에서 무시)
       return;
     }
     if (act === 'place') {
@@ -480,7 +469,7 @@ export function TikatukaSim() {
       setGrid(ng);
       if (isShield) setFirstShield(null);
       advanceFrom(ng, opponentOf(turn));
-      maybeAutoFinalize(ng);
+      void finalizeAndSave(ng); // 완성됐으면 저장(미완성이면 내부에서 무시)
       return;
     }
     // act === 'push' — 상대 필드(owner)의 같은 값 제거. 미는 쪽=turn → 쉴드 획득(값 입력 후 배치). 턴 유지.
