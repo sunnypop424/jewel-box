@@ -8,7 +8,6 @@ import { useState, useEffect, useRef, useCallback, useMemo, type ReactNode } fro
 import { createPortal } from 'react-dom';
 import { Info, RotateCcw, Undo2, ShieldCheck, Flag, Sparkles, X, ArrowLeftRight, Loader2, PictureInPicture2, ChevronsLeft, ChevronsRight, Minus, Swords, BarChart3, ChevronDown } from 'lucide-react';
 import { createEmptyBoard, evaluate, lineSum, makeDie, opponentOf } from './engine';
-import { estimateWinRate } from './ai';
 import type { Factor } from './ai';
 import type { AiLevel, Board, Die, DieValue, LineIndex, Owner } from './types';
 import { saveSimGame, fetchAllSimGames, type SimGameLog, type SimMoveEvent, type LogGrid } from './simLog';
@@ -283,8 +282,10 @@ export function TikatukaSim() {
   const [past, setPast] = useState<Snap[]>([]);
   const [advice, setAdvice] = useState<SimAdvice | null>(null);
   const [adviceOpen, setAdviceOpen] = useState(false);
+  const [hold, setHold] = useState<SimAdvice | null>(null); // 홀드 추천(승리 굳히기/지는 판 콘시드)
+  const [holdOpen, setHoldOpen] = useState(false);
   const [winRate, setWinRate] = useState<number | null>(null);
-  const [computing, setComputing] = useState(false); // 워커가 최선 수 탐색 중
+  const [computing, setComputing] = useState(false); // 워커가 승률·추천 계산 중(계산 중 표기용)
   const workerRef = useRef<Worker | null>(null);
   const reqIdRef = useRef(0);
   const { pipWindow, openPip } = usePipWindow();
@@ -407,10 +408,13 @@ export function TikatukaSim() {
   // 깊은 탐색 워커 — 메인 스레드를 막지 않고 최선 수를 비동기 계산. 최신 요청(reqId)만 반영.
   useEffect(() => {
     const w = new Worker(new URL('./advisor.worker.ts', import.meta.url), { type: 'module' });
-    w.onmessage = (e: MessageEvent<{ id: number; winRate: number; advice: SimAdvice | null }>) => {
+    w.onmessage = (
+      e: MessageEvent<{ id: number; winRate: number; advice: SimAdvice | null; hold: SimAdvice | null }>
+    ) => {
       if (e.data.id !== reqIdRef.current) return;
       setWinRate(e.data.winRate); // 정밀 승률(MC)로 갱신
       setAdvice(e.data.advice);
+      setHold(e.data.hold);
       setComputing(false);
     };
     workerRef.current = w;
@@ -425,7 +429,6 @@ export function TikatukaSim() {
   useEffect(() => {
     if (!started) return;
     const board = gridToBoard(grid);
-    setWinRate(estimateWinRate(board, 'me')); // 즉시 거친 추정 — 워커가 정밀 MC 승률로 갱신
 
     // 어떤 추천을 계산할지(없으면 승률만 갱신). 추천은 내 턴 / 내가 얻은 쉴드일 때만.
     let advReq:
@@ -443,8 +446,9 @@ export function TikatukaSim() {
       advReq = { kind: 'move', value, tazza };
     }
 
-    setAdvice(null); // 입력이 바뀌었으니 이전 추천 강조 제거(워커 결과로 다시 채움)
-    setComputing(advReq != null);
+    setAdvice(null); // 입력이 바뀌었으니 이전 추천/홀드 강조 제거(워커 결과로 다시 채움)
+    setHold(null);
+    setComputing(true); // 승률·추천 재계산 시작 → '계산 중' 표시(직전 추정치 노출 방지)
     const id = ++reqIdRef.current;
     // 선공/후수·선공 첫 쉴드 여부를 함께 보내 타짜(롤) 추천 문턱을 맥락으로 보정한다.
     const ctx = { iAmFirst: firstTurn === 'me', myFirstShield: firstShield === 'me' };
@@ -659,14 +663,6 @@ export function TikatukaSim() {
         ) : null}
       </div>
 
-      {/* 예상 승률 */}
-      {winRate != null && (
-        <div className="flex items-center gap-2 rounded-xl border border-zinc-200 bg-white px-3 py-2 dark:border-zinc-800 dark:bg-zinc-900/50">
-          <span className="shrink-0 text-xs font-bold text-zinc-500 dark:text-zinc-400 lg:text-sm">예상 승률</span>
-          <WinRateBar winRate={winRate} />
-        </div>
-      )}
-
       {/* 보드 */}
       <div className="flex flex-col gap-2.5 lg:gap-4">
         <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-1 text-xs font-bold lg:text-base">
@@ -806,20 +802,41 @@ export function TikatukaSim() {
         </div>
       )}
 
-      {/* 추천 / 계산 중 */}
+      {/* 승률 + 추천 (합침) — 탐색 중엔 '계산 중', 끝나면 승률을 추천 패널에 함께 표시. 홀드 추천이 있으면 위에. */}
       {computing ? (
         <div className="flex items-center gap-2 rounded-2xl border border-zinc-200 bg-white px-3 py-3 text-sm font-bold text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900/50">
           <Loader2 size={16} className="animate-spin text-indigo-500" />
-          최선 수를 깊게 탐색 중… (오래 걸릴 수 있어요)
+          승률·추천 계산 중… (오래 걸릴 수 있어요)
         </div>
-      ) : advice ? (
-        <AdvicePanel
-          headline={advice.headline}
-          factors={advice.factors}
-          open={adviceOpen}
-          onToggle={() => setAdviceOpen((v) => !v)}
-        />
-      ) : null}
+      ) : (
+        <>
+          {hold && (
+            <AdvicePanel
+              isHold
+              headline={hold.headline}
+              factors={hold.factors}
+              winRate={winRate ?? undefined}
+              open={holdOpen}
+              onToggle={() => setHoldOpen((v) => !v)}
+            />
+          )}
+          {advice && (
+            <AdvicePanel
+              headline={advice.headline}
+              factors={advice.factors}
+              winRate={hold ? undefined : winRate ?? undefined}
+              open={adviceOpen}
+              onToggle={() => setAdviceOpen((v) => !v)}
+            />
+          )}
+          {!hold && !advice && winRate != null && (
+            <div className="flex items-center gap-2 rounded-xl border border-zinc-200 bg-white px-3 py-2 dark:border-zinc-800 dark:bg-zinc-900/50">
+              <span className="shrink-0 text-xs font-bold text-zinc-500 dark:text-zinc-400 lg:text-sm">예상 승률</span>
+              <WinRateBar winRate={winRate} />
+            </div>
+          )}
+        </>
+      )}
 
       {/* 실전 기록 — 양측 수를 RTDB에 자동 적재(시뮬 정확도 개선용). 매 수 후 자동 저장, 버튼 불필요. */}
       <div className="flex flex-wrap items-center gap-2 rounded-xl border border-zinc-200 bg-white px-3 py-2 dark:border-zinc-800 dark:bg-zinc-900/50">

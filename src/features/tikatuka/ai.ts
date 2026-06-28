@@ -42,7 +42,7 @@ const LINES: LineIndex[] = [0, 1, 2];
 
 const FILL = 3.5; // 빈 슬롯 기대 충원값(주사위 평균 1~6)
 const VAR_PER_SLOT = 2.9; // 주사위 분산 근사(남은 슬롯이 만드는 불확실성)
-const PUSH_BONUS = 10; // 밀어내기로 얻는 쉴드의 기대 가치(근사)
+const PUSH_BONUS = 40; // 밀어내기로 얻는 쉴드의 기대 가치(근사). boardScore 스케일(수백)에 맞춰 상향(10은 ~1%로 무의미했음).
 const TAZZA_EV_MARGIN = 200; // 타짜: 재굴림 기대 최선점수가 현재보다 이만큼 높아야 굴림. boardScore 스케일(수백)에 맞춰 상향(과용 방지 — 15·80은 ≈96~98% 사용).
 const VULN_W = 0.9; // 같은 값 스택이 한 번에 통째로 날아갈 위험 가중(보너스 인식 손실 점수에 곱)
 const LOCK_PENALTY = 4; // 내 필드를 다 채워 그 라인 밀어내기(쉴드 수급) 권리를 잃은 비용
@@ -718,6 +718,17 @@ export interface HoldAdvice {
   factors: Factor[];
 }
 
+// 라인 승률(0~1) → 7단계 우세/열세 라벨. 멘트 직관성용.
+function lineLevelLabel(p: number): string {
+  if (p >= 0.9) return '압도(거의 확정)';
+  if (p >= 0.72) return '우세';
+  if (p >= 0.58) return '약우세';
+  if (p > 0.42) return '접전';
+  if (p > 0.28) return '약열세';
+  if (p > 0.1) return '열세';
+  return '절망(거의 패배)';
+}
+
 function lineEVof(board: Board, owner: Owner): number {
   return LINES.reduce<number>((s, l) => s + lineWinProb(board, owner, l), 0);
 }
@@ -744,7 +755,7 @@ function analyzeMove(board: Board, owner: Owner, move: Move, value: DieValue): F
     const oppLeadBefore = 1 - lineWinProb(board, owner, move.line);
     const oppLeadAfter = 1 - lineWinProb(after, owner, move.line);
     if (oppLeadBefore > 0.55)
-      facts.push(F('목표', `그 라인은 상대 우세(${pct(oppLeadBefore)})였는데 ${pct(oppLeadAfter)}로 떨어져, 뺏기던 라인을 되찾을 수 있어요.`));
+      facts.push(F('목표', `그 라인은 상대 ${lineLevelLabel(oppLeadBefore)}(${pct(oppLeadBefore)})였는데 ${pct(oppLeadAfter)}로 떨어져, 뺏기던 라인을 되찾을 수 있어요.`));
     facts.push(F('자원', '밀어내면 쉴드 1개를 수급해요 — 4~6은 내 주력 라인 고정에, 1~3은 상대 필드 캡에 써요. (밀어내기 1회당 쉴드 1개)'));
     // 손익 안내: 내 주사위는 소멸. 단일 저눈만 제거면 가치가 작지만, 같은 라인 매칭이라 배치는 불가(밀어내기 강제).
     if (targets.length === 1 && value <= 2)
@@ -755,14 +766,16 @@ function analyzeMove(board: Board, owner: Owner, move: Move, value: DieValue): F
     if (oppLeadBefore > 0.6 && removed >= 10)
       facts.push(F('총합', `이 라인은 내주기 쉬워도 상대 고점 ${removed}점을 깎아, 1승1무1패 시 전체 총합 타이브레이커 손실을 줄여요.`));
   } else {
-    // 배치: 어느 라인 승률이 어떻게 변하나
+    // 배치: 어느 라인 승률이 어떻게 변하나(7단계 라벨로 세분화 표기)
     const b = lineWinProb(board, owner, move.line);
     const a = lineWinProb(after, owner, move.line);
     const label = ADV_LINE[move.line];
-    if (b < 0.5 && a >= 0.5) facts.push(F('목표', `${label} 라인을 열세(${pct(b)})에서 우세(${pct(a)})로 뒤집어요.`));
-    else if (b >= 0.8) facts.push(F('목표', `이미 우세한 ${label} 라인(${pct(b)})을 가득 채워 굳히고, 총합도 벌려두는 안전한 수예요.`));
-    else if (a - b >= 0.05) facts.push(F('목표', `${label} 라인 우세를 ${pct(b)}→${pct(a)}로 키워요.`));
-    else facts.push(F('목표', `${label} 라인에 보태 우세를 노려요(현재 ${pct(a)}).`));
+    const lvB = lineLevelLabel(b);
+    const lvA = lineLevelLabel(a);
+    if (b < 0.5 && a >= 0.5) facts.push(F('목표', `${label} 라인을 ${lvB}(${pct(b)})에서 ${lvA}(${pct(a)})로 뒤집어요.`));
+    else if (b >= 0.8) facts.push(F('목표', `이미 ${lvB}인 ${label} 라인(${pct(b)})을 가득 채워 ${lvA}로 굳히고(${pct(a)}), 총합도 벌려두는 안전한 수예요.`));
+    else if (a - b >= 0.05) facts.push(F('목표', `${label} 라인을 ${lvB}→${lvA}(${pct(b)}→${pct(a)})로 키워요.`));
+    else facts.push(F('목표', `${label} 라인에 보태 ${lvA}(${pct(a)})를 노려요.`));
 
     // 같은 눈 보너스 완성 + 노출 위험(보너스 인식)
     const sameVal = board.lines[move.line][owner].filter((d) => !d.shield && d.value === value).length;
@@ -774,14 +787,22 @@ function analyzeMove(board: Board, owner: Owner, move: Move, value: DieValue): F
       facts.push(F('목표', `이 라인 ${value}에 더해 ${pairWord} 완성(${value}×${2 * n - 1} = ${nowPts}점, +${nowPts - beforePts}) — 같은 눈 보너스로 점수가 크게 올라요.`));
       // 저눈 몰아주기: 같은 낮은 눈은 한 라인에 모아 한 번에 청소되도록 유도(주력 라인 슬롯 보존). 이땐 밀리는 게 오히려 이득.
       if (value <= 2)
-        facts.push(F('목표', `같은 ${value}끼리 한 라인에 몰아주면(몰아주기) AI가 ${value}를 굴렸을 때 ${nowPts}점을 한 번에 청소하게 유도하고, 주력 2라인 슬롯은 고눈·쉴드용으로 아껴요 — 저눈 ${pairWord}는 밀려도 손해가 작아요.`));
+        facts.push(F('목표', `같은 ${value}끼리 한 라인에 몰아주면(몰아주기) AI가 ${value}를 굴릴 때 ${nowPts}점이 한 번에 정리당하도록(상대 알까기로 치워지도록) 유도하고, 주력 2라인 슬롯은 높은 숫자(4~6)·쉴드용으로 아껴요 — 낮은 숫자 ${pairWord}는 정리당해도 손해가 작아요.`));
       if (value > 2 && board.lines[move.line][oppo].length < 3)
         facts.push(F('위험', `비쉴드 ${pairWord}라 상대가 ${value} 하나만 굴리면 ${nowPts}점이 통째로 밀려요. 상대 필드를 캡으로 채우거나 쉴드로 덮으면 안전해져요.`));
       else if (value > 2)
         facts.push(F('자원', `상대 필드가 이미 꽉 차 이 라인에선 상대가 밀 수 없어요 — 안전지대의 ${pairWord}예요.`));
     } else if (value <= 2 && a < 0.4) {
-      facts.push(F('목표', `낮은 눈은 이 제물 라인에 버리고, 주력 2라인 슬롯은 고눈/쉴드용으로 아껴요.`));
-      facts.push(F('자원', `팁: AI는 알까기가 가능하면 거의 항상 청소해요 — 낮은 수(1·2·3)를 이 라인에 모아두면 AI가 그 값을 굴렸을 때 청소에 턴을 낭비하도록 유도할 수 있어요.`));
+      // 이 라인 말고 또 다른 열세(제물) 라인이 있으면 '2라인 아껴' 멘트는 틀림 — 제물 라인이 꽉 차 두 번째 라인까지 내주는 상황.
+      const otherSac = LINES.some((l) => l !== move.line && board.lines[l][owner].length > 0 && lineWinProb(after, owner, l) < 0.4);
+      const otherSacFull = LINES.some((l) => l !== move.line && board.lines[l][owner].length >= 3 && lineWinProb(after, owner, l) < 0.4);
+      if (otherSac) {
+        const reason = otherSacFull ? '제물 라인이 꽉 차' : '다른 라인도 열세라';
+        facts.push(F('위험', `이미 다른 라인도 열세인데 ${label} 라인에도 낮은 숫자가 쌓여요 — ${reason} 낮은 숫자 버릴 곳이 부족한 상황이에요. 두 라인을 다 내주면 지니까, 알까기로 상대를 정리하거나 이후 높은 숫자(4~6)로 한 라인은 되살려야 해요.`));
+      } else {
+        facts.push(F('목표', `낮은 숫자(1~3)는 이 제물 라인에 버리고, 주력 2라인 슬롯은 높은 숫자(4~6)·쉴드용으로 아껴요.`));
+        facts.push(F('자원', `팁: AI는 알까기가 가능하면 거의 항상 치워줘요 — 낮은 숫자(1~3)를 이 라인에 모아두면, AI가 그 값을 굴릴 때 내 낮은 숫자를 정리하느라 턴을 쓰도록(나는 정리당하지만 그게 미끼) 유도할 수 있어요.`));
+      }
     }
 
     // 왜 알까기 대신 배치인가 — 같은 값으로 알까기가 가능했는데도 배치가 더 나은 이유(저점 청소·변수 회피).
@@ -903,7 +924,9 @@ export function recommendMove(
   // 모든 합법수(놓기+알까기)를 끝까지 평가해 승률로 고른다.
   // 단, 최상위와 승률이 ADV_TIE 이내로 '거의 동률'일 때만 알까기를 우선(사용자 선호 + 쉴드 이득).
   // → 놓기로 확정승인데도 알까기를 권하던 버그 해결: 놓기 승률이 더 높으면 놓기를 추천한다.
-  const scored = advScoreMoves(board, owner, rolledValue, moves, Math.random, false, cfg);
+  // 선공 첫 턴이면 놓는 주사위가 쉴드(밀리지 않음) — shield 인자로 반영해 첫 턴 평가 왜곡 제거.
+  const firstShield = ctx?.isFirstShield ?? false;
+  const scored = advScoreMoves(board, owner, rolledValue, moves, Math.random, firstShield, cfg);
   const maxRate = Math.max(...scored.map((s) => s.rate));
   const tie = scored.filter((s) => s.rate >= maxRate - ADV_TIE);
   const pushTie = tie.filter((s) => s.m.kind === 'push').sort((a, b) => b.strat - a.strat);
@@ -938,13 +961,15 @@ export function recommendChoose(
   board: Board,
   owner: Owner,
   choices: [DieValue, DieValue],
-  cfg: AdvCfg = ADV_DEFAULT
+  cfg: AdvCfg = ADV_DEFAULT,
+  ctx?: TazzaCtx // 선공 첫 턴이면 두 눈 모두 쉴드로 평가
 ): ChooseAdvice {
+  const firstShield = ctx?.isFirstShield ?? false;
   // 각 후보 눈을 깊은 몬테카를로로 끝까지 시뮬해 승률로 비교(실제 최선).
   const evalOf = (v: DieValue): { move: Move | null; winRate: number } => {
     const ms = legalMoves(board, owner, v);
     if (ms.length === 0) return { move: null, winRate: -1 };
-    return advBestMove(board, owner, v, ms, Math.random, false, cfg);
+    return advBestMove(board, owner, v, ms, Math.random, firstShield, cfg);
   };
   const e0 = evalOf(choices[0]);
   const e1 = evalOf(choices[1]);
@@ -1026,6 +1051,7 @@ function maxFillSum(field: Field, emptySlots: number): number {
   if (emptySlots <= 0) return lineSum(field);
   let best = 0;
   for (let v = 1 as DieValue; v <= 6; v = (v + 1) as DieValue) {
+    // owner는 lineSum 계산에 영향 없음(값·쉴드만 사용) — 'ai' 고정이라도 점수는 정확.
     const filled = [...field, ...Array.from({ length: emptySlots }, () => makeDie(v, 'ai', false))];
     const s = lineSum(filled);
     if (s > best) best = s;
@@ -1060,6 +1086,32 @@ export function recommendHold(board: Board, owner: Owner): HoldAdvice | null {
       F('홀드', `상대가 남은 슬롯을 최선으로 채우거나 내 비쉴드 주사위를 밀어내도 이 2라인은 뒤집히지 않아요.`),
       F('위험', `더 던질수록 내 비쉴드 주사위가 밀릴 위험만 커져요. 강제 알까기로 괜한 변수를 만들 바엔 홀드로 판을 닫는 게 안전해요.`),
       F('홀드', `홀드는 AI가 못 쓰는 비대칭 카드예요(AI는 계속 던집니다).`),
+    ],
+  };
+}
+
+// 지는 홀드 — 상대가 2라인을 사실상 확정(내가 남은 칸을 최선으로 채우거나 상대 스택을 밀어내도 못 넘음).
+// recommendHold의 거울. 결정론적이라 조기 콘시드/노이즈 방지. 더 둘수록 상대에게 알까기 표적·쉴드만 주므로 홀드로 닫는 게 낫다.
+export function recommendHoldLoss(board: Board, owner: Owner): HoldAdvice | null {
+  const oppo = opponentOf(owner);
+  const locked: LineIndex[] = [];
+  for (const line of LINES) {
+    const mine = board.lines[line][owner];
+    const opp = board.lines[line][oppo];
+    if (lineSum(opp) <= lineSum(mine)) continue; // 상대가 이기는 라인만
+    const oppFloor = lineSum(opp) - maxPushLoss(opp); // 내가 상대 최대 비쉴드 스택을 밀어내도
+    const myCeil = maxFillSum(mine, 3 - mine.length); // 내가 남은 칸을 최대로 채워도
+    if (oppFloor >= myCeil) locked.push(line); // 내가 최선이어도 이 라인을 못 가져옴
+  }
+  if (locked.length < 2) return null; // 2라인을 못 가져오면 승리(2라인) 불가 → 패배 확정
+
+  const labels = locked.slice(0, 2).map((l) => ADV_LINE[l]).join(', ');
+  return {
+    headline: '이 판은 졌어요 — 홀드로 닫기',
+    factors: [
+      F('홀드', `${labels} 라인을 상대가 확정적으로 이기고 있어요 — 내가 남은 칸을 최선으로 채우거나 알까기해도 2라인을 못 뒤집어요.`),
+      F('위험', `더 둘수록 내 비쉴드 주사위가 상대 알까기 표적이 되고, 상대에게 쉴드만 더 줘요.`),
+      F('홀드', `홀드하면 나는 더 안 두고 상대만 마저 둬 판이 닫혀요 — 추가 손실·시간 낭비를 줄이는 선택이에요.`),
     ],
   };
 }
