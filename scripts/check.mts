@@ -38,14 +38,26 @@ console.log('[홀드 6단계]');
   const h = gradedHold(bd, 'me', 0.03);
   check('확정 패배 락 → 홀드(확정) 졌어요', !!h && h.headline.includes('확정') && h.headline.includes('졌'), h?.headline ?? 'null');
 }
-// 소프트 승리(2라인 우세, 비쉴드라 미확정) + 승률 0.95 → 권장.
+// 소프트 승리(2라인 우세, 비쉴드라 미확정) + 홀드 승률 0.95 → 권장. (소프트 추천은 홀드 승률 기준)
 {
   let bd = createEmptyBoard();
   bd = put(bd, 0, 'me', 6); bd = put(bd, 0, 'me', 6); bd = put(bd, 0, 'ai', 1);
   bd = put(bd, 1, 'me', 6); bd = put(bd, 1, 'me', 6); bd = put(bd, 1, 'ai', 1);
   bd = put(bd, 2, 'ai', 3);
-  const h = gradedHold(bd, 'me', 0.95);
-  check('2라인 우세 + 승률95% → 홀드 권장', !!h && h.headline.includes('권장'), h?.headline ?? 'null');
+  const h = gradedHold(bd, 'me', 0.95, 0.95); // 홀드 승률 95% 주입
+  check('2라인 우세 + 홀드승률95% → 홀드 권장', !!h && h.headline.includes('권장'), h?.headline ?? 'null');
+}
+// 2라인 우세이나 홀드하면 뒤집힘(홀드 승률 0%) → 홀드 추천 없음. (사용자 보고 회귀: continue-play 승률만 높고 홀드는 위험)
+// me: L2·L3에 비쉴드 6. ai: L1=[1,2], L2=5쉴드, L3=4쉴드 — ai가 채우거나 6으로 밀면 2라인 다 뒤집힘.
+{
+  let bd = createEmptyBoard();
+  bd = put(bd, 1, 'me', 6);
+  bd = put(bd, 2, 'me', 6);
+  bd = put(bd, 0, 'ai', 1); bd = put(bd, 0, 'ai', 2);
+  bd = put(bd, 1, 'ai', 5, true);
+  bd = put(bd, 2, 'ai', 4, true);
+  const h = gradedHold(bd, 'me', 0.78, 0.0); // continue-play 78%여도 홀드 승률 0% → 추천 금지
+  check('2라인 우세지만 홀드승률0% → 홀드 추천 없음(null)', h === null, h?.headline ?? 'null');
 }
 // 균형 보드 + 승률 0.5 → 홀드 없음(null).
 {

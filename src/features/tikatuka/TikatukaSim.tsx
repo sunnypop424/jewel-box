@@ -352,10 +352,10 @@ export function TikatukaSim() {
   // PiP 토글 바를 항상 맨 위에 붙이고, PiP가 열려 있으면 시뮬 본체를 PiP 창으로 포털한다(본체는 그대로 마운트 유지).
   const renderWithPip = (content: ReactNode) => {
     const withBar = (
-      <>
+      <div className="flex flex-col gap-4">
         <PipBar pipWindow={pipWindow} onOpen={openPip} />
         {content}
-      </>
+      </div>
     );
     if (pipWindow) {
       return (
@@ -518,9 +518,9 @@ export function TikatukaSim() {
       advReq = { kind: 'move', value };
     }
 
-    setAdvice(null); // 입력이 바뀌었으니 이전 추천/홀드 강조 제거(워커 결과로 다시 채움)
-    setHold(null);
-    setComputing(true); // 승률·추천 재계산 시작 → '계산 중' 표시(직전 추정치 노출 방지)
+    // 이전 추천/홀드는 일부러 비우지 않는다 — 계산 중에도 패널이 마운트된 채라야 높이가 유지돼 보드가 안 들썩인다.
+    // 직전 추정치 노출은 위의 불투명 '계산 중' 오버레이가 가려서 막는다. 결과는 finalize에서 갱신.
+    setComputing(true); // 승률·추천 재계산 시작 → 결과 패널 위에 '계산 중' 오버레이 표시
     // 선공/후수·선공 첫 쉴드 여부 — 타짜(롤) 추천 문턱 보정용 맥락.
     const ctxObj = { iAmFirst: firstTurn === 'me', isFirstShield: firstShield === 'me' };
     const t = setTimeout(() => dispatchAdvisor(board, turn, advReq, ctxObj, tazza), 200);
@@ -702,41 +702,41 @@ export function TikatukaSim() {
 
   return renderWithPip(
     <div className="flex flex-col gap-4">
-      {/* 승률 + 추천 (상단) — 탐색 중엔 '계산 중', 끝나면 승률을 추천 패널에 함께 표시. 홀드 추천이 있으면 위에. */}
-      {computing ? (
-        <div className="flex items-center gap-2 rounded-2xl border border-zinc-200 bg-white px-3 py-3 text-sm font-bold text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900/50">
-          <Loader2 size={16} className="animate-spin text-indigo-500" />
-          계산 중… (오래 걸릴 수 있어요)
-        </div>
-      ) : (
-        <>
-          {hold && (
-            <AdvicePanel
-              isHold
-              headline={hold.headline}
-              factors={hold.factors}
-              winRate={winRate ?? undefined}
-              open={holdOpen}
-              onToggle={() => setHoldOpen((v) => !v)}
-            />
-          )}
-          {advice && (
-            <AdvicePanel
-              headline={advice.headline}
-              factors={advice.factors}
-              winRate={hold ? undefined : winRate ?? undefined}
-              open={adviceOpen}
-              onToggle={() => setAdviceOpen((v) => !v)}
-            />
-          )}
-          {!hold && !advice && winRate != null && (
-            <div className="flex items-center gap-2 rounded-xl border border-zinc-200 bg-white px-3 py-2 dark:border-zinc-800 dark:bg-zinc-900/50">
-              <span className="shrink-0 text-xs font-bold text-zinc-500 dark:text-zinc-400 lg:text-sm">예상 승률</span>
-              <WinRateBar winRate={winRate} />
-            </div>
-          )}
-        </>
-      )}
+      {/* 승률 + 추천 (상단) — 계산 중엔 직전 결과 패널 위에 로더를 '겹쳐'(absolute) 띄운다.
+          패널을 언마운트하지 않아 높이가 유지되므로, 근거를 펼치지 않는 한 아래 보드가 들썩이지 않는다. */}
+      <div className="relative flex min-h-[3rem] flex-col gap-4">
+        {hold && (
+          <AdvicePanel
+            isHold
+            headline={hold.headline}
+            factors={hold.factors}
+            winRate={winRate ?? undefined}
+            open={holdOpen}
+            onToggle={() => setHoldOpen((v) => !v)}
+          />
+        )}
+        {advice && (
+          <AdvicePanel
+            headline={advice.headline}
+            factors={advice.factors}
+            winRate={hold ? undefined : winRate ?? undefined}
+            open={adviceOpen}
+            onToggle={() => setAdviceOpen((v) => !v)}
+          />
+        )}
+        {!hold && !advice && winRate != null && (
+          <div className="flex items-center gap-2 rounded-xl border border-zinc-200 bg-white px-3 py-2 dark:border-zinc-800 dark:bg-zinc-900/50">
+            <span className="shrink-0 text-xs font-bold text-zinc-500 dark:text-zinc-400 lg:text-sm">예상 승률</span>
+            <WinRateBar winRate={winRate} />
+          </div>
+        )}
+        {computing && (
+          <div className="absolute inset-0 z-10 flex items-center gap-2 rounded-2xl border border-zinc-200 bg-white px-3 text-sm font-bold text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900/50">
+            <Loader2 size={16} className="animate-spin text-indigo-500" />
+            계산 중… (오래 걸릴 수 있어요)
+          </div>
+        )}
+      </div>
 
       {/* 보드 */}
       <div className="flex flex-col gap-2.5 lg:gap-4">

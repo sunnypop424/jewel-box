@@ -348,7 +348,8 @@ function simulateToEnd(
   startTurn: Owner,
   rng: () => number,
   level: AiLevel = 2,
-  pushSide?: Owner // 이 진영의 턴엔 알까기 우선 정책 적용(상대 AI 모델링). 미지정이면 양측 일반 정책.
+  pushSide?: Owner, // 이 진영의 턴엔 알까기 우선 정책 적용(상대 AI 모델링). 미지정이면 양측 일반 정책.
+  holdSide?: Owner // 이 진영은 홀드(이후 한 수도 두지 않음) — 홀드 승률 시뮬용. 상대만 계속 둔다.
 ): Owner | 'draw' {
   let b = board;
   let turn = startTurn;
@@ -356,7 +357,10 @@ function simulateToEnd(
   let idle = 0;
   while (!isBoardFull(b) && turns < ROLLOUT_MAX_TURNS && idle < 2) {
     const before = b;
-    b = greedyTurn(b, turn, rng, level, pushSide !== undefined && turn === pushSide);
+    // 홀드한 진영의 턴은 건너뛴다(둘 수 없음) → before===b 라 idle 증가. 상대가 두면 idle 리셋.
+    if (turn !== holdSide) {
+      b = greedyTurn(b, turn, rng, level, pushSide !== undefined && turn === pushSide);
+    }
     idle = b === before ? idle + 1 : 0;
     turn = opponentOf(turn);
     turns += 1;
@@ -396,6 +400,25 @@ export function mcWinRate(
   let win = 0;
   for (let i = 0; i < playouts; i++) {
     const w = simulateToEnd(board, startTurn, rng, level, pushSide);
+    if (w === owner) win += 1;
+    else if (w === 'draw') win += 0.5;
+  }
+  return win / playouts;
+}
+
+// '지금 홀드했을 때'의 승률(owner 관점) — owner는 더 이상 두지 않고 상대만 알까기-우선으로 마저 둔다.
+// continue-play 승률(mcWinRate)과 전혀 다른 값: 홀드 추천은 반드시 이 값을 기준으로 해야 한다.
+// (예: 비쉴드 리드는 계속 두면 유리해도 홀드하면 상대가 밀거나 채워 뒤집으므로 홀드 승률은 낮다.)
+export function mcHoldWinRate(
+  board: Board,
+  owner: Owner,
+  playouts = 240,
+  rng: () => number = Math.random
+): number {
+  const oppo = opponentOf(owner);
+  let win = 0;
+  for (let i = 0; i < playouts; i++) {
+    const w = simulateToEnd(board, oppo, rng, 2, oppo, owner); // 상대 선턴·알까기 우선, owner는 홀드
     if (w === owner) win += 1;
     else if (w === 'draw') win += 0.5;
   }
@@ -1140,9 +1163,17 @@ export function recommendHoldLoss(board: Board, owner: Owner): HoldAdvice | null
   };
 }
 
-// 승률 기반 홀드 추천을 6단계로 세분화(승리 확정/권장/고려, 패배 확정/권장/고려). 결정론적 락이 우선.
+// 홀드 추천을 6단계로 세분화(승리 확정/권장/고려, 패배 확정/권장/고려). 결정론적 락이 우선.
+// 승리 측 소프트 추천은 'continue-play 승률(winRate)'이 아니라 '홀드 승률(holdWinRate)'을 기준으로 한다.
+// 둘은 전혀 다른 값이라(계속 두면 유리해도 홀드하면 상대가 밀거나 채워 뒤집을 수 있음), 홀드 승률이 높을 때만 추천한다.
+// holdWinRate 미지정 시 즉석 MC로 계산(메인 스레드 — 상대만 두는 짧은 시뮬이라 가볍다). winRate는 패배 측·문구용.
 // 워커(청크 계산)와 메인(조립) 양쪽에서 재사용 — 중복 방지.
-export function gradedHold(board: Board, owner: Owner, winRate: number): HoldAdvice | null {
+export function gradedHold(
+  board: Board,
+  owner: Owner,
+  winRate: number,
+  holdWinRate?: number
+): HoldAdvice | null {
   const r = evaluate(board, false);
   const myWins = owner === 'me' ? r.meLineWins : r.aiLineWins;
   const oppWins = owner === 'me' ? r.aiLineWins : r.meLineWins;
@@ -1150,19 +1181,24 @@ export function gradedHold(board: Board, owner: Owner, winRate: number): HoldAdv
   const wp = Math.round(winRate * 100);
   const lockWin = recommendHold(board, owner);
   if (lockWin) return { headline: '홀드(확정) — 2라인 굳히기', factors: lockWin.factors };
-  if (winRate >= 0.9 && myWins >= 2)
-    return {
-      headline: `홀드 권장 — 승률 ${wp}% (매우 유리)`,
-      factors: [
-        F('홀드', `승률이 ${wp}%로 매우 높아요 — 더 둘수록 변수만 늘어나니 홀드로 2라인 리드를 굳히는 게 안전해요.`),
-        F('위험', '강제 알까기로 괜한 변수를 만들 바엔 홀드로 판을 닫는 게 좋아요.'),
-      ],
-    };
-  if (winRate >= 0.78 && myWins >= 2)
-    return {
-      headline: `홀드 고려 — 승률 ${wp}% (유리)`,
-      factors: [F('홀드', `2라인을 이기고 있고 승률 ${wp}%로 유리해요. 굳히려면 홀드도 한 방법(아직 확정은 아니라 더 벌려도 됨).`)],
-    };
+  if (myWins >= 2) {
+    const hw = holdWinRate ?? mcHoldWinRate(board, owner);
+    const hp = Math.round(hw * 100);
+    if (hw >= 0.9)
+      return {
+        headline: `홀드 권장 — 홀드 승률 ${hp}% (거의 굳힘)`,
+        factors: [
+          F('홀드', `지금 홀드하면(나는 멈추고 상대만 마저 둠) 승률 ${hp}%로 사실상 굳혀져요 — 더 둘수록 변수만 늘어나니 닫는 게 안전해요.`),
+          F('위험', '강제 알까기로 괜한 변수를 만들 바엔 홀드로 판을 닫는 게 좋아요.'),
+        ],
+      };
+    if (hw >= 0.75)
+      return {
+        headline: `홀드 고려 — 홀드 승률 ${hp}% (유리)`,
+        factors: [F('홀드', `지금 홀드하면 승률 ${hp}%로 유리해요. 굳히려면 홀드도 한 방법(아직 확정은 아니라 더 벌려도 됨).`)],
+      };
+    // 2라인을 이기고 있어도 홀드 승률이 낮으면 추천하지 않는다 — 비쉴드 리드는 상대가 밀거나 채워 뒤집을 수 있어 홀드가 오히려 위험.
+  }
   const lockLoss = recommendHoldLoss(board, owner);
   if (lockLoss) return { headline: '홀드(확정) — 이 판은 졌어요', factors: lockLoss.factors };
   if (winRate <= 0.1 && dice >= 9)
