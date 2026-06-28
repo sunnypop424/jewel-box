@@ -1,7 +1,8 @@
 // 티카투카 시뮬 실전 로그 — 시뮬에서 내가 입력한 실제 경기(양측 수 전부 + 보드 스냅샷)를 RTDB에 적재한다.
 // 목적: 쌓인 로그로 '실제 인게임 AI 성향'을 분석해 나중에 추천 엔진(어드바이저)을 실전에 맞게 보정.
-// 저장 위치: tikatukaSimLogs/{encodeURIComponent(player)}/{gameId} = 게임 1건을 통째 JSON 문자열로 저장.
-//   (RTDB는 빈 배열/undefined를 소실시키므로 문자열로 보존 — playerStore.activeRankedJson과 동일 전략)
+// 저장 위치: tikatukaSimLogs/{난이도버킷}/{gameId} = 게임 1건을 통째 JSON 문자열로 저장.
+//   · 난이도버킷 = star0~star5 / 모름은 unknown. 유저 구분 없이 ★별로만 모은다(같은 ★면 AI 행동이 동일).
+//   · 게임 1건을 JSON 문자열로 보존(RTDB가 빈 배열/undefined를 소실시키므로 — playerStore.activeRankedJson과 동일 전략)
 
 import { ref, get, update, remove } from 'firebase/database';
 import { rtdb } from '../../firebase';
@@ -49,28 +50,29 @@ export interface SimGameLog {
 }
 
 const ROOT = 'tikatukaSimLogs';
-const pkey = (name: string) => encodeURIComponent(name || 'guest');
+// 난이도 버킷 키 — 유저 구분 없이 ★별로만 모은다. 모름(null)은 unknown.
+const starKey = (star: AiLevel | null) => (star === null ? 'unknown' : `star${star}`);
 
-// 게임 1건 저장(update로 해당 키만 set — 다른 게임·플레이어 미터치).
+// 게임 1건 저장(update로 해당 키만 set — 다른 게임 미터치). 난이도 버킷에 적재.
 export async function saveSimGame(game: SimGameLog): Promise<void> {
-  await update(ref(rtdb, `${ROOT}/${pkey(game.player)}`), { [game.id]: JSON.stringify(game) });
+  await update(ref(rtdb, `${ROOT}/${starKey(game.star)}`), { [game.id]: JSON.stringify(game) });
 }
 
-export async function deleteSimGame(player: string, id: string): Promise<void> {
-  await remove(ref(rtdb, `${ROOT}/${pkey(player)}/${id}`));
+export async function deleteSimGame(star: AiLevel | null, id: string): Promise<void> {
+  await remove(ref(rtdb, `${ROOT}/${starKey(star)}/${id}`));
 }
 
-// 한 플레이어의 모든 로그(최근 순).
-export async function fetchSimGames(name: string): Promise<SimGameLog[]> {
-  const snap = await get(ref(rtdb, `${ROOT}/${pkey(name)}`));
+// 한 난이도(★)의 모든 로그(최근 순).
+export async function fetchSimGamesByStar(star: AiLevel | null): Promise<SimGameLog[]> {
+  const snap = await get(ref(rtdb, `${ROOT}/${starKey(star)}`));
   return parseGames(snap.val()).sort((a, b) => (a.startedAt < b.startedAt ? 1 : -1));
 }
 
-// 전체(모든 플레이어) 로그 — AI 성향 집계용(Phase 2).
+// 전체(모든 난이도) 로그 — AI 성향 집계용(Phase 2).
 export async function fetchAllSimGames(): Promise<SimGameLog[]> {
   const snap = await get(ref(rtdb, ROOT));
   const all = (snap.val() ?? {}) as Record<string, unknown>;
-  return Object.values(all).flatMap((perPlayer) => parseGames(perPlayer));
+  return Object.values(all).flatMap((bucket) => parseGames(bucket));
 }
 
 function parseGames(raw: unknown): SimGameLog[] {
