@@ -8,7 +8,7 @@ import type { Board, DieValue, Owner, LineIndex } from './types';
 const ctx = self as unknown as Worker;
 
 // 시뮬 깊은 탐색 설정. 무거우니 playouts는 작게(근거리 전수 전개가 분산을 줄여 적은 표본으로도 안정).
-const CFG: AdvCfg = { playouts: 150, respLevel: 5, rolloutLevel: 4, expandShield: true };
+const CFG: AdvCfg = { playouts: 150, respLevel: 5, rolloutLevel: 4, expandShield: true, oppPushFirst: true };
 const WR_PLAYOUTS = 800; // 정밀 승률용 MC 표본
 const WR_LEVEL = 4; // 승률 추정 롤아웃 정책(★4)
 
@@ -37,8 +37,8 @@ interface Advice {
 ctx.onmessage = (e: MessageEvent<ReqMsg>) => {
   const { id, board, turn, advReq, iAmFirst, myFirstShield } = e.data;
 
-  // 정밀 승률 — 현재 턴부터 끝까지 MC.
-  const winRate = mcWinRate(board, 'me', turn, WR_PLAYOUTS, WR_LEVEL);
+  // 정밀 승률 — 현재 턴부터 끝까지 MC. 상대(ai) 측은 알까기-우선으로 모델링(추천과 동일 가정).
+  const winRate = mcWinRate(board, 'me', turn, WR_PLAYOUTS, WR_LEVEL, Math.random, 'ai');
 
   let advice: Advice | null = null;
   if (advReq?.kind === 'move') {

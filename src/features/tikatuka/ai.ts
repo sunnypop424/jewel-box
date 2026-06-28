@@ -43,7 +43,7 @@ const LINES: LineIndex[] = [0, 1, 2];
 const FILL = 3.5; // 빈 슬롯 기대 충원값(주사위 평균 1~6)
 const VAR_PER_SLOT = 2.9; // 주사위 분산 근사(남은 슬롯이 만드는 불확실성)
 const PUSH_BONUS = 10; // 밀어내기로 얻는 쉴드의 기대 가치(근사)
-const TAZZA_EV_MARGIN = 15; // 타짜: 다시 굴렸을 때 기대 최선 점수가 현재보다 이만큼 높아야 굴림(높은 눈 낭비 방지)
+const TAZZA_EV_MARGIN = 200; // 타짜: 재굴림 기대 최선점수가 현재보다 이만큼 높아야 굴림. boardScore 스케일(수백)에 맞춰 상향(과용 방지 — 15·80은 ≈96~98% 사용).
 const VULN_W = 0.9; // 같은 값 스택이 한 번에 통째로 날아갈 위험 가중(보너스 인식 손실 점수에 곱)
 const LOCK_PENALTY = 4; // 내 필드를 다 채워 그 라인 밀어내기(쉴드 수급) 권리를 잃은 비용
 const PAIR_W = 0.2; // 빈 슬롯이 기존 고눈을 페어/트리플로 키울 잠재 가치 가중(보수적)
@@ -169,8 +169,13 @@ function applyMove(board: Board, owner: Owner, move: Move, value: DieValue, shie
   return applyPush(board, move.line, owner, value).board;
 }
 
+// 값 3 쉴드를 자기 필드의 기존 3과 페어(3+3=9점)로 완성할 수 있는가 — 실측(★3): 가이드를 깨고 자기 페어를 만든다.
+function canPairThree(board: Board, owner: Owner): boolean {
+  return LINES.some((l) => board.lines[l][owner].length < 3 && board.lines[l][owner].some((d) => d.value === 3));
+}
+
 // ── 쉴드 배치 정책 ────────────────────────────────────
-// 가이드: 값 1~3은 상대 필드(슬롯 캡), 4~6은 내 필드(내 합↑).
+// 가이드: 값 1~2는 상대 필드(슬롯 캡), 4~6은 내 필드(내 합↑). 3은 자기 라인에 3이 있으면 페어로 자기, 없으면 상대 캡(실측 기반).
 function pickShield(
   board: Board,
   owner: Owner,
@@ -192,7 +197,8 @@ function pickShield(
   }
 
   // ★2+: 가이드 적용. 낮은 값은 상대 필드(캡), 높은 값은 내 필드.
-  const preferOwner: Owner = value <= 3 ? oppo : owner;
+  // 단 값 3은 자기 라인에 3이 있어 페어(9점) 완성이 가능하면 자기 필드 우선(실측 ★3: 어긋난 쉴드 7건 전부 이 경우).
+  const preferOwner: Owner = value <= 2 ? oppo : value >= 4 ? owner : canPairThree(board, owner) ? owner : oppo;
   const candidates = spots.filter((s) => s.owner === preferOwner);
   const pool = candidates.length > 0 ? candidates : spots;
 
@@ -300,6 +306,7 @@ export interface AdvCfg {
   respLevel: AiLevel; // 내 수 직후 '상대 즉답' 정책. 5=몬테카를로(★5). 깊은 롤아웃엔 ★5 중첩 불가 → 즉답 ply에서만.
   rolloutLevel: AiLevel; // 끝까지 롤아웃(양측) 정책. 2=속도, 4=1-step EV(더 강하지만 매우 느림).
   expandShield: boolean; // 알까기로 얻는 쉴드를 1~6 전수로 펼쳐 평균(true) / 4로 근사(false)
+  oppPushFirst?: boolean; // 상대(AI) 측은 '알까기 가능하면 무조건 푸시'로 모델링(실측: ★3 99%). 시뮬 전용, 내 측엔 미적용.
 }
 const ADV_DEFAULT: AdvCfg = {
   playouts: ADV_PLAYOUTS_PER_BRANCH,
@@ -310,13 +317,22 @@ const ADV_DEFAULT: AdvCfg = {
 // 상대 즉답을 ★5(MC)로 둘 때의 가벼운 MC 예산(즉답 ply는 수십~수백 번 호출되므로 가볍게).
 const RESP_MC: McConfig = { topK: 3, playouts: 120, maxSim: 360 };
 
+// pushFirst 정책: 알까기가 가능하면 알까기 중 최선, 없으면 일반 정책. (실측: ★3 상대는 알까기 가능 시 99% 푸시)
+function pushFirstMove(board: Board, owner: Owner, value: DieValue, moves: Move[], level: AiLevel): Move {
+  const pushes = moves.filter((m) => m.kind === 'push');
+  const pool = pushes.length ? pushes : moves;
+  return argmaxMove(pool, (m) => scoreMove(board, owner, m, value, level));
+}
+
 // 한 턴 그리디 진행: 굴림→최선 move(정책 level)→push면 쉴드 굴려 배치. 보드 반환.
-// level 2면 boardScore 그리디(★2, 기존), 4면 1-step EV(★4)로 더 강하게 둔다.
-function greedyTurn(board: Board, owner: Owner, rng: () => number, level: AiLevel = 2): Board {
+// level 2면 boardScore 그리디(★2, 기존), 4면 1-step EV(★4)로 더 강하게 둔다. pushFirst면 알까기 우선(상대 모델).
+function greedyTurn(board: Board, owner: Owner, rng: () => number, level: AiLevel = 2, pushFirst = false): Board {
   const value = rollValue(rng);
   const moves = legalMoves(board, owner, value);
   if (moves.length === 0) return board; // 합법수 없음 → 패스
-  const best = argmaxMove(moves, (m) => scoreMove(board, owner, m, value, level));
+  const best = pushFirst
+    ? pushFirstMove(board, owner, value, moves, level)
+    : argmaxMove(moves, (m) => scoreMove(board, owner, m, value, level));
   let next = applyMove(board, owner, best, value);
   if (best.kind === 'push') {
     const sv = rollValue(rng);
@@ -331,7 +347,8 @@ function simulateToEnd(
   board: Board,
   startTurn: Owner,
   rng: () => number,
-  level: AiLevel = 2
+  level: AiLevel = 2,
+  pushSide?: Owner // 이 진영의 턴엔 알까기 우선 정책 적용(상대 AI 모델링). 미지정이면 양측 일반 정책.
 ): Owner | 'draw' {
   let b = board;
   let turn = startTurn;
@@ -339,7 +356,7 @@ function simulateToEnd(
   let idle = 0;
   while (!isBoardFull(b) && turns < ROLLOUT_MAX_TURNS && idle < 2) {
     const before = b;
-    b = greedyTurn(b, turn, rng, level);
+    b = greedyTurn(b, turn, rng, level, pushSide !== undefined && turn === pushSide);
     idle = b === before ? idle + 1 : 0;
     turn = opponentOf(turn);
     turns += 1;
@@ -372,12 +389,13 @@ export function mcWinRate(
   startTurn: Owner,
   playouts: number,
   level: AiLevel = 2,
-  rng: () => number = Math.random
+  rng: () => number = Math.random,
+  pushSide?: Owner // 상대(AI) 측 알까기-우선 모델링용(승률 바도 추천과 동일 가정 유지)
 ): number {
   if (playouts <= 0) return estimateWinRate(board, owner);
   let win = 0;
   for (let i = 0; i < playouts; i++) {
-    const w = simulateToEnd(board, startTurn, rng, level);
+    const w = simulateToEnd(board, startTurn, rng, level, pushSide);
     if (w === owner) win += 1;
     else if (w === 'draw') win += 0.5;
   }
@@ -547,17 +565,21 @@ function pickByMonteCarlo(
 }
 
 // 한 진영의 '주어진 눈 1수'를 ★2 그리디로 적용(push면 기대 쉴드 4 근사 배치). 루트 expectimax의 상대 응수용.
-function greedyResponse(board: Board, owner: Owner, value: DieValue, rng: () => number): Board {
+function greedyResponse(board: Board, owner: Owner, value: DieValue, rng: () => number, pushFirst = false): Board {
   const moves = legalMoves(board, owner, value);
   if (moves.length === 0) return board; // 합법수 없음 → 패스
   let best = moves[0];
-  let bestScore = -Infinity;
-  for (const m of moves) {
-    const after = applyMove(board, owner, m, value);
-    const sc = boardScore(after, owner) + (m.kind === 'push' ? PUSH_BONUS : 0);
-    if (sc > bestScore) {
-      bestScore = sc;
-      best = m;
+  if (pushFirst) {
+    best = pushFirstMove(board, owner, value, moves, 2);
+  } else {
+    let bestScore = -Infinity;
+    for (const m of moves) {
+      const after = applyMove(board, owner, m, value);
+      const sc = boardScore(after, owner) + (m.kind === 'push' ? PUSH_BONUS : 0);
+      if (sc > bestScore) {
+        bestScore = sc;
+        best = m;
+      }
     }
   }
   let next = applyMove(board, owner, best, value);
@@ -570,11 +592,12 @@ function greedyResponse(board: Board, owner: Owner, value: DieValue, rng: () => 
 
 // 상대 즉답(내 수 직후) 강한 정책 — level 5면 몬테카를로(★5), 아니면 scoreMove(level) argmax.
 // push면 얻는 쉴드 값을 샘플(1~6)해 배치(여러 응수·롤아웃에 걸쳐 평균됨).
-function strongResponse(board: Board, owner: Owner, value: DieValue, rng: () => number, level: AiLevel): Board {
+function strongResponse(board: Board, owner: Owner, value: DieValue, rng: () => number, level: AiLevel, pushFirst = false): Board {
   const moves = legalMoves(board, owner, value);
   if (moves.length === 0) return board;
-  const best =
-    level >= 5
+  const best = pushFirst
+    ? pushFirstMove(board, owner, value, moves, level) // 상대 모델: 알까기 가능하면 무조건(MC 생략)
+    : level >= 5
       ? mcEvaluate(board, owner, value, moves, rng, RESP_MC).move
       : argmaxMove(moves, (m) => scoreMove(board, owner, m, value, level));
   let next = applyMove(board, owner, best, value);
@@ -588,7 +611,7 @@ function strongResponse(board: Board, owner: Owner, value: DieValue, rng: () => 
 
 // 지원모드 전용 루트 얕은 expectimax: 후보 수마다 상대의 다음 6눈을 '정확히 전개'(샘플링 X)하고,
 // 각 가지 뒤만 MC로 끝까지 롤아웃해 평균 승률을 낸다. 근거리(상대 응수)의 분산을 없애 추천이 더 안정·정확.
-function advBestMove(
+function advScoreMoves(
   board: Board,
   owner: Owner,
   value: DieValue,
@@ -596,8 +619,10 @@ function advBestMove(
   rng: () => number,
   shield = false,
   cfg: AdvCfg = ADV_DEFAULT
-): { move: Move; winRate: number } {
+): { m: Move; rate: number; strat: number }[] {
   const oppo = opponentOf(owner);
+  const oppPush = !!cfg.oppPushFirst; // 상대(AI)는 알까기 가능 시 무조건 푸시(실측 기반). 내 측엔 미적용.
+  const pushSide = oppPush ? oppo : undefined;
   const results: { m: Move; rate: number; strat: number }[] = [];
   for (const m of moves) {
     // 1) 내 수 적용 → 보드(들). push로 얻는 쉴드는 정밀이면 1~6 전수(각 최선 배치)로 펼치고, 아니면 4 근사 1개.
@@ -617,10 +642,12 @@ function advBestMove(
     for (const b1 of myBoards) {
       for (let w = 1 as DieValue; w <= 6; w = (w + 1) as DieValue) {
         const b2 =
-          cfg.respLevel > 2 ? strongResponse(b1, oppo, w, rng, cfg.respLevel) : greedyResponse(b1, oppo, w, rng);
+          cfg.respLevel > 2
+            ? strongResponse(b1, oppo, w, rng, cfg.respLevel, oppPush)
+            : greedyResponse(b1, oppo, w, rng, oppPush);
         let win = 0;
         for (let i = 0; i < cfg.playouts; i++) {
-          const res = simulateToEnd(b2, owner, rng, cfg.rolloutLevel);
+          const res = simulateToEnd(b2, owner, rng, cfg.rolloutLevel, pushSide);
           if (res === owner) win += 1;
           else if (res === 'draw') win += 0.5;
         }
@@ -630,7 +657,20 @@ function advBestMove(
     const rate = acc / (myBoards.length * 6); // 내 쉴드 분포 × 상대 6눈 균등 평균
     results.push({ m, rate, strat: boardScore(applyMove(board, owner, m, value, shield), owner) });
   }
-  // 승률 우선 — 단, 승률이 ADV_TIE 이내로 비슷한 후보들 사이에선 전략 점수(저눈 몰아주기·마무리 봉쇄)로 가른다.
+  return results;
+}
+
+// 승률이 가장 높은 수 — 승률이 ADV_TIE 이내로 비슷하면 전략 점수(저눈 몰아주기·마무리 봉쇄)로 가른다.
+function advBestMove(
+  board: Board,
+  owner: Owner,
+  value: DieValue,
+  moves: Move[],
+  rng: () => number,
+  shield = false,
+  cfg: AdvCfg = ADV_DEFAULT
+): { move: Move; winRate: number } {
+  const results = advScoreMoves(board, owner, value, moves, rng, shield, cfg);
   const maxRate = Math.max(...results.map((r) => r.rate));
   const top = results.filter((r) => r.rate >= maxRate - ADV_TIE).sort((a, b) => b.strat - a.strat)[0];
   return { move: top.m, winRate: top.rate };
@@ -824,9 +864,10 @@ function tazzaBias(
   const totalPieces = myPieces + pieceCount(board, opponentOf(owner));
 
   if (ctx?.isFirstShield) {
-    // 선공 첫 주사위는 쉴드(밀리지 않는 앵커) — 1·2면 다시 굴려 높은 고정 앵커를 노린다.
+    // 선공 첫 주사위는 쉴드(밀리지 않는 영구 앵커) — 1·2면 다시 굴려 높은 고정 앵커를 노리는 게 거의 항상 이득.
+    // 일반 문턱(200)은 너무 높아 이 특수 케이스를 막으므로, 여기선 낮은 문턱(40)으로 적극 롤 허용.
     if (low) {
-      margin -= 12;
+      margin = Math.min(margin, 40);
       note = F('타짜', `선공 첫 주사위는 쉴드(밀리지 않는 앵커)예요 — ${rolledValue}은(는) 너무 낮아 다시 굴려 높은 고정 앵커를 노리는 게 좋아요.`);
     }
   } else if (ctx && !ctx.iAmFirst && myPieces === 0 && low) {
@@ -857,21 +898,20 @@ export function recommendMove(
 ): MoveAdvice | null {
   const moves = legalMoves(board, owner, rolledValue);
   if (moves.length === 0) return null;
-  // 알까기(밀어내기)가 가능하면 우선 추천(사용자 선호). 여러 라인이면 그중 최선을 고른다. 이때 타짜 제안은 건너뜀.
-  const pushMoves = moves.filter((m) => m.kind === 'push');
-  if (pushMoves.length > 0) {
-    const bestPush =
-      pushMoves.length === 1
-        ? pushMoves[0]
-        : advBestMove(board, owner, rolledValue, pushMoves, Math.random, false, cfg).move;
-    return { action: bestPush.kind, line: bestPush.line, headline: moveHeadline(bestPush), factors: analyzeMove(board, owner, bestPush, rolledValue) };
-  }
-  // 실제 최선 수: 루트 얕은 expectimax(상대 6눈 전수) + 끝까지 MC. 근거리 분산을 없애 가장 안정적.
-  const best = advBestMove(board, owner, rolledValue, moves, Math.random, false, cfg).move;
+  const pushAvailable = moves.some((m) => m.kind === 'push');
 
-  // 타짜: 다시 굴렸을 때 기대 이득이 충분할 때만 권한다(6 같은 높은 눈은 권하지 않음).
+  // 모든 합법수(놓기+알까기)를 끝까지 평가해 승률로 고른다.
+  // 단, 최상위와 승률이 ADV_TIE 이내로 '거의 동률'일 때만 알까기를 우선(사용자 선호 + 쉴드 이득).
+  // → 놓기로 확정승인데도 알까기를 권하던 버그 해결: 놓기 승률이 더 높으면 놓기를 추천한다.
+  const scored = advScoreMoves(board, owner, rolledValue, moves, Math.random, false, cfg);
+  const maxRate = Math.max(...scored.map((s) => s.rate));
+  const tie = scored.filter((s) => s.rate >= maxRate - ADV_TIE);
+  const pushTie = tie.filter((s) => s.m.kind === 'push').sort((a, b) => b.strat - a.strat);
+  const best = (pushTie.length ? pushTie[0] : [...tie].sort((a, b) => b.strat - a.strat)[0]).m;
+
+  // 타짜: 다시 굴렸을 때 기대 이득이 충분할 때만 권한다(6 같은 높은 눈은 권하지 않음). 알까기가 가능하면 그쪽을 우선 보므로 건너뜀.
   // 문턱은 선공/후수·초반 맥락으로 보정(소프트 바이어스) — 선공 1·2는 적극, 후수 1·2는 억제, 초반은 변수 롤.
-  if (tazzaAvailable) {
+  if (tazzaAvailable && !pushAvailable) {
     const s1 = bestMoveScore(board, owner, rolledValue, 3);
     const ev = rerollEV(board, owner, rolledValue, 3);
     const { margin, note } = tazzaBias(board, owner, rolledValue, ctx);
@@ -945,8 +985,11 @@ export function recommendShield(
       factors.push(F('자원', `이 라인엔 밀릴 수 있는 비쉴드 고점이 있어, 쉴드를 더해 두면 상대 청소에 덜 휘둘려요.`));
     else if (p >= 0.55)
       factors.push(F('목표', `이 ${label} 라인은 내가 노리는 주력 라인이라, 밀리지 않는 ${shieldValue}로 리드를 굳히기 좋아요.`));
-    // 낮은 쉴드를 내 필드에 두는 건 차선(원래 1~3은 상대 캡이 정석) — 둘 자리가 여기뿐이라 안내.
-    if (shieldValue <= 3)
+    // 값 3이 자기 라인의 3과 페어(9점)를 이루면 캡보다 페어가 더 커서 자기 필드가 정답(실측 ★3도 동일하게 둠).
+    const pairsThree = shieldValue === 3 && board.lines[place.line][owner].some((d) => d.value === 3);
+    if (pairsThree)
+      factors.push(F('목표', `이 라인 3에 더해 페어 완성(3×3 = 9점) — 쉴드 3을 상대 캡으로 흘리는 것보다 페어 9점이 더 커요.`));
+    else if (shieldValue <= 3)
       factors.push(F('위험', `참고: 낮은 쉴드(${shieldValue})는 원래 상대 필드 캡이 정석이에요. 지금은 캡 자리가 마땅찮아 내 필드에 두는 거예요.`));
   }
   return { line: place.line, owner: place.owner, headline: place.owner === oppo ? `상대 ${label} 라인에 쉴드(캡)` : `내 ${label} 라인에 쉴드`, factors };

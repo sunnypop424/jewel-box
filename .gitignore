@@ -31,3 +31,6 @@ _cloudflareworker.js
 
 # Claude Code
 .claude/
+
+# 티카투카 자가대국 합성 데이터(분석 산출물 — 커밋 제외)
+scripts/selfplay_games.jsonl
