@@ -4,14 +4,15 @@
 //  · 알까기 성공 → 미는 쪽이 쉴드 1개 획득. 값을 입력하면(내 쉴드면 추천 칸 강조) 칸 클릭해 배치(어느 필드든).
 //  · 선공측의 '첫 주사위'는 쉴드로 자동. 행동을 마치면 턴이 자동으로 넘어간다(필요 시 수동 전환).
 //  · 타짜: 두 눈을 입력하면 어느 쪽이 좋은지 추천 → 선택하면 그 값으로 진행(게임당 1회 소진).
-import { useState, useEffect, useRef, useCallback, type ReactNode } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { Info, RotateCcw, Undo2, ShieldCheck, Flag, Sparkles, X, ArrowLeftRight, Loader2, PictureInPicture2, ChevronsLeft, ChevronsRight, Minus, Swords } from 'lucide-react';
+import { Info, RotateCcw, Undo2, ShieldCheck, Flag, Sparkles, X, ArrowLeftRight, Loader2, PictureInPicture2, ChevronsLeft, ChevronsRight, Minus, Swords, BarChart3, ChevronDown } from 'lucide-react';
 import { createEmptyBoard, evaluate, lineSum, makeDie, opponentOf } from './engine';
 import { estimateWinRate } from './ai';
 import type { Factor } from './ai';
 import type { AiLevel, Board, Die, DieValue, LineIndex, Owner } from './types';
-import { saveSimGame, type SimGameLog, type SimMoveEvent, type LogGrid } from './simLog';
+import { saveSimGame, fetchAllSimGames, type SimGameLog, type SimMoveEvent, type LogGrid } from './simLog';
+import { tendenciesByStar, rate, type AiTendency } from './simAnalysis';
 import { DiePip } from './components/DiePip';
 import { DiceGroupOverlay } from './components/DiceGroupOverlay';
 import { AdvicePanel, WinRateBar } from './components/AdvicePanel';
@@ -208,6 +209,62 @@ function PipPlaceholder({ onClose }: { onClose: () => void }) {
   );
 }
 
+// 실제 AI 성향 분석 패널 — ★별 집계를 접이식으로 표시(읽기 전용).
+function AnalysisPanel({
+  tendencies,
+  open,
+  onToggle,
+}: {
+  tendencies: AiTendency[];
+  open: boolean;
+  onToggle: () => void;
+}) {
+  const label = (b: AiTendency['bucket']) => (b === 'all' ? '전체' : b === 'unknown' ? '난이도 모름' : `★${b}`);
+  const pct = (r: number | null) => (r === null ? '—' : `${Math.round(r * 100)}%`);
+  return (
+    <div className="rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900/50">
+      <button onClick={onToggle} className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left">
+        <span className="flex items-center gap-1.5 text-xs font-bold text-zinc-600 dark:text-zinc-300">
+          <BarChart3 size={14} className="text-indigo-500" /> 실제 AI 성향 분석 (★별)
+        </span>
+        <ChevronDown size={15} className={`text-zinc-400 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div className="flex flex-col gap-2 border-t border-zinc-100 p-3 dark:border-zinc-800">
+          {tendencies.length === 0 ? (
+            <p className="text-[11px] text-zinc-500">아직 분석할 완성 경기가 없어요. 한 판 끝까지(한쪽 가득) 입력하면 쌓입니다.</p>
+          ) : (
+            tendencies.map((t) => (
+              <div key={String(t.bucket)} className="rounded-lg bg-zinc-50 px-2.5 py-2 text-[11px] dark:bg-zinc-800/50">
+                <div className="mb-1 flex items-center gap-2">
+                  <span className="rounded-full bg-rose-100 px-2 py-0.5 font-bold text-rose-700 dark:bg-rose-900/40 dark:text-rose-300">
+                    {label(t.bucket)}
+                  </span>
+                  <span className="font-bold text-zinc-600 dark:text-zinc-300">{t.games}판 · AI 수 {t.aiMoves}</span>
+                  <span className="ml-auto text-zinc-500">AI 승률 {pct(rate(t.aiWins, t.games))}</span>
+                </div>
+                <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-zinc-600 dark:text-zinc-300">
+                  <span>
+                    알까기 {pct(rate(t.pushTaken, t.pushAvailable))} <span className="text-zinc-400">(n={t.pushAvailable})</span>
+                  </span>
+                  <span>
+                    쉴드 가이드 {pct(rate(t.shieldGuideFollowed, t.shieldPlacements))}{' '}
+                    <span className="text-zinc-400">(n={t.shieldPlacements})</span>
+                  </span>
+                </div>
+              </div>
+            ))
+          )}
+          <p className="text-[10px] leading-relaxed text-zinc-400">
+            알까기 = 알까기 가능했을 때 실제로 민 비율 · 쉴드 가이드 = 1~3 상대/4~6 자기 배치 준수율 · n = 표본 수(작을수록
+            들쭉날쭉). 어드바이저엔 아직 반영하지 않습니다.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function TikatukaSim() {
   const initial = loadStore();
   // 새로고침하면 항상 선공 선택부터 — started는 복원하지 않는다(저장값 무시).
@@ -240,13 +297,14 @@ export function TikatukaSim() {
       return true;
     }
   });
-  const [savedCount, setSavedCount] = useState(0);
+  const [allGames, setAllGames] = useState<SimGameLog[] | null>(null); // RTDB 누적 저장 경기(카운트·분석 공용, 세션 무관)
+  const [analysisOpen, setAnalysisOpen] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
+  const tendencies = useMemo(() => (allGames ? tendenciesByStar(allGames) : []), [allGames]);
   const gameRef = useRef<SimGameLog | null>(null); // 진행 중 경기
   const pendingPushRef = useRef<Omit<SimMoveEvent, 'seq'> | null>(null); // 알까기 수(쉴드 배치까지 합쳐 1수로 기록)
   const tazzaShotRef = useRef<{ rolled: [DieValue, DieValue]; chosen: DieValue } | null>(null); // 직전 타짜 택1
   const savedIdRef = useRef<string | null>(null); // 마지막 저장 후 변경 없음 표시(중복 저장 방지)
-  const savedIdsRef = useRef<Set<string>>(new Set()); // 이번 세션에 저장한 고유 경기 id(저장 경기 수 카운트)
 
   useEffect(() => {
     try {
@@ -260,6 +318,16 @@ export function TikatukaSim() {
     const t = setTimeout(() => setSaveMsg(null), 2500);
     return () => clearTimeout(t);
   }, [saveMsg]);
+  // RTDB 누적 저장 경기 — 마운트 시 1회 조회(세션 카운터가 아니라 실제 저장량 + 분석 소스). 실패하면 null 유지.
+  useEffect(() => {
+    let alive = true;
+    fetchAllSimGames()
+      .then((games) => alive && setAllGames(games))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   // 새 경기 로그 시작(선공 결정 시). 기록 OFF면 로그를 만들지 않는다.
   const startGameLog = (ft: Owner) => {
@@ -299,8 +367,10 @@ export function TikatukaSim() {
     savedIdRef.current = game.id;
     try {
       await saveSimGame(finalized);
-      savedIdsRef.current.add(game.id);
-      setSavedCount(savedIdsRef.current.size); // 고유(완성) 경기 수
+      setAllGames((prev) => {
+        const rest = (prev ?? []).filter((x) => x.id !== game.id); // 재저장이면 기존 항목 교체(중복 방지)
+        return [finalized, ...rest];
+      });
     } catch {
       savedIdRef.current = null; // 실패 → 재시도 허용
       setSaveMsg('저장 실패 — RTDB 권한/네트워크 확인');
@@ -763,12 +833,17 @@ export function TikatukaSim() {
           <span className={`h-2 w-2 rounded-full ${record ? 'bg-white' : 'bg-zinc-400'}`} /> 실전 기록 {record ? 'ON' : 'OFF'}
         </button>
         <span className="text-[11px] text-zinc-500">
-          {record ? `자동 저장 중 · ${star === null ? '난이도 모름' : `★${star}`} · 이번 세션 ${savedCount}경기` : '기록 꺼짐'}
+          {record
+            ? `자동 저장 중 · ${star === null ? '난이도 모름' : `★${star}`} · 누적 ${allGames === null ? '…' : allGames.length}경기`
+            : '기록 꺼짐'}
         </span>
         {saveMsg && (
           <span className="ml-auto text-[11px] font-bold text-rose-600 dark:text-rose-400">{saveMsg}</span>
         )}
       </div>
+
+      {/* AI 성향 분석 — 저장된 경기에서 ★별 실제 AI 성향을 집계해 보여줌(읽기 전용, 어드바이저 미반영). */}
+      <AnalysisPanel tendencies={tendencies} open={analysisOpen} onToggle={() => setAnalysisOpen((v) => !v)} />
 
       {/* 컨트롤 버튼 */}
       <div className="flex flex-wrap items-center gap-2">
