@@ -1,6 +1,6 @@
-// 티카투카 AI — ★0~★5. engine의 legalMoves/legalShieldPlacements를 공유하고
-// 레벨별 스코어 함수만 차등화한다. AI 턴은 자기완결적으로 resolve(주사위 포함)하여
-// reducer가 그대로 적용한다(불법수 0 보장). 난수는 rng 주입.
+// 티카투카 AI — ★1~★5. engine의 legalMoves/legalShieldPlacements를 공유하고
+// 시뮬(어드바이저)과 '같은 평가 엔진'(advScoreMoves MC)을 쓰되 레벨별로 강도(playouts·respLevel)만 차등화한다.
+// AI 턴은 자기완결적으로 resolve(주사위 포함)하여 reducer가 그대로 적용한다(불법수 0 보장). 난수는 rng 주입.
 
 import {
   applyPush,
@@ -181,16 +181,13 @@ function pickShield(
   owner: Owner,
   value: DieValue,
   level: AiLevel,
-  rng: () => number
+  _rng: () => number // ★0(랜덤) 제거 후 미사용 — 호출부 시그니처 호환 위해 유지
 ): ShieldPlacement | null {
   const spots = legalShieldPlacements(board, owner);
   if (spots.length === 0) return null;
   const oppo = opponentOf(owner);
 
-  if (level === 0) {
-    return spots[Math.floor(rng() * spots.length)];
-  }
-  if (level === 1) {
+  if (level <= 1) {
     // 하수: 항상 내 필드, 안 찬 라인 중 첫째
     const mine = spots.filter((s) => s.owner === owner);
     return (mine[0] ?? spots[0]);
@@ -312,7 +309,7 @@ const ADV_DEFAULT: AdvCfg = {
   playouts: ADV_PLAYOUTS_PER_BRANCH,
   respLevel: 2,
   rolloutLevel: 2,
-  expandShield: false,
+  expandShield: true, // 푸시 쉴드를 1~6 전수 평균으로 평가(과소평가 버그 수정 — false는 푸시 ~10%p 저평가).
 };
 // 상대 즉답을 ★5(MC)로 둘 때의 가벼운 MC 예산(즉답 ply는 수십~수백 번 호출되므로 가볍게).
 const RESP_MC: McConfig = { topK: 3, playouts: 120, maxSim: 360 };
@@ -425,6 +422,26 @@ export function mcHoldWinRate(
   return win / playouts;
 }
 
+// 레벨별 AI 강도 — 시뮬과 '같은 엔진'(advScoreMoves MC)을 쓰되 ε(랜덤 실수율)와 playouts로 차등하는 단일 진리원.
+// 난이도 사다리는 ε로 만든다(낮을수록 더 자주 실수 → 약함) — playouts만으론 ★3/4/5가 통계적으로 구분이 잘 안 됐음.
+// respLevel은 2로 통일(상대를 과하게 강하게 모델하면 약한 상대에겐 오히려 손해 — ★5가 ★4에 지던 원인).
+// expandShield:true — 푸시 쉴드를 1~6 전수 평균(푸시 과소평가 버그 수정). oppPushFirst:true — 상대를 알까기-우선 모델.
+type LevelPlan = { search: 'greedy' | 'mc'; epsilon: number; cfg?: AdvCfg };
+const mcCfg = (playouts: number): AdvCfg => ({
+  playouts,
+  respLevel: 2,
+  rolloutLevel: 2,
+  expandShield: true,
+  oppPushFirst: true,
+});
+const LEVEL_PLAN: Record<AiLevel, LevelPlan> = {
+  1: { search: 'greedy', epsilon: 0.5 }, // 하수: boardScore 그리디 + 절반은 랜덤 실수
+  2: { search: 'greedy', epsilon: 0 }, // 중수: boardScore 그리디(실수 없음)
+  3: { search: 'mc', epsilon: 0.32, cfg: mcCfg(48) }, // 상수: MC지만 1/3가량 랜덤 실수
+  4: { search: 'mc', epsilon: 0.16, cfg: mcCfg(64) }, // 고수: MC + 가끔 실수
+  5: { search: 'mc', epsilon: 0, cfg: mcCfg(88) }, // 마스터: MC 최다 표본, 실수 없음
+};
+
 // ── 메인: AI 1턴 의사결정 ─────────────────────────────
 export function decideAi(
   board: Board,
@@ -465,13 +482,15 @@ export function decideAi(
     return null;
   }
 
+  // 시뮬과 같은 엔진으로 수 선택 — ε 확률로 랜덤 실수(난이도 차등), 아니면 MC(advBestMove) 또는 boardScore 그리디.
+  const plan = LEVEL_PLAN[level] ?? LEVEL_PLAN[2]; // 레거시 ★0 가드 → ★2로 폴백
   let move: Move;
-  if (level === 0) {
+  if (plan.epsilon > 0 && rng() < plan.epsilon) {
     move = moves[Math.floor(rng() * moves.length)];
-  } else if (level === 5) {
-    move = pickByMonteCarlo(board, owner, chosen, moves, rng, isFirstShield);
+  } else if (plan.search === 'mc' && plan.cfg) {
+    move = advBestMove(board, owner, chosen, moves, rng, isFirstShield, plan.cfg).move;
   } else {
-    move = argmaxMove(moves, (m) => scoreMove(board, owner, m, chosen, level, isFirstShield));
+    move = argmaxMove(moves, (m) => scoreMove(board, owner, m, chosen, 2, isFirstShield));
   }
 
   // 4) push면 쉴드 굴려 배치
@@ -574,17 +593,6 @@ function mcEvaluate(
   for (let i = 1; i < rates.length; i++) if (rates[i] > rates[bestIdx]) bestIdx = i;
   if (bestIdx !== 0 && rates[bestIdx] - rates[0] < MC_MARGIN) bestIdx = 0;
   return { move: top[bestIdx].m, winRate: rates[bestIdx] };
-}
-
-function pickByMonteCarlo(
-  board: Board,
-  owner: Owner,
-  value: DieValue,
-  moves: Move[],
-  rng: () => number,
-  shield = false
-): Move {
-  return mcEvaluate(board, owner, value, moves, rng, undefined, shield).move;
 }
 
 // 한 진영의 '주어진 눈 1수'를 ★2 그리디로 적용(push면 기대 쉴드 4 근사 배치). 루트 expectimax의 상대 응수용.

@@ -13,7 +13,7 @@ export interface LevelBand {
 }
 
 export const LEVEL_TABLE: LevelBand[] = [
-  { level: 1, minTp: 0, star: 0 },
+  { level: 1, minTp: 0, star: 1 },
   { level: 2, minTp: 1000, star: 1 },
   { level: 3, minTp: 2500, star: 2 },
   { level: 4, minTp: 5000, star: 3 },

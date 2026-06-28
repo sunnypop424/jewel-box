@@ -112,7 +112,7 @@ export async function joinRoom(code: string, guestName: string): Promise<void> {
     if (cur.status !== 'waiting' || cur.guest) return; // abort(이미 시작/정원)
     const firstSeat: Seat = Math.random() < 0.5 ? 'host' : 'guest';
     const firstTurn: Owner = seatOwner(firstSeat);
-    const st = reducer(initialState(0), { type: 'START', aiLevel: 0, firstTurn });
+    const st = reducer(initialState(1), { type: 'START', aiLevel: 1, firstTurn }); // PvP는 AI 무관 — ★1은 자리표시자
     const now = Date.now();
     return {
       ...cur,

@@ -24,7 +24,7 @@ export interface Board {
   lines: [LineState, LineState, LineState];
 }
 
-export type AiLevel = 0 | 1 | 2 | 3 | 4 | 5;
+export type AiLevel = 1 | 2 | 3 | 4 | 5;
 
 // 턴 진행 단계.
 // coinToss: 선공 결정 전 / rolling: 턴 시작 자동 굴림 연출 / choosingDie: 타짜로 2개 중 택1

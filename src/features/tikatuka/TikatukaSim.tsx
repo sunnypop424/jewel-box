@@ -657,7 +657,7 @@ export function TikatukaSim() {
             <span className="text-[11px] font-normal text-zinc-400">(선택 — 기록에 ★ 태그)</span>
           </div>
           <div className="flex flex-wrap gap-1.5">
-            {([null, 0, 1, 2, 3, 4, 5] as (AiLevel | null)[]).map((s) => (
+            {([null, 1, 2, 3, 4, 5] as (AiLevel | null)[]).map((s) => (
               <button
                 key={String(s)}
                 onClick={() => setStar(s)}
@@ -837,10 +837,15 @@ export function TikatukaSim() {
               className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-xs font-bold shadow-sm transition disabled:cursor-not-allowed disabled:opacity-40 ${
                 tazzaMode
                   ? 'bg-fuchsia-700 text-white ring-2 ring-fuchsia-300 dark:ring-fuchsia-700'
+                  : advice?.kind === 'tazza'
+                  ? 'bg-fuchsia-600 text-white ring-2 ring-emerald-400 hover:bg-fuchsia-500'
                   : 'bg-fuchsia-600 text-white hover:bg-fuchsia-500 active:bg-fuchsia-700'
               }`}
             >
               <Sparkles size={14} /> 타짜 택1{tazzaMode ? ' 닫기' : ''}
+              {advice?.kind === 'tazza' && !tazzaMode && (
+                <span className="rounded-full bg-emerald-500 px-1.5 py-px text-[9px] text-white">추천</span>
+              )}
             </button>
             <button
               onClick={() => setTazza((t) => !t)}
@@ -939,9 +944,14 @@ export function TikatukaSim() {
             setT2(null);
           }}
           title="더 두지 않고 지금 판세 그대로 한 판을 끝냅니다(기록 ON이면 홀드 종료로 저장)"
-          className="inline-flex items-center gap-1.5 rounded-xl bg-amber-100 px-4 py-2.5 text-sm font-bold text-amber-700 hover:bg-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:hover:bg-amber-900/50"
+          className={`inline-flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-sm font-bold transition ${
+            hold
+              ? 'bg-amber-500 text-white ring-2 ring-emerald-400 hover:bg-amber-400'
+              : 'bg-amber-100 text-amber-700 hover:bg-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:hover:bg-amber-900/50'
+          }`}
         >
           <Hand size={15} /> 홀드 (이 판 종료)
+          {hold && <span className="rounded-full bg-emerald-500 px-1.5 py-px text-[9px] text-white">추천</span>}
         </button>
         <button
           onClick={undo}

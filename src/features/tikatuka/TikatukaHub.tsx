@@ -167,7 +167,7 @@ function RankedView({ myName }: { myName: string }) {
   const [loading, setLoading] = useState(true);
   const [phase, setPhase] = useState<'intro' | 'play'>('intro');
   const [tp, setTp] = useState(0);
-  const [star, setStar] = useState<AiLevel>(0);
+  const [star, setStar] = useState<AiLevel>(1); // 자리표시자 — 실제 ★는 matchStar로 매칭 시 설정
   const [resume, setResume] = useState<GameState | undefined>(undefined);
   const [gameKey, setGameKey] = useState(0);
   const [banner, setBanner] = useState<ApplyResultOutcome | null>(null);

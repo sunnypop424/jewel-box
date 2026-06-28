@@ -5,7 +5,7 @@ import { Dices, Hand, Megaphone, Sparkles, Trophy, RotateCcw, Info, Lightbulb, C
 import { useTikatuka } from './useTikatuka';
 import { isFieldFull } from './engine';
 import { canDeclareTikatuka } from './reducer';
-import { recommendMove, recommendChoose, recommendShield, recommendHold, recommendFirstShield, estimateWinRate } from './ai';
+import { recommendMove, recommendChoose, recommendShield, gradedHold, recommendFirstShield, estimateWinRate } from './ai';
 import type { Factor } from './ai';
 import { AdvicePanel } from './components/AdvicePanel';
 import { Board } from './components/Board';
@@ -18,12 +18,11 @@ import './tikatuka.css';
 export type TikatukaMode = 'free' | 'ranked';
 
 const LEVELS: { lv: AiLevel; name: string; desc: string }[] = [
-  { lv: 0, name: '★☆☆☆☆ 랜덤', desc: '완전 무작위' },
-  { lv: 1, name: '★★☆☆☆ 하수', desc: '탐욕적 자기합' },
-  { lv: 2, name: '★★★☆☆ 중수', desc: '2라인 승리 전략' },
-  { lv: 3, name: '★★★★☆ 상수', desc: '타짜·캡·필드잠금' },
-  { lv: 4, name: '★★★★★ 고수', desc: '기대값 기반' },
-  { lv: 5, name: '★★★★★ 마스터', desc: '몬테카를로 탐색' },
+  { lv: 1, name: '★☆☆☆☆ 하수', desc: '기본기 (가끔 헛수)' },
+  { lv: 2, name: '★★☆☆☆ 중수', desc: '2라인 승리 전략' },
+  { lv: 3, name: '★★★☆☆ 상수', desc: '몬테카를로·타짜·알까기' },
+  { lv: 4, name: '★★★★☆ 고수', desc: '더 깊은 몬테카를로 탐색' },
+  { lv: 5, name: '★★★★★ 마스터', desc: '최강 탐색·강한 상대 응수' },
 ];
 
 // PC(≥1024px) 여부 — PC면 가로 큰 레이아웃, 아니면 모바일 레이아웃을 그대로 렌더(둘 중 하나만 마운트).
@@ -374,6 +373,7 @@ export function TikatukaGame({
               label="타짜의 손놀림"
               tip={state.tazzaUsed.me ? '이미 사용함 (게임당 1회)' : '주사위를 하나 더 굴려 둘 중 선택'}
               size="lg"
+              recommend={advice?.isTazza}
             />
             <GameBtn
               onClick={g.hold}
@@ -382,6 +382,7 @@ export function TikatukaGame({
               label="홀드"
               tip="나는 더 던지지 않음. 컴퓨터 필드가 다 차면 종료"
               size="lg"
+              recommend={advice?.isHold}
             />
             <GameBtn
               onClick={g.tikatuka}
@@ -522,6 +523,7 @@ export function TikatukaGame({
               icon={<Dices size={14} />}
               label="타짜의 손놀림"
               tip={state.tazzaUsed.me ? '이미 사용함 (게임당 1회)' : '주사위를 하나 더 굴려 둘 중 선택'}
+              recommend={advice?.isTazza}
             />
             <GameBtn
               onClick={g.hold}
@@ -529,6 +531,7 @@ export function TikatukaGame({
               icon={<Hand size={14} />}
               label="홀드"
               tip="나는 더 던지지 않음. 컴퓨터 필드가 다 차면 종료"
+              recommend={advice?.isHold}
             />
             <GameBtn
               onClick={g.tikatuka}
@@ -600,6 +603,7 @@ function GameBtn({
   tip,
   accent,
   size,
+  recommend,
 }: {
   onClick: () => void;
   disabled: boolean;
@@ -608,6 +612,7 @@ function GameBtn({
   tip: string;
   accent?: boolean;
   size?: 'lg';
+  recommend?: boolean; // 지원 모드: 이 버튼을 추천(초록 링 + '추천' 배지)
 }) {
   return (
     <button
@@ -617,12 +622,17 @@ function GameBtn({
       className={`inline-flex touch-manipulation select-none items-center gap-1.5 font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
         size === 'lg' ? 'rounded-xl px-6 py-4 text-base' : 'rounded-lg px-3 py-2.5 text-xs'
       } ${
+        recommend && !disabled ? 'ring-2 ring-emerald-400 ' : ''
+      }${
         accent
           ? 'bg-fuchsia-600 text-white hover:bg-fuchsia-500'
           : 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700'
       }`}
     >
       {icon} {label}
+      {recommend && !disabled && (
+        <span className="rounded-full bg-emerald-500 px-1.5 py-px text-[9px] text-white">추천</span>
+      )}
     </button>
   );
 }
@@ -731,14 +741,15 @@ interface AdviceView {
 function computeAdvice(s: GameState, assist: boolean): AdviceView | null {
   if (!assist) return null;
   if (s.turn !== 'me' || s.winner !== null) return null;
-  const base = computeAdviceBase(s);
-  return base ? { ...base, winRate: estimateWinRate(s.board, 'me') } : null;
+  const winRate = estimateWinRate(s.board, 'me');
+  const base = computeAdviceBase(s, winRate);
+  return base ? { ...base, winRate } : null;
 }
 
-function computeAdviceBase(s: GameState): AdviceView | null {
-  // 2라인 리드가 고정돼 역전 불가면 홀드를 최우선 추천(더 던지지 말 것).
+function computeAdviceBase(s: GameState, winRate: number): AdviceView | null {
+  // 홀드 추천 — 시뮬과 동일하게 gradedHold(승률 기반 6단계 + 홀드 승률). 더 던지지 말 것 권장.
   if ((s.phase === 'acting' || s.phase === 'rolling') && !s.held) {
-    const h = recommendHold(s.board, 'me');
+    const h = gradedHold(s.board, 'me', winRate);
     if (h) return { headline: h.headline, factors: h.factors, isHold: true };
   }
 

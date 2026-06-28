@@ -69,7 +69,7 @@ export function useTikatukaOnline(code: string, seat: Seat): OnlineGame {
   const [nowTs, setNowTs] = useState(0); // 하트비트 stale 판정용 시계(렌더 중 Date.now 호출 회피)
 
   // 로컬 상태(useState로 동기 접근 — 핸드오프 시점 즉시 판단/기록).
-  const [local, setLocal] = useState<GameState>(() => initialState(0));
+  const [local, setLocal] = useState<GameState>(() => initialState(1)); // PvP는 AI 무관 — ★1 자리표시자
   const localRef = useRef(local);
   const seqRef = useRef(0); // 마지막으로 반영한 room.seq
   const codeRef = useRef(code);

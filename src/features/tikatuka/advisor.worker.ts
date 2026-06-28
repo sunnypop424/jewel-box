@@ -9,8 +9,10 @@ import type { Board, DieValue, LineIndex, Owner } from './types';
 
 const ctx = self as unknown as Worker;
 
-// 롤아웃 정책(경량) — playouts는 메인이 분할해 주입한다. respLevel/rolloutLevel/expandShield는 #1 경량 설정.
-const CFG: Omit<AdvCfg, 'playouts'> = { respLevel: 2, rolloutLevel: 2, expandShield: false, oppPushFirst: true };
+// 롤아웃 정책(경량) — playouts는 메인이 분할해 주입한다. respLevel/rolloutLevel는 경량 설정.
+// expandShield:true — 푸시로 얻는 쉴드를 1~6 전수(각 최적 배치) 평균으로 평가. false(고정4 1표본)는
+// 푸시 승률을 ~10%p 과소평가해 '라인을 뒤집는 좋은 알까기'마저 추천에서 탈락시켰음(과소평가 버그 수정).
+const CFG: Omit<AdvCfg, 'playouts'> = { respLevel: 2, rolloutLevel: 2, expandShield: true, oppPushFirst: true };
 
 type WholeReq = { kind: 'choose'; value: DieValue; value2: DieValue } | { kind: 'shield'; value: DieValue };
 type Task =
