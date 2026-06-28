@@ -8,9 +8,8 @@ import { useState, useEffect, useRef, useCallback, type ReactNode } from 'react'
 import { createPortal } from 'react-dom';
 import { Info, RotateCcw, Undo2, ShieldCheck, Flag, Sparkles, X, Loader2, PictureInPicture2, ChevronsLeft, ChevronsRight, Minus, Swords, Lightbulb, Hand } from 'lucide-react';
 import { createEmptyBoard, evaluate, lineSum, makeDie, opponentOf } from './engine';
-import { finishMoveAdvice, gradedHold } from './ai';
-import type { Factor, ScoredMove, HoldAdvice } from './ai';
-import type { AiLevel, Board, Die, DieValue, LineIndex, Move, Owner } from './types';
+import type { AiLevel, Board, Die, DieValue, LineIndex, Owner } from './types';
+import { useAdvisorPool, type AdvReq } from './useAdvisorPool';
 import { saveSimGame, fetchAllSimGames, type SimGameLog, type SimMoveEvent, type LogGrid } from './simLog';
 import { DiePip } from './components/DiePip';
 import { DiceGroupOverlay } from './components/DiceGroupOverlay';
@@ -21,12 +20,6 @@ const VALUES: DieValue[] = [1, 2, 3, 4, 5, 6];
 const STORE_KEY = 'tikatukaSim_v5';
 // 보드 주사위 크기 — 모바일 clamp, PC 큼직.
 const DIE = 'h-[clamp(34px,9vw,44px)] w-[clamp(34px,9vw,44px)] lg:h-14 lg:w-14';
-
-// #3 워커 풀 — 총 표본을 워커 N개가 N등분해 동시에 돌리고 메인에서 평균·집계.
-const TOTAL_PLAYOUTS = 1500; // 추천 후보 rate 총 표본
-const WR_TOTAL = 2500; // 관찰 승률 총 표본
-const WHOLE_PLAYOUTS = 700; // choose/shield 단일 워커 표본
-const POOL_TIMEOUT_MS = 8000; // 워커 응답 누락 시 도착분으로 마감(멈춤 방지)
 
 // 주사위 한 개(값 + 쉴드 여부 + 소유자). 필드는 '배치 순서' 배열 — [0]이 먼저 놓은 것(가장 안쪽).
 // owner = 놓은 쪽. 일반 주사위는 자기 필드 주인과 같지만, 쉴드는 상대 필드에 둘 수 있어 필드와 다를 수 있다
@@ -40,36 +33,6 @@ type Pending = { pusher: Owner; value: DieValue | null };
 type FieldAct = 'place' | 'push' | 'shield' | null;
 // 되돌리기 스냅샷.
 type Snap = { grid: Grid; firstShield: Owner | null; turn: Owner; pending: Pending | null };
-
-interface SimAdvice {
-  kind: string;
-  headline: string;
-  factors: Factor[];
-  line?: LineIndex;
-  side?: Owner;
-  chooseIndex?: 0 | 1; // 타짜 택1 추천(0=첫 눈, 1=둘째 눈)
-}
-// 홀드 결과(ai.gradedHold) → 화면용 SimAdvice.
-function holdToSim(h: HoldAdvice | null): SimAdvice | null {
-  return h ? { kind: 'hold', headline: h.headline, factors: h.factors } : null;
-}
-// 워커 청크 응답.
-type ChunkRes =
-  | { id: number; t: 'move'; rates: { kind: 'place' | 'push'; line: LineIndex; rate: number; strat: number }[] }
-  | { id: number; t: 'wr'; winRate: number; playouts: number }
-  | { id: number; t: 'whole'; advice: SimAdvice | null; winRate: number };
-// 진행 중 추천 요청의 청크 집계 상태(워커 풀).
-type PoolReq = {
-  id: number;
-  kind: 'move' | 'wr' | 'whole';
-  need: number;
-  got: ChunkRes[];
-  board: Board;
-  turn: Owner;
-  value?: DieValue;
-  ctx: { iAmFirst: boolean; isFirstShield: boolean };
-  tazza: boolean;
-};
 
 function emptyGrid(): Grid {
   return LINES.map(() => ({ me: [], ai: [] }));
@@ -251,16 +214,10 @@ export function TikatukaSim() {
   const [tazzaMode, setTazzaMode] = useState(false); // 타짜 택1 입력 중
   const [t2, setT2] = useState<DieValue | null>(null); // 타짜 둘째 눈(첫 눈 = value)
   const [past, setPast] = useState<Snap[]>([]);
-  const [advice, setAdvice] = useState<SimAdvice | null>(null);
+  // 추천/승률/홀드/계산중 — 시뮬·게임 공용 워커 풀 훅(단일 진리원).
+  const { advice, winRate, hold, computing, request: requestAdvice, reset: resetAdvice } = useAdvisorPool();
   const [adviceOpen, setAdviceOpen] = useState(false);
-  const [hold, setHold] = useState<SimAdvice | null>(null); // 홀드 추천(승리 굳히기/지는 판 콘시드)
   const [holdOpen, setHoldOpen] = useState(false);
-  const [winRate, setWinRate] = useState<number | null>(null);
-  const [computing, setComputing] = useState(false); // 워커가 승률·추천 계산 중(계산 중 표기용)
-  const poolRef = useRef<Worker[]>([]);
-  const reqIdRef = useRef(0);
-  const pendingRef = useRef<PoolReq | null>(null); // 진행 중 추천 요청의 청크 집계(최신 id만 반영)
-  const poolTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const { pipWindow, openPip } = usePipWindow();
 
   // 실전 기록 — 진행 중 경기 로그(ref로 유지), 기록 ON/OFF, 이번 세션 저장 수.
@@ -378,138 +335,18 @@ export function TikatukaSim() {
     }
   }, [grid, firstTurn, turn, started, firstShield, tazza, star]);
 
-  // 도착한 청크(p.got)로 추천/승률/홀드를 조립해 상태에 반영. (응답 일부만 와도 동작 — 타임아웃 폴백 공용)
-  const finalize = (p: PoolReq) => {
-    if (p.kind === 'move') {
-      // 후보별 rate를 워커 N개에서 평균(N등분 표본 합산).
-      const agg = new Map<string, { kind: 'place' | 'push'; line: LineIndex; sum: number; strat: number }>();
-      for (const r of p.got)
-        if (r.t === 'move')
-          for (const x of r.rates) {
-            const k = `${x.kind}:${x.line}`;
-            const cur = agg.get(k);
-            if (cur) cur.sum += x.rate;
-            else agg.set(k, { kind: x.kind, line: x.line, sum: x.rate, strat: x.strat });
-          }
-      const scored: ScoredMove[] = [...agg.values()].map((e) => ({
-        m: { kind: e.kind, line: e.line } as Move,
-        rate: e.sum / p.got.length,
-        strat: e.strat,
-      }));
-      const a = scored.length ? finishMoveAdvice(p.board, 'me', p.value!, scored, p.tazza, p.ctx) : null;
-      const wr = a?.winRate ?? (scored.length ? Math.max(...scored.map((s) => s.rate)) : null);
-      setWinRate(wr);
-      setAdvice(
-        a
-          ? { kind: a.action, headline: a.headline, factors: a.factors, line: a.line, side: a.action === 'push' ? 'ai' : a.action === 'place' ? 'me' : undefined }
-          : null
-      );
-      setHold(p.turn === 'me' && wr != null ? holdToSim(gradedHold(p.board, 'me', wr)) : null);
-    } else if (p.kind === 'wr') {
-      let wsum = 0;
-      let psum = 0;
-      for (const r of p.got) if (r.t === 'wr') { wsum += r.winRate * r.playouts; psum += r.playouts; }
-      const wr = psum ? wsum / psum : null;
-      setWinRate(wr);
-      setAdvice(null);
-      setHold(p.turn === 'me' && wr != null ? holdToSim(gradedHold(p.board, 'me', wr)) : null);
-    } else {
-      const r = p.got[0];
-      if (r.t === 'whole') {
-        setWinRate(r.winRate);
-        setAdvice(r.advice);
-        setHold(null);
-      }
-    }
-    setComputing(false);
-  };
-
-  // 워커 청크 수신 — 같은 id의 응답이 모두 모이면 마감. (모든 동적값은 pendingRef로 흐름)
-  const handleChunk = (data: ChunkRes) => {
-    const p = pendingRef.current;
-    if (!p || data.id !== p.id) return; // 스테일 무시
-    p.got.push(data);
-    if (p.got.length < p.need) return;
-    pendingRef.current = null;
-    if (poolTimeoutRef.current) clearTimeout(poolTimeoutRef.current);
-    finalize(p);
-  };
-
-  // 워커 풀 — 코어 수만큼(−1, 최대 6) 생성. 추천 요청을 N등분해 동시에 돌린다.
-  useEffect(() => {
-    const n = Math.max(1, Math.min(6, (navigator.hardwareConcurrency || 4) - 1));
-    const ws = Array.from(
-      { length: n },
-      () => new Worker(new URL('./advisor.worker.ts', import.meta.url), { type: 'module' })
-    );
-    ws.forEach((w) => {
-      w.onmessage = (e: MessageEvent<ChunkRes>) => handleChunk(e.data);
-    });
-    poolRef.current = ws;
-    return () => {
-      ws.forEach((w) => w.terminate());
-      poolRef.current = [];
-    };
-    // handleChunk는 안정 ref/세터/순수함수만 사용 → 1회 생성으로 충분(의도된 빈 deps).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // 추천 요청을 워커 풀에 분배. move/wr는 N등분, choose/shield는 단일 워커(whole).
-  const dispatchAdvisor = (
-    board: Board,
-    turn: Owner,
-    advReq:
-      | { kind: 'move'; value: DieValue }
-      | { kind: 'choose'; value: DieValue; value2: DieValue }
-      | { kind: 'shield'; value: DieValue }
-      | null,
-    ctxObj: { iAmFirst: boolean; isFirstShield: boolean },
-    tazzaAvail: boolean
-  ) => {
-    const ws = poolRef.current;
-    const N = ws.length;
-    if (!N) return;
-    const id = ++reqIdRef.current;
-    if (poolTimeoutRef.current) clearTimeout(poolTimeoutRef.current);
-    // 타임아웃 폴백 — 일부 워커가 응답 안 해도 도착분으로 마감(멈춤 방지). 응답 0이면 빈 상태로 정리.
-    poolTimeoutRef.current = setTimeout(() => {
-      const p = pendingRef.current;
-      if (!p || p.id !== id) return;
-      pendingRef.current = null;
-      if (p.got.length > 0) finalize(p);
-      else {
-        setWinRate(null);
-        setAdvice(null);
-        setHold(null);
-        setComputing(false);
-      }
-    }, POOL_TIMEOUT_MS);
-    if (advReq?.kind === 'move') {
-      pendingRef.current = { id, kind: 'move', need: N, got: [], board, turn, value: advReq.value, ctx: ctxObj, tazza: tazzaAvail };
-      const per = Math.max(1, Math.ceil(TOTAL_PLAYOUTS / N));
-      ws.forEach((w) => w.postMessage({ id, t: 'move', board, value: advReq.value, shield: ctxObj.isFirstShield, playouts: per }));
-    } else if (advReq && (advReq.kind === 'choose' || advReq.kind === 'shield')) {
-      pendingRef.current = { id, kind: 'whole', need: 1, got: [], board, turn, ctx: ctxObj, tazza: tazzaAvail };
-      ws[0].postMessage({ id, t: 'whole', board, startTurn: turn, req: advReq, iAmFirst: ctxObj.iAmFirst, isFirstShield: ctxObj.isFirstShield, playouts: WHOLE_PLAYOUTS });
-    } else {
-      pendingRef.current = { id, kind: 'wr', need: N, got: [], board, turn, ctx: ctxObj, tazza: tazzaAvail };
-      const per = Math.max(1, Math.ceil(WR_TOTAL / N));
-      ws.forEach((w) => w.postMessage({ id, t: 'wr', board, startTurn: turn, playouts: per }));
-    }
-  };
 
   // 추천 요청 — 예상 승률은 즉시(가벼움), 최선 수는 워커에 위임(무거운 탐색). 입력이 바뀌면 디바운스 후 요청.
   // 추천은 '내 턴'에만(상대 턴엔 기록만). 내가 얻은 쉴드 배치만 추천(상대 쉴드는 관찰 기록).
   useEffect(() => {
-    if (!started) return;
+    if (!started) {
+      resetAdvice();
+      return;
+    }
     const board = gridToBoard(grid);
 
     // 어떤 추천을 계산할지(없으면 승률만 갱신). 추천은 내 턴 / 내가 얻은 쉴드일 때만.
-    let advReq:
-      | { kind: 'move'; value: DieValue }
-      | { kind: 'choose'; value: DieValue; value2: DieValue }
-      | { kind: 'shield'; value: DieValue }
-      | null = null;
+    let advReq: AdvReq = null;
     if (pending && pending.value != null) {
       if (pending.pusher === 'me') advReq = { kind: 'shield', value: pending.value };
     } else if (pending || turn !== 'me') {
@@ -520,14 +357,11 @@ export function TikatukaSim() {
       advReq = { kind: 'move', value };
     }
 
-    // 이전 추천/홀드는 일부러 비우지 않는다 — 계산 중에도 패널이 마운트된 채라야 높이가 유지돼 보드가 안 들썩인다.
-    // 직전 추정치 노출은 위의 불투명 '계산 중' 오버레이가 가려서 막는다. 결과는 finalize에서 갱신.
-    setComputing(true); // 승률·추천 재계산 시작 → 결과 패널 위에 '계산 중' 오버레이 표시
-    // 선공/후수·선공 첫 쉴드 여부 — 타짜(롤) 추천 문턱 보정용 맥락.
+    // 선공/후수·선공 첫 쉴드 여부 — 타짜(롤) 추천 문턱 보정용 맥락. 워커 풀 훅이 computing·집계·홀드까지 처리.
     const ctxObj = { iAmFirst: firstTurn === 'me', isFirstShield: firstShield === 'me' };
-    const t = setTimeout(() => dispatchAdvisor(board, turn, advReq, ctxObj, tazza), 200);
+    const t = setTimeout(() => requestAdvice(board, turn, advReq, ctxObj, tazza), 200);
     return () => clearTimeout(t);
-    // dispatchAdvisor는 안정 ref만 사용 — deps에 넣으면 매 렌더 재실행되므로 의도적으로 제외.
+    // requestAdvice/resetAdvice는 안정 ref/세터만 사용 — deps 제외(매 렌더 재실행 방지).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [grid, value, t2, tazzaMode, tazza, pending, turn, started, firstTurn, firstShield]);
 

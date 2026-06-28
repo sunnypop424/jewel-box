@@ -1,9 +1,8 @@
-// 어드바이저 워커 풀 훅 — 게임 자유모드 '지원 모드'가 시뮬과 '동일한 조언'을 내도록 쓰는 공용 훅.
-// MC 추천/승률을 워커에서 돌려(메인스레드 비차단) 시뮬과 같은 표본수·로직·워커(advisor.worker.ts)로 계산한다.
+// 어드바이저 워커 풀 훅 — 시뮬(TikatukaSim)·게임 자유모드 '지원 모드'(TikatukaGame)가 함께 쓰는 단일 진리원.
+// MC 추천/승률을 워커에서 돌려(메인스레드 비차단) 계산 → 두 화면이 '완전히 동일한 조언'을 낸다.
 //   · move  : 후보별 rate를 워커 N개가 N등분 계산 → 평균·집계 후 finishMoveAdvice.
 //   · wr    : 관찰 승률(승률만).
 //   · whole : choose/shield 전용(단일 워커) — advice + winRate 통째.
-// 주의: TikatukaSim.tsx에 같은 로직의 '인라인 복사본'이 있다(같은 워커·같은 상수). 한쪽을 바꾸면 둘 다 맞출 것.
 import { useEffect, useRef, useState } from 'react';
 import { finishMoveAdvice, gradedHold } from './ai';
 import type { Factor, HoldAdvice, ScoredMove } from './ai';
