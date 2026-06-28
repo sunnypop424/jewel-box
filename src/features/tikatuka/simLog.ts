@@ -47,6 +47,7 @@ export interface SimGameLog {
   endedAt: string; // ISO
   events: SimMoveEvent[];
   outcome: SimOutcome | null; // 종료 시점 판세로 계산(보드 미완성/홀드 종료도 현재 판세 기준)
+  endedBy?: 'board' | 'hold'; // 종료 사유 — 'board'(전 필드 충원) 기본, 'hold'(내가 홀드로 마감). 미기재=board(하위호환).
 }
 
 const ROOT = 'tikatukaSimLogs';

@@ -21,6 +21,22 @@ export function FactorTagChip({ tag }: { tag: FactorTag }) {
   );
 }
 
+// 근거 목록(태그 순서대로 정렬해 칩+문구) — 추천 패널/시뮬 상단 박스 공용.
+export function FactorList({ factors }: { factors: Factor[] }) {
+  return (
+    <ul className="mt-2 flex flex-col gap-1.5 text-[12px] leading-relaxed text-zinc-700 dark:text-zinc-300">
+      {[...factors]
+        .sort((a, b) => TAG_ORDER.indexOf(a.tag) - TAG_ORDER.indexOf(b.tag))
+        .map((f, i) => (
+          <li key={i} className="flex items-start gap-1.5">
+            <FactorTagChip tag={f.tag} />
+            <span>{f.text}</span>
+          </li>
+        ))}
+    </ul>
+  );
+}
+
 export function AdvicePanel({
   headline,
   factors,
@@ -64,18 +80,7 @@ export function AdvicePanel({
         </span>
         <span className="shrink-0 text-[11px] font-bold text-zinc-400">근거 {open ? '▴' : '▾'}</span>
       </button>
-      {open && (
-        <ul className="mt-2 flex flex-col gap-1.5 text-[12px] leading-relaxed text-zinc-700 dark:text-zinc-300">
-          {[...factors]
-            .sort((a, b) => TAG_ORDER.indexOf(a.tag) - TAG_ORDER.indexOf(b.tag))
-            .map((f, i) => (
-              <li key={i} className="flex items-start gap-1.5">
-                <FactorTagChip tag={f.tag} />
-                <span>{f.text}</span>
-              </li>
-            ))}
-        </ul>
-      )}
+      {open && <FactorList factors={factors} />}
     </div>
   );
 }

@@ -6,7 +6,7 @@
 //  · 타짜: 두 눈을 입력하면 어느 쪽이 좋은지 추천 → 선택하면 그 값으로 진행(게임당 1회 소진).
 import { useState, useEffect, useRef, useCallback, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { Info, RotateCcw, Undo2, ShieldCheck, Flag, Sparkles, X, Loader2, PictureInPicture2, ChevronsLeft, ChevronsRight, Minus, Swords } from 'lucide-react';
+import { Info, RotateCcw, Undo2, ShieldCheck, Flag, Sparkles, X, Loader2, PictureInPicture2, ChevronsLeft, ChevronsRight, Minus, Swords, Lightbulb, Hand } from 'lucide-react';
 import { createEmptyBoard, evaluate, lineSum, makeDie, opponentOf } from './engine';
 import { finishMoveAdvice, gradedHold } from './ai';
 import type { Factor, ScoredMove, HoldAdvice } from './ai';
@@ -14,7 +14,7 @@ import type { AiLevel, Board, Die, DieValue, LineIndex, Move, Owner } from './ty
 import { saveSimGame, fetchAllSimGames, type SimGameLog, type SimMoveEvent, type LogGrid } from './simLog';
 import { DiePip } from './components/DiePip';
 import { DiceGroupOverlay } from './components/DiceGroupOverlay';
-import { AdvicePanel, WinRateBar } from './components/AdvicePanel';
+import { WinRateBar, FactorList } from './components/AdvicePanel';
 
 const LINES: LineIndex[] = [0, 1, 2];
 const VALUES: DieValue[] = [1, 2, 3, 4, 5, 6];
@@ -323,17 +323,19 @@ export function TikatukaSim() {
     followedAdvice: advice ? advice.kind === act && (advice.line === undefined || advice.line === line) : undefined,
     winRateBefore: winRate,
   });
-  // 완성된 경기만 저장한다 — 한쪽 진영의 3필드가 모두 차면(보드 가득 또는 홀드 종료) 그게 곧 경기 종료다.
+  // 완성된 경기만 저장한다 — 한쪽 진영의 3필드가 모두 차면(보드 가득) 그게 곧 경기 종료다.
+  // 홀드(viaHold)면 보드가 덜 찼어도 '그 판세 그대로' 한 판 종료로 보고 저장한다(endedBy:'hold').
   // 미완성/중도 포기 경기는 RTDB에 아예 안 남긴다(저장 안 함 = 따로 지울 필요도 없음). 매 수 직후 onField에서 호출.
-  const finalizeAndSave = useCallback(async (g: Grid) => {
+  const finalizeAndSave = useCallback(async (g: Grid, viaHold = false) => {
     const game = gameRef.current;
     if (!record || !game || game.events.length === 0) return;
-    if (!(allFull(g, 'me') || allFull(g, 'ai'))) return; // 미완성 → 저장 안 함
+    if (!viaHold && !(allFull(g, 'me') || allFull(g, 'ai'))) return; // 미완성 → 저장 안 함(홀드면 통과)
     if (savedIdRef.current === game.id) return; // 같은 내용 중복 저장 방지(새 수가 들어오면 pushEvent가 해제)
     const r = evaluate(gridToBoard(g), false);
     const finalized: SimGameLog = {
       ...game,
       endedAt: new Date().toISOString(),
+      endedBy: viaHold ? 'hold' : 'board',
       outcome: { winner: r.winner, meLineWins: r.meLineWins, aiLineWins: r.aiLineWins, meTotal: r.meTotal, aiTotal: r.aiTotal },
     };
     savedIdRef.current = game.id;
@@ -702,41 +704,61 @@ export function TikatukaSim() {
 
   return renderWithPip(
     <div className="flex flex-col gap-4">
-      {/* 승률 + 추천 (상단) — 계산 중엔 직전 결과 패널 위에 로더를 '겹쳐'(absolute) 띄운다.
-          패널을 언마운트하지 않아 높이가 유지되므로, 근거를 펼치지 않는 한 아래 보드가 들썩이지 않는다. */}
-      <div className="relative flex min-h-[3rem] flex-col gap-4">
-        {hold && (
-          <AdvicePanel
-            isHold
-            headline={hold.headline}
-            factors={hold.factors}
-            winRate={winRate ?? undefined}
-            open={holdOpen}
-            onToggle={() => setHoldOpen((v) => !v)}
-          />
-        )}
-        {advice && (
-          <AdvicePanel
-            headline={advice.headline}
-            factors={advice.factors}
-            winRate={hold ? undefined : winRate ?? undefined}
-            open={adviceOpen}
-            onToggle={() => setAdviceOpen((v) => !v)}
-          />
-        )}
-        {!hold && !advice && winRate != null && (
-          <div className="flex items-center gap-2 rounded-xl border border-zinc-200 bg-white px-3 py-2 dark:border-zinc-800 dark:bg-zinc-900/50">
-            <span className="shrink-0 text-xs font-bold text-zinc-500 dark:text-zinc-400 lg:text-sm">예상 승률</span>
-            <WinRateBar winRate={winRate} />
+      {/* 승률 + 추천 (상단) — 상태(계산중/승률만/추천)와 무관하게 항상 같은 구조(승률 줄 + 한 줄 헤드라인)라
+          접힌 상태 높이가 고정된다. 근거를 펼칠 때(open)만 아래로 늘어나므로 보드가 들썩이지 않는다. */}
+      {(() => {
+        const active = hold ?? advice ?? null; // 추천은 하나만 표시(홀드 우선)
+        const isHold = !!hold;
+        const open = isHold ? holdOpen : adviceOpen;
+        const toggle = isHold ? () => setHoldOpen((v) => !v) : () => setAdviceOpen((v) => !v);
+        const tone = isHold
+          ? 'border-amber-300 bg-amber-50 dark:border-amber-800/60 dark:bg-amber-950/30'
+          : active
+          ? 'border-emerald-300 bg-emerald-50 dark:border-emerald-800/60 dark:bg-emerald-950/30'
+          : 'border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900/50';
+        return (
+          <div className={`rounded-2xl border p-3 ${tone}`}>
+            {/* 1줄: 예상 승률 (항상 표시 — 높이 고정용) */}
+            <div className="mb-2 flex h-5 items-center gap-2">
+              <span className="shrink-0 text-[11px] font-bold text-zinc-500 dark:text-zinc-400">예상 승률</span>
+              {winRate != null ? (
+                <WinRateBar winRate={winRate} />
+              ) : (
+                <span className="text-[11px] font-bold text-zinc-400">—</span>
+              )}
+            </div>
+            {/* 2줄: 추천 헤드라인 (항상 한 줄 — 계산중/추천없음도 같은 높이) */}
+            {computing ? (
+              <div className="flex h-5 items-center gap-2 text-sm font-bold text-zinc-500 dark:text-zinc-400">
+                <Loader2 size={16} className="animate-spin text-indigo-500" />
+                계산 중…
+              </div>
+            ) : active ? (
+              <button
+                type="button"
+                onClick={toggle}
+                className="flex h-5 w-full items-center justify-between gap-2 text-left"
+              >
+                <span
+                  className={`flex min-w-0 items-center gap-1.5 text-sm font-bold ${
+                    isHold ? 'text-amber-700 dark:text-amber-300' : 'text-emerald-700 dark:text-emerald-300'
+                  }`}
+                >
+                  {isHold ? <Hand size={16} className="shrink-0" /> : <Lightbulb size={16} className="shrink-0" />}
+                  <span className="truncate">추천 — {active.headline}</span>
+                </span>
+                <span className="shrink-0 text-[11px] font-bold text-zinc-400">근거 {open ? '▴' : '▾'}</span>
+              </button>
+            ) : (
+              <div className="flex h-5 items-center text-sm font-medium text-zinc-400">
+                둘 곳을 누르면 추천이 나와요
+              </div>
+            )}
+            {/* 펼침: 근거 (open일 때만 — 이때만 높이 증가) */}
+            {!computing && active && open && <FactorList factors={active.factors} />}
           </div>
-        )}
-        {computing && (
-          <div className="absolute inset-0 z-10 flex items-center gap-2 rounded-2xl border border-zinc-200 bg-white px-3 text-sm font-bold text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900/50">
-            <Loader2 size={16} className="animate-spin text-indigo-500" />
-            계산 중… (오래 걸릴 수 있어요)
-          </div>
-        )}
-      </div>
+        );
+      })()}
 
       {/* 보드 */}
       <div className="flex flex-col gap-2.5 lg:gap-4">
@@ -903,6 +925,24 @@ export function TikatukaSim() {
 
       {/* 컨트롤 버튼 */}
       <div className="flex flex-wrap items-center gap-2">
+        <button
+          onClick={() => {
+            // 홀드 = 더 두지 않고 '현재 판세 그대로' 한 판 종료로 기록한 뒤 새 판(선공 선택)으로.
+            void finalizeAndSave(grid, true);
+            gameRef.current = null;
+            setStarted(false);
+            setGrid(emptyGrid());
+            setPast([]);
+            setPending(null);
+            setValue(null);
+            setTazzaMode(false);
+            setT2(null);
+          }}
+          title="더 두지 않고 지금 판세 그대로 한 판을 끝냅니다(기록 ON이면 홀드 종료로 저장)"
+          className="inline-flex items-center gap-1.5 rounded-xl bg-amber-100 px-4 py-2.5 text-sm font-bold text-amber-700 hover:bg-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:hover:bg-amber-900/50"
+        >
+          <Hand size={15} /> 홀드 (이 판 종료)
+        </button>
         <button
           onClick={undo}
           disabled={!past.length}
