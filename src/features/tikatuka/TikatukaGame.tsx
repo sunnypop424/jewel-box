@@ -425,7 +425,7 @@ export function TikatukaGame({
       <div className="flex items-center justify-between gap-2 rounded-xl bg-zinc-50 py-2 text-xs font-bold dark:bg-zinc-900/50">
         <span className="text-zinc-500">
           난이도 <span className="text-amber-500">★{state.aiLevel}</span>
-          {state.held && <span className="ml-2 text-indigo-500">홀드 중</span>}
+          {state.held && <span className="ml-2 text-emerald-500">홀드 중</span>}
           {state.tikatukaUsed.me && <span className="ml-2 text-fuchsia-500">티카투카!</span>}
         </span>
         <div className="flex items-center gap-2">
@@ -570,10 +570,10 @@ export function TikatukaGame({
 
 // PC 상단바 진영 태그 — 이름 + 현재 턴(TURN) 표시. 아바타 이미지·TP는 제외(간단 상단바).
 function PcPlayerTag({ owner, label, active, note }: { owner: Owner; label: string; active?: boolean; note?: string }) {
-  const tone = owner === 'me' ? 'text-indigo-600 dark:text-indigo-300' : 'text-rose-600 dark:text-rose-300';
+  const tone = owner === 'me' ? 'text-emerald-600 dark:text-emerald-300' : 'text-rose-600 dark:text-rose-300';
   const ring = active
     ? owner === 'me'
-      ? 'border-indigo-400 bg-indigo-50 dark:border-indigo-600 dark:bg-indigo-950/40'
+      ? 'border-emerald-400 bg-emerald-50 dark:border-emerald-600 dark:bg-emerald-950/40'
       : 'border-rose-400 bg-rose-50 dark:border-rose-600 dark:bg-rose-950/40'
     : 'border-zinc-200 dark:border-zinc-800';
   return (
@@ -581,13 +581,13 @@ function PcPlayerTag({ owner, label, active, note }: { owner: Owner; label: stri
       <span className={`text-base font-bold ${tone}`}>{label}</span>
       {active && (
         <span
-          className={`inline-flex shrink-0 items-center justify-center rounded-full p-0.5 text-white ${owner === 'me' ? 'bg-indigo-500' : 'bg-rose-500'}`}
+          className={`inline-flex shrink-0 items-center justify-center rounded-full p-0.5 text-white ${owner === 'me' ? 'bg-emerald-500' : 'bg-rose-500'}`}
           title={owner === 'me' ? '내 차례' : '상대 차례'}
         >
           <Check size={14} strokeWidth={3} />
         </span>
       )}
-      {note && <span className="text-xs font-bold text-indigo-500">{note}</span>}
+      {note && <span className="text-xs font-bold text-emerald-500">{note}</span>}
     </div>
   );
 }
@@ -644,7 +644,7 @@ function ResultPanel({
     result.winner === 'me' ? '승리!' : result.winner === 'ai' ? '패배' : '무승부';
   const color =
     result.winner === 'me'
-      ? 'text-indigo-600 dark:text-indigo-300'
+      ? 'text-emerald-600 dark:text-emerald-300'
       : result.winner === 'ai'
         ? 'text-rose-600 dark:text-rose-300'
         : 'text-zinc-500';
@@ -665,7 +665,7 @@ function ResultPanel({
       <div className="text-center text-sm font-bold">
         <span className="text-rose-500">컴퓨터 {result.aiLineWins}라인</span>
         <span className="mx-2 text-zinc-300">vs</span>
-        <span className="text-indigo-500">나 {result.meLineWins}라인</span>
+        <span className="text-emerald-500">나 {result.meLineWins}라인</span>
       </div>
       <div className="text-center text-xs text-zinc-500 dark:text-zinc-400">
         전체 총합 — 컴퓨터 {result.aiTotal} : 나 {result.meTotal}

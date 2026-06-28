@@ -609,9 +609,16 @@ function strongResponse(board: Board, owner: Owner, value: DieValue, rng: () => 
   return next;
 }
 
+// 후보 수의 MC 평가 결과(워커 풀에서 분할·집계 가능하게 export).
+export interface ScoredMove {
+  m: Move;
+  rate: number;
+  strat: number;
+}
+
 // 지원모드 전용 루트 얕은 expectimax: 후보 수마다 상대의 다음 6눈을 '정확히 전개'(샘플링 X)하고,
 // 각 가지 뒤만 MC로 끝까지 롤아웃해 평균 승률을 낸다. 근거리(상대 응수)의 분산을 없애 추천이 더 안정·정확.
-function advScoreMoves(
+export function advScoreMoves(
   board: Board,
   owner: Owner,
   value: DieValue,
@@ -619,7 +626,7 @@ function advScoreMoves(
   rng: () => number,
   shield = false,
   cfg: AdvCfg = ADV_DEFAULT
-): { m: Move; rate: number; strat: number }[] {
+): ScoredMove[] {
   const oppo = opponentOf(owner);
   const oppPush = !!cfg.oppPushFirst; // 상대(AI)는 알까기 가능 시 무조건 푸시(실측 기반). 내 측엔 미적용.
   const pushSide = oppPush ? oppo : undefined;
@@ -696,6 +703,7 @@ export interface MoveAdvice {
   line?: LineIndex; // place/push일 때 대상 라인
   headline: string;
   factors: Factor[];
+  winRate?: number; // 선택한 수의 MC 승률(place/push만) — 워커가 별도 승률 계산을 생략하고 재사용한다.
 }
 // 타짜(롤) 추천을 선공/후수·턴 맥락으로 보정하기 위한 컨텍스트(시뮬에서 주입).
 export interface TazzaCtx {
@@ -908,52 +916,68 @@ function tazzaBias(
   return { margin: Math.max(margin, 3), note };
 }
 
-// 굴린 값에 대한 추천 수(+근거들). 타짜 사용 가능하고 지금 수가 시원찮으면 타짜를 권한다.
-export function recommendMove(
+// 집계된 후보 rate(scored)로 최종 추천을 만든다(선택 + 타짜 게이트 + 근거). MC가 없는 가벼운 로직이라
+// 워커 풀이 rate를 분할·집계한 뒤 '메인 스레드'에서 이 함수를 호출한다. recommendMove도 이걸 재사용.
+export function finishMoveAdvice(
   board: Board,
   owner: Owner,
   rolledValue: DieValue,
+  scored: ScoredMove[],
   tazzaAvailable: boolean,
-  cfg: AdvCfg = ADV_DEFAULT, // 시뮬은 강한 설정 주입(깊은 롤아웃·★5 응수·쉴드 전수). 게임/지원모드는 기본값.
-  ctx?: TazzaCtx // 선공/후수·첫 턴 맥락(타짜 문턱 보정용). 없으면 순수 EV 게이트.
+  ctx?: TazzaCtx
 ): MoveAdvice | null {
-  const moves = legalMoves(board, owner, rolledValue);
-  if (moves.length === 0) return null;
-  const pushAvailable = moves.some((m) => m.kind === 'push');
+  if (scored.length === 0) return null;
+  const pushAvailable = scored.some((s) => s.m.kind === 'push');
 
-  // 모든 합법수(놓기+알까기)를 끝까지 평가해 승률로 고른다.
-  // 단, 최상위와 승률이 ADV_TIE 이내로 '거의 동률'일 때만 알까기를 우선(사용자 선호 + 쉴드 이득).
-  // → 놓기로 확정승인데도 알까기를 권하던 버그 해결: 놓기 승률이 더 높으면 놓기를 추천한다.
-  // 선공 첫 턴이면 놓는 주사위가 쉴드(밀리지 않음) — shield 인자로 반영해 첫 턴 평가 왜곡 제거.
-  const firstShield = ctx?.isFirstShield ?? false;
-  const scored = advScoreMoves(board, owner, rolledValue, moves, Math.random, firstShield, cfg);
+  // 최상위와 승률이 ADV_TIE 이내로 '거의 동률'일 때만 알까기를 우선(놓기 승률이 더 높으면 놓기).
   const maxRate = Math.max(...scored.map((s) => s.rate));
   const tie = scored.filter((s) => s.rate >= maxRate - ADV_TIE);
   const pushTie = tie.filter((s) => s.m.kind === 'push').sort((a, b) => b.strat - a.strat);
-  const best = (pushTie.length ? pushTie[0] : [...tie].sort((a, b) => b.strat - a.strat)[0]).m;
+  const bestEntry = pushTie.length ? pushTie[0] : [...tie].sort((a, b) => b.strat - a.strat)[0];
+  const best = bestEntry.m;
 
-  // 타짜: 다시 굴렸을 때 기대 이득이 충분할 때만 권한다(6 같은 높은 눈은 권하지 않음). 알까기가 가능하면 그쪽을 우선 보므로 건너뜀.
-  // 문턱은 선공/후수·초반 맥락으로 보정(소프트 바이어스) — 선공 1·2는 적극, 후수 1·2는 억제, 초반은 변수 롤.
+  // 타짜: 다시 굴렸을 때 기대 이득이 충분할 때만(알까기 가능하면 건너뜀). 문턱은 선공/후수·초반 맥락 보정.
   if (tazzaAvailable && !pushAvailable) {
     const s1 = bestMoveScore(board, owner, rolledValue, 3);
     const ev = rerollEV(board, owner, rolledValue, 3);
     const { margin, note } = tazzaBias(board, owner, rolledValue, ctx);
     if (ev - s1 > margin) {
       const factors: Factor[] = [];
-      if (note) factors.push(note); // 맥락별 권유(선공 첫 쉴드/초반 변수 롤 등)를 맨 앞에
+      if (note) factors.push(note);
       factors.push(
         F('타짜', `지금 ${rolledValue} 눈으로 둘 수 있는 최선 수가 시원찮아요.`),
         F('타짜', `다시 굴리면 기대 이득이 약 +${(ev - s1).toFixed(0)}점 더 높아요 — ${rolledValue}은(는) 흘려보내기 아까운 눈이에요.`),
         F('타짜', '타짜는 게임당 1번뿐 — 지금처럼 더 나은 눈을 노릴 만할 때 쓰는 게 좋아요.'),
       );
-      // 노릴 값: 다시 굴려 나오면 상대 페어/트리플을 청소할 수 있는 가장 가치 큰 매칭값.
       const fish = bestCleanTarget(board, owner);
       if (fish)
         factors.push(F('타짜', `특히 ${fish.value}이 나오면 ${ADV_LINE[fish.line]} 라인 상대 ${fish.value} ${fish.count >= 3 ? '트리플' : '페어'}(${fish.points}점)을 청소할 수 있어요.`));
       return { action: 'tazza', headline: '타짜로 다시 굴리기', factors };
     }
   }
-  return { action: best.kind, line: best.line, headline: moveHeadline(best), factors: analyzeMove(board, owner, best, rolledValue) };
+  return {
+    action: best.kind,
+    line: best.line,
+    headline: moveHeadline(best),
+    factors: analyzeMove(board, owner, best, rolledValue),
+    winRate: bestEntry.rate, // 워커가 승률 재사용(중복 MC 제거)
+  };
+}
+
+// 굴린 값에 대한 추천 수 — 단일 스레드용(후보 rate 계산 + finishMoveAdvice). 워커 풀은 rate만 분할 계산 후 finishMoveAdvice를 직접 호출.
+export function recommendMove(
+  board: Board,
+  owner: Owner,
+  rolledValue: DieValue,
+  tazzaAvailable: boolean,
+  cfg: AdvCfg = ADV_DEFAULT,
+  ctx?: TazzaCtx
+): MoveAdvice | null {
+  const moves = legalMoves(board, owner, rolledValue);
+  if (moves.length === 0) return null;
+  // 선공 첫 턴이면 놓는 주사위가 쉴드(밀리지 않음) — shield 인자로 반영해 첫 턴 평가 왜곡 제거.
+  const scored = advScoreMoves(board, owner, rolledValue, moves, Math.random, ctx?.isFirstShield ?? false, cfg);
+  return finishMoveAdvice(board, owner, rolledValue, scored, tazzaAvailable, ctx);
 }
 
 // 타짜로 둘을 굴렸을 때 어느 쪽을 고를지(+근거들).
@@ -1114,6 +1138,44 @@ export function recommendHoldLoss(board: Board, owner: Owner): HoldAdvice | null
       F('홀드', `홀드하면 나는 더 안 두고 상대만 마저 둬 판이 닫혀요 — 추가 손실·시간 낭비를 줄이는 선택이에요.`),
     ],
   };
+}
+
+// 승률 기반 홀드 추천을 6단계로 세분화(승리 확정/권장/고려, 패배 확정/권장/고려). 결정론적 락이 우선.
+// 워커(청크 계산)와 메인(조립) 양쪽에서 재사용 — 중복 방지.
+export function gradedHold(board: Board, owner: Owner, winRate: number): HoldAdvice | null {
+  const r = evaluate(board, false);
+  const myWins = owner === 'me' ? r.meLineWins : r.aiLineWins;
+  const oppWins = owner === 'me' ? r.aiLineWins : r.meLineWins;
+  const dice = LINES.reduce<number>((n, l) => n + board.lines[l].me.length + board.lines[l].ai.length, 0);
+  const wp = Math.round(winRate * 100);
+  const lockWin = recommendHold(board, owner);
+  if (lockWin) return { headline: '홀드(확정) — 2라인 굳히기', factors: lockWin.factors };
+  if (winRate >= 0.9 && myWins >= 2)
+    return {
+      headline: `홀드 권장 — 승률 ${wp}% (매우 유리)`,
+      factors: [
+        F('홀드', `승률이 ${wp}%로 매우 높아요 — 더 둘수록 변수만 늘어나니 홀드로 2라인 리드를 굳히는 게 안전해요.`),
+        F('위험', '강제 알까기로 괜한 변수를 만들 바엔 홀드로 판을 닫는 게 좋아요.'),
+      ],
+    };
+  if (winRate >= 0.78 && myWins >= 2)
+    return {
+      headline: `홀드 고려 — 승률 ${wp}% (유리)`,
+      factors: [F('홀드', `2라인을 이기고 있고 승률 ${wp}%로 유리해요. 굳히려면 홀드도 한 방법(아직 확정은 아니라 더 벌려도 됨).`)],
+    };
+  const lockLoss = recommendHoldLoss(board, owner);
+  if (lockLoss) return { headline: '홀드(확정) — 이 판은 졌어요', factors: lockLoss.factors };
+  if (winRate <= 0.1 && dice >= 9)
+    return {
+      headline: `홀드 권장 — 승률 ${wp}% (거의 졌음)`,
+      factors: [F('홀드', `승률이 ${wp}%로 매우 낮아요. 더 둘수록 내 주사위가 상대 알까기 표적이 되고 상대에게 쉴드만 더 줘요 — 홀드로 손실을 줄이세요.`)],
+    };
+  if (winRate <= 0.22 && oppWins >= 2 && dice >= 9)
+    return {
+      headline: `홀드 고려 — 승률 ${wp}% (불리)`,
+      factors: [F('홀드', `상대가 2라인을 이기고 승률 ${wp}%로 불리해요. 역전 가망이 적으면 홀드로 변수를 줄이는 것도 방법(아직 확정 패배는 아님).`)],
+    };
+  return null;
 }
 
 // 디버그/검증용: 합법수 없음 판정(자동홀드와 동일 기준).

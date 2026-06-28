@@ -47,8 +47,8 @@ export function DiceGroupOverlay({
   if (!segments.some((s) => s.kind === 'group')) return null;
 
   const mine = owner === 'me';
-  const bracketBorder = mine ? 'border-indigo-400 dark:border-indigo-300' : 'border-rose-400 dark:border-rose-300';
-  const circleColor = mine ? 'bg-indigo-500' : 'bg-rose-500';
+  const bracketBorder = mine ? 'border-emerald-400 dark:border-emerald-300' : 'border-rose-400 dark:border-rose-300';
+  const circleColor = mine ? 'bg-emerald-500' : 'bg-rose-500';
 
   return (
     // 실제 주사위 행과 동일한 flex(gap·padding·justify)를 미러링 → 박스 위치가 정확히 일치.

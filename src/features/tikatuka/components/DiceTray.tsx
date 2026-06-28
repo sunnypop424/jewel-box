@@ -56,11 +56,11 @@ export function DiceTray({
 
   const tone =
     owner === 'me'
-      ? 'text-indigo-600 dark:text-indigo-400'
+      ? 'text-emerald-600 dark:text-emerald-400'
       : 'text-rose-600 dark:text-rose-400';
   const ring = active
     ? owner === 'me'
-      ? 'border-indigo-400 dark:border-indigo-600 ring-1 ring-indigo-300/60'
+      ? 'border-emerald-400 dark:border-emerald-600 ring-1 ring-emerald-300/60'
       : 'border-rose-400 dark:border-rose-600 ring-1 ring-rose-300/60'
     : 'border-zinc-200 dark:border-zinc-800';
 
@@ -82,7 +82,7 @@ export function DiceTray({
                 key={i}
                 type="button"
                 onClick={() => onPick(i as 0 | 1)}
-                className="touch-manipulation select-none rounded-xl p-0.5 ring-2 ring-transparent transition hover:ring-indigo-400 active:ring-indigo-400"
+                className="touch-manipulation select-none rounded-xl p-0.5 ring-2 ring-transparent transition hover:ring-emerald-400 active:ring-emerald-400"
               >
                 <DiePip die={synthDie(owner, v)} className={`${trayDie} tk-settle`} />
               </button>

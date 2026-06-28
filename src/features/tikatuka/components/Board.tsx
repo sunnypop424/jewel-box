@@ -75,7 +75,7 @@ export function Board({ state, flingIds, pushFx, aiShieldTarget, adviceTarget, s
       {/* 진영 헤더 — 나(왼쪽) / 상대(오른쪽). PC는 상단바가 표시하므로 생략(중복 방지). */}
       {!lg && (
         <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-1 text-xs font-bold">
-          <span className="text-indigo-600 dark:text-indigo-400">나</span>
+          <span className="text-emerald-600 dark:text-emerald-400">나</span>
           <span className="text-zinc-400">VS</span>
           <span className="text-right text-rose-600 dark:text-rose-400">상대 (컴퓨터)</span>
         </div>
@@ -133,7 +133,7 @@ export function Board({ state, flingIds, pushFx, aiShieldTarget, adviceTarget, s
               <span className="text-[10px] font-bold text-zinc-400 sm:hidden">{line + 1}라인</span>
               {/* 점수 — 자릿수가 달라도 라인 폭이 어긋나지 않게 각 수를 고정폭 셀로(콜론 기준 정렬). */}
               <span className={`font-bold tabular-nums ${lg ? 'text-2xl' : 'text-sm'}`}>
-                <span className="inline-block w-[1.3em] text-right text-indigo-500">{lr.meSum}</span>
+                <span className="inline-block w-[1.3em] text-right text-emerald-500">{lr.meSum}</span>
                 <span className="mx-1 text-zinc-300">:</span>
                 <span className="inline-block w-[1.3em] text-left text-rose-500">{lr.aiSum}</span>
               </span>
@@ -186,7 +186,7 @@ function FieldBox({
   const ring = advice
     ? 'ring-2 ring-emerald-400 bg-emerald-50 cursor-pointer hover:bg-emerald-100 dark:bg-emerald-950/30 dark:hover:bg-emerald-900/30'
     : highlight === 'place'
-      ? 'ring-2 ring-indigo-400 cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-950/30'
+      ? 'ring-2 ring-emerald-400 cursor-pointer hover:bg-emerald-50 dark:hover:bg-emerald-950/30'
       : highlight === 'push'
         ? 'ring-2 ring-rose-400 cursor-pointer hover:bg-rose-50 dark:hover:bg-rose-950/30'
         : highlight === 'shield'
@@ -258,7 +258,7 @@ function FieldBox({
 function LineBadge({ winner, lg }: { winner: Owner | 'tie'; lg?: boolean }) {
   const meta =
     winner === 'me'
-      ? { Icon: ChevronsLeft, c: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300' }
+      ? { Icon: ChevronsLeft, c: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' }
       : winner === 'ai'
         ? { Icon: ChevronsRight, c: 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300' }
         : { Icon: Minus, c: 'bg-zinc-200 text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300' };

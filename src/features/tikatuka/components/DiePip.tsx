@@ -39,9 +39,9 @@ export function DiePip({
   const mine = die.owner === 'me';
   // pip은 SVG 원으로 그린다 — 어떤 크기(고정 px / clamp 클래스)에서도 viewBox로 정확히 스케일.
   // (%·aspect-ratio 기반 pip은 그리드 셀 안에서 높이가 0으로 무너지는 환경이 있어 폐기)
-  const pipColor = mine ? '#6366f1' : '#f43f5e'; // indigo-500 / rose-500
+  const pipColor = mine ? '#10b981' : '#f43f5e'; // emerald-500(내) / rose-500(상대)
   const base = mine
-    ? 'bg-indigo-50 border-indigo-300 dark:bg-indigo-950/40 dark:border-indigo-700'
+    ? 'bg-emerald-50 border-emerald-300 dark:bg-emerald-950/40 dark:border-emerald-700'
     : 'bg-rose-50 border-rose-300 dark:bg-rose-950/40 dark:border-rose-700';
   const shieldRing = die.shield
     ? 'ring-2 ring-amber-400 ring-offset-1 ring-offset-white dark:ring-offset-zinc-900'

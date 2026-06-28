@@ -4,14 +4,14 @@
 //  · 알까기 성공 → 미는 쪽이 쉴드 1개 획득. 값을 입력하면(내 쉴드면 추천 칸 강조) 칸 클릭해 배치(어느 필드든).
 //  · 선공측의 '첫 주사위'는 쉴드로 자동. 행동을 마치면 턴이 자동으로 넘어간다(필요 시 수동 전환).
 //  · 타짜: 두 눈을 입력하면 어느 쪽이 좋은지 추천 → 선택하면 그 값으로 진행(게임당 1회 소진).
-import { useState, useEffect, useRef, useCallback, useMemo, type ReactNode } from 'react';
+import { useState, useEffect, useRef, useCallback, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { Info, RotateCcw, Undo2, ShieldCheck, Flag, Sparkles, X, ArrowLeftRight, Loader2, PictureInPicture2, ChevronsLeft, ChevronsRight, Minus, Swords, BarChart3, ChevronDown } from 'lucide-react';
+import { Info, RotateCcw, Undo2, ShieldCheck, Flag, Sparkles, X, Loader2, PictureInPicture2, ChevronsLeft, ChevronsRight, Minus, Swords } from 'lucide-react';
 import { createEmptyBoard, evaluate, lineSum, makeDie, opponentOf } from './engine';
-import type { Factor } from './ai';
-import type { AiLevel, Board, Die, DieValue, LineIndex, Owner } from './types';
+import { finishMoveAdvice, gradedHold } from './ai';
+import type { Factor, ScoredMove, HoldAdvice } from './ai';
+import type { AiLevel, Board, Die, DieValue, LineIndex, Move, Owner } from './types';
 import { saveSimGame, fetchAllSimGames, type SimGameLog, type SimMoveEvent, type LogGrid } from './simLog';
-import { tendenciesByStar, rate, type AiTendency } from './simAnalysis';
 import { DiePip } from './components/DiePip';
 import { DiceGroupOverlay } from './components/DiceGroupOverlay';
 import { AdvicePanel, WinRateBar } from './components/AdvicePanel';
@@ -21,6 +21,12 @@ const VALUES: DieValue[] = [1, 2, 3, 4, 5, 6];
 const STORE_KEY = 'tikatukaSim_v5';
 // 보드 주사위 크기 — 모바일 clamp, PC 큼직.
 const DIE = 'h-[clamp(34px,9vw,44px)] w-[clamp(34px,9vw,44px)] lg:h-14 lg:w-14';
+
+// #3 워커 풀 — 총 표본을 워커 N개가 N등분해 동시에 돌리고 메인에서 평균·집계.
+const TOTAL_PLAYOUTS = 1500; // 추천 후보 rate 총 표본
+const WR_TOTAL = 2500; // 관찰 승률 총 표본
+const WHOLE_PLAYOUTS = 700; // choose/shield 단일 워커 표본
+const POOL_TIMEOUT_MS = 8000; // 워커 응답 누락 시 도착분으로 마감(멈춤 방지)
 
 // 주사위 한 개(값 + 쉴드 여부 + 소유자). 필드는 '배치 순서' 배열 — [0]이 먼저 놓은 것(가장 안쪽).
 // owner = 놓은 쪽. 일반 주사위는 자기 필드 주인과 같지만, 쉴드는 상대 필드에 둘 수 있어 필드와 다를 수 있다
@@ -43,6 +49,27 @@ interface SimAdvice {
   side?: Owner;
   chooseIndex?: 0 | 1; // 타짜 택1 추천(0=첫 눈, 1=둘째 눈)
 }
+// 홀드 결과(ai.gradedHold) → 화면용 SimAdvice.
+function holdToSim(h: HoldAdvice | null): SimAdvice | null {
+  return h ? { kind: 'hold', headline: h.headline, factors: h.factors } : null;
+}
+// 워커 청크 응답.
+type ChunkRes =
+  | { id: number; t: 'move'; rates: { kind: 'place' | 'push'; line: LineIndex; rate: number; strat: number }[] }
+  | { id: number; t: 'wr'; winRate: number; playouts: number }
+  | { id: number; t: 'whole'; advice: SimAdvice | null; winRate: number };
+// 진행 중 추천 요청의 청크 집계 상태(워커 풀).
+type PoolReq = {
+  id: number;
+  kind: 'move' | 'wr' | 'whole';
+  need: number;
+  got: ChunkRes[];
+  board: Board;
+  turn: Owner;
+  value?: DieValue;
+  ctx: { iAmFirst: boolean; isFirstShield: boolean };
+  tazza: boolean;
+};
 
 function emptyGrid(): Grid {
   return LINES.map(() => ({ me: [], ai: [] }));
@@ -208,62 +235,6 @@ function PipPlaceholder({ onClose }: { onClose: () => void }) {
   );
 }
 
-// 실제 AI 성향 분석 패널 — ★별 집계를 접이식으로 표시(읽기 전용).
-function AnalysisPanel({
-  tendencies,
-  open,
-  onToggle,
-}: {
-  tendencies: AiTendency[];
-  open: boolean;
-  onToggle: () => void;
-}) {
-  const label = (b: AiTendency['bucket']) => (b === 'all' ? '전체' : b === 'unknown' ? '난이도 모름' : `★${b}`);
-  const pct = (r: number | null) => (r === null ? '—' : `${Math.round(r * 100)}%`);
-  return (
-    <div className="rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900/50">
-      <button onClick={onToggle} className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left">
-        <span className="flex items-center gap-1.5 text-xs font-bold text-zinc-600 dark:text-zinc-300">
-          <BarChart3 size={14} className="text-indigo-500" /> 실제 AI 성향 분석 (★별)
-        </span>
-        <ChevronDown size={15} className={`text-zinc-400 transition-transform ${open ? 'rotate-180' : ''}`} />
-      </button>
-      {open && (
-        <div className="flex flex-col gap-2 border-t border-zinc-100 p-3 dark:border-zinc-800">
-          {tendencies.length === 0 ? (
-            <p className="text-[11px] text-zinc-500">아직 분석할 완성 경기가 없어요. 한 판 끝까지(한쪽 가득) 입력하면 쌓입니다.</p>
-          ) : (
-            tendencies.map((t) => (
-              <div key={String(t.bucket)} className="rounded-lg bg-zinc-50 px-2.5 py-2 text-[11px] dark:bg-zinc-800/50">
-                <div className="mb-1 flex items-center gap-2">
-                  <span className="rounded-full bg-rose-100 px-2 py-0.5 font-bold text-rose-700 dark:bg-rose-900/40 dark:text-rose-300">
-                    {label(t.bucket)}
-                  </span>
-                  <span className="font-bold text-zinc-600 dark:text-zinc-300">{t.games}판 · AI 수 {t.aiMoves}</span>
-                  <span className="ml-auto text-zinc-500">AI 승률 {pct(rate(t.aiWins, t.games))}</span>
-                </div>
-                <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-zinc-600 dark:text-zinc-300">
-                  <span>
-                    알까기 {pct(rate(t.pushTaken, t.pushAvailable))} <span className="text-zinc-400">(n={t.pushAvailable})</span>
-                  </span>
-                  <span>
-                    쉴드 가이드 {pct(rate(t.shieldGuideFollowed, t.shieldPlacements))}{' '}
-                    <span className="text-zinc-400">(n={t.shieldPlacements})</span>
-                  </span>
-                </div>
-              </div>
-            ))
-          )}
-          <p className="text-[10px] leading-relaxed text-zinc-400">
-            알까기 = 알까기 가능했을 때 실제로 민 비율 · 쉴드 가이드 = 1~3 상대/4~6 자기 배치 준수율 · n = 표본 수(작을수록
-            들쭉날쭉). 어드바이저엔 아직 반영하지 않습니다.
-          </p>
-        </div>
-      )}
-    </div>
-  );
-}
-
 export function TikatukaSim() {
   const initial = loadStore();
   // 새로고침하면 항상 선공 선택부터 — started는 복원하지 않는다(저장값 무시).
@@ -286,8 +257,10 @@ export function TikatukaSim() {
   const [holdOpen, setHoldOpen] = useState(false);
   const [winRate, setWinRate] = useState<number | null>(null);
   const [computing, setComputing] = useState(false); // 워커가 승률·추천 계산 중(계산 중 표기용)
-  const workerRef = useRef<Worker | null>(null);
+  const poolRef = useRef<Worker[]>([]);
   const reqIdRef = useRef(0);
+  const pendingRef = useRef<PoolReq | null>(null); // 진행 중 추천 요청의 청크 집계(최신 id만 반영)
+  const poolTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const { pipWindow, openPip } = usePipWindow();
 
   // 실전 기록 — 진행 중 경기 로그(ref로 유지), 기록 ON/OFF, 이번 세션 저장 수.
@@ -299,9 +272,7 @@ export function TikatukaSim() {
     }
   });
   const [allGames, setAllGames] = useState<SimGameLog[] | null>(null); // RTDB 누적 저장 경기(카운트·분석 공용, 세션 무관)
-  const [analysisOpen, setAnalysisOpen] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
-  const tendencies = useMemo(() => (allGames ? tendenciesByStar(allGames) : []), [allGames]);
   const gameRef = useRef<SimGameLog | null>(null); // 진행 중 경기
   const pendingPushRef = useRef<Omit<SimMoveEvent, 'seq'> | null>(null); // 알까기 수(쉴드 배치까지 합쳐 1수로 기록)
   const tazzaShotRef = useRef<{ rolled: [DieValue, DieValue]; chosen: DieValue } | null>(null); // 직전 타짜 택1
@@ -405,24 +376,125 @@ export function TikatukaSim() {
     }
   }, [grid, firstTurn, turn, started, firstShield, tazza, star]);
 
-  // 깊은 탐색 워커 — 메인 스레드를 막지 않고 최선 수를 비동기 계산. 최신 요청(reqId)만 반영.
+  // 도착한 청크(p.got)로 추천/승률/홀드를 조립해 상태에 반영. (응답 일부만 와도 동작 — 타임아웃 폴백 공용)
+  const finalize = (p: PoolReq) => {
+    if (p.kind === 'move') {
+      // 후보별 rate를 워커 N개에서 평균(N등분 표본 합산).
+      const agg = new Map<string, { kind: 'place' | 'push'; line: LineIndex; sum: number; strat: number }>();
+      for (const r of p.got)
+        if (r.t === 'move')
+          for (const x of r.rates) {
+            const k = `${x.kind}:${x.line}`;
+            const cur = agg.get(k);
+            if (cur) cur.sum += x.rate;
+            else agg.set(k, { kind: x.kind, line: x.line, sum: x.rate, strat: x.strat });
+          }
+      const scored: ScoredMove[] = [...agg.values()].map((e) => ({
+        m: { kind: e.kind, line: e.line } as Move,
+        rate: e.sum / p.got.length,
+        strat: e.strat,
+      }));
+      const a = scored.length ? finishMoveAdvice(p.board, 'me', p.value!, scored, p.tazza, p.ctx) : null;
+      const wr = a?.winRate ?? (scored.length ? Math.max(...scored.map((s) => s.rate)) : null);
+      setWinRate(wr);
+      setAdvice(
+        a
+          ? { kind: a.action, headline: a.headline, factors: a.factors, line: a.line, side: a.action === 'push' ? 'ai' : a.action === 'place' ? 'me' : undefined }
+          : null
+      );
+      setHold(p.turn === 'me' && wr != null ? holdToSim(gradedHold(p.board, 'me', wr)) : null);
+    } else if (p.kind === 'wr') {
+      let wsum = 0;
+      let psum = 0;
+      for (const r of p.got) if (r.t === 'wr') { wsum += r.winRate * r.playouts; psum += r.playouts; }
+      const wr = psum ? wsum / psum : null;
+      setWinRate(wr);
+      setAdvice(null);
+      setHold(p.turn === 'me' && wr != null ? holdToSim(gradedHold(p.board, 'me', wr)) : null);
+    } else {
+      const r = p.got[0];
+      if (r.t === 'whole') {
+        setWinRate(r.winRate);
+        setAdvice(r.advice);
+        setHold(null);
+      }
+    }
+    setComputing(false);
+  };
+
+  // 워커 청크 수신 — 같은 id의 응답이 모두 모이면 마감. (모든 동적값은 pendingRef로 흐름)
+  const handleChunk = (data: ChunkRes) => {
+    const p = pendingRef.current;
+    if (!p || data.id !== p.id) return; // 스테일 무시
+    p.got.push(data);
+    if (p.got.length < p.need) return;
+    pendingRef.current = null;
+    if (poolTimeoutRef.current) clearTimeout(poolTimeoutRef.current);
+    finalize(p);
+  };
+
+  // 워커 풀 — 코어 수만큼(−1, 최대 6) 생성. 추천 요청을 N등분해 동시에 돌린다.
   useEffect(() => {
-    const w = new Worker(new URL('./advisor.worker.ts', import.meta.url), { type: 'module' });
-    w.onmessage = (
-      e: MessageEvent<{ id: number; winRate: number; advice: SimAdvice | null; hold: SimAdvice | null }>
-    ) => {
-      if (e.data.id !== reqIdRef.current) return;
-      setWinRate(e.data.winRate); // 정밀 승률(MC)로 갱신
-      setAdvice(e.data.advice);
-      setHold(e.data.hold);
-      setComputing(false);
-    };
-    workerRef.current = w;
+    const n = Math.max(1, Math.min(6, (navigator.hardwareConcurrency || 4) - 1));
+    const ws = Array.from(
+      { length: n },
+      () => new Worker(new URL('./advisor.worker.ts', import.meta.url), { type: 'module' })
+    );
+    ws.forEach((w) => {
+      w.onmessage = (e: MessageEvent<ChunkRes>) => handleChunk(e.data);
+    });
+    poolRef.current = ws;
     return () => {
-      w.terminate();
-      workerRef.current = null;
+      ws.forEach((w) => w.terminate());
+      poolRef.current = [];
     };
+    // handleChunk는 안정 ref/세터/순수함수만 사용 → 1회 생성으로 충분(의도된 빈 deps).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // 추천 요청을 워커 풀에 분배. move/wr는 N등분, choose/shield는 단일 워커(whole).
+  const dispatchAdvisor = (
+    board: Board,
+    turn: Owner,
+    advReq:
+      | { kind: 'move'; value: DieValue }
+      | { kind: 'choose'; value: DieValue; value2: DieValue }
+      | { kind: 'shield'; value: DieValue }
+      | null,
+    ctxObj: { iAmFirst: boolean; isFirstShield: boolean },
+    tazzaAvail: boolean
+  ) => {
+    const ws = poolRef.current;
+    const N = ws.length;
+    if (!N) return;
+    const id = ++reqIdRef.current;
+    if (poolTimeoutRef.current) clearTimeout(poolTimeoutRef.current);
+    // 타임아웃 폴백 — 일부 워커가 응답 안 해도 도착분으로 마감(멈춤 방지). 응답 0이면 빈 상태로 정리.
+    poolTimeoutRef.current = setTimeout(() => {
+      const p = pendingRef.current;
+      if (!p || p.id !== id) return;
+      pendingRef.current = null;
+      if (p.got.length > 0) finalize(p);
+      else {
+        setWinRate(null);
+        setAdvice(null);
+        setHold(null);
+        setComputing(false);
+      }
+    }, POOL_TIMEOUT_MS);
+    if (advReq?.kind === 'move') {
+      pendingRef.current = { id, kind: 'move', need: N, got: [], board, turn, value: advReq.value, ctx: ctxObj, tazza: tazzaAvail };
+      const per = Math.max(1, Math.ceil(TOTAL_PLAYOUTS / N));
+      ws.forEach((w) => w.postMessage({ id, t: 'move', board, value: advReq.value, shield: ctxObj.isFirstShield, playouts: per }));
+    } else if (advReq && (advReq.kind === 'choose' || advReq.kind === 'shield')) {
+      pendingRef.current = { id, kind: 'whole', need: 1, got: [], board, turn, ctx: ctxObj, tazza: tazzaAvail };
+      ws[0].postMessage({ id, t: 'whole', board, startTurn: turn, req: advReq, iAmFirst: ctxObj.iAmFirst, isFirstShield: ctxObj.isFirstShield, playouts: WHOLE_PLAYOUTS });
+    } else {
+      pendingRef.current = { id, kind: 'wr', need: N, got: [], board, turn, ctx: ctxObj, tazza: tazzaAvail };
+      const per = Math.max(1, Math.ceil(WR_TOTAL / N));
+      ws.forEach((w) => w.postMessage({ id, t: 'wr', board, startTurn: turn, playouts: per }));
+    }
+  };
 
   // 추천 요청 — 예상 승률은 즉시(가벼움), 최선 수는 워커에 위임(무거운 탐색). 입력이 바뀌면 디바운스 후 요청.
   // 추천은 '내 턴'에만(상대 턴엔 기록만). 내가 얻은 쉴드 배치만 추천(상대 쉴드는 관찰 기록).
@@ -432,7 +504,7 @@ export function TikatukaSim() {
 
     // 어떤 추천을 계산할지(없으면 승률만 갱신). 추천은 내 턴 / 내가 얻은 쉴드일 때만.
     let advReq:
-      | { kind: 'move'; value: DieValue; tazza: boolean }
+      | { kind: 'move'; value: DieValue }
       | { kind: 'choose'; value: DieValue; value2: DieValue }
       | { kind: 'shield'; value: DieValue }
       | null = null;
@@ -443,17 +515,18 @@ export function TikatukaSim() {
     } else if (tazzaMode) {
       if (value != null && t2 != null) advReq = { kind: 'choose', value, value2: t2 };
     } else if (value != null) {
-      advReq = { kind: 'move', value, tazza };
+      advReq = { kind: 'move', value };
     }
 
     setAdvice(null); // 입력이 바뀌었으니 이전 추천/홀드 강조 제거(워커 결과로 다시 채움)
     setHold(null);
     setComputing(true); // 승률·추천 재계산 시작 → '계산 중' 표시(직전 추정치 노출 방지)
-    const id = ++reqIdRef.current;
-    // 선공/후수·선공 첫 쉴드 여부를 함께 보내 타짜(롤) 추천 문턱을 맥락으로 보정한다.
-    const ctx = { iAmFirst: firstTurn === 'me', myFirstShield: firstShield === 'me' };
-    const t = setTimeout(() => workerRef.current?.postMessage({ id, board, turn, advReq, ...ctx }), 200);
+    // 선공/후수·선공 첫 쉴드 여부 — 타짜(롤) 추천 문턱 보정용 맥락.
+    const ctxObj = { iAmFirst: firstTurn === 'me', isFirstShield: firstShield === 'me' };
+    const t = setTimeout(() => dispatchAdvisor(board, turn, advReq, ctxObj, tazza), 200);
     return () => clearTimeout(t);
+    // dispatchAdvisor는 안정 ref만 사용 — deps에 넣으면 매 렌더 재실행되므로 의도적으로 제외.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [grid, value, t2, tazzaMode, tazza, pending, turn, started, firstTurn, firstShield]);
 
   const snapshot = (): Snap => ({ grid, firstShield, turn, pending });
@@ -607,7 +680,7 @@ export function TikatukaSim() {
           <div className="grid grid-cols-2 gap-2">
             <button
               onClick={() => begin('me')}
-              className="rounded-xl border-2 border-indigo-300 bg-indigo-50 py-4 text-base font-bold text-indigo-700 hover:border-indigo-500 dark:border-indigo-800/60 dark:bg-indigo-950/30 dark:text-indigo-200"
+              className="rounded-xl border-2 border-emerald-300 bg-emerald-50 py-4 text-base font-bold text-emerald-700 hover:border-emerald-500 dark:border-emerald-800/60 dark:bg-emerald-950/30 dark:text-emerald-200"
             >
               선공: 나
             </button>
@@ -626,48 +699,52 @@ export function TikatukaSim() {
   const needShieldValue = pending != null && pending.value == null;
   const placingShield = pending != null && pending.value != null;
   const meName = turn === 'me' ? '내' : '상대';
-  const meFull = allFull(grid, 'me');
-  const aiFull = allFull(grid, 'ai');
-  const boardFull = meFull && aiFull;
 
   return renderWithPip(
     <div className="flex flex-col gap-4">
-      {/* 턴 표시 + 수동 전환 + 자동 패스 안내 */}
-      <div className="flex flex-col gap-1 rounded-xl border border-zinc-200 bg-white px-3 py-2 dark:border-zinc-800 dark:bg-zinc-900/50">
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2 text-sm font-bold">
-            <span className="text-zinc-500">현재 턴</span>
-            <span
-              className={`rounded-full px-2.5 py-0.5 text-xs text-white ${turn === 'me' ? 'bg-indigo-500' : 'bg-rose-500'}`}
-            >
-              {turn === 'me' ? '나' : '상대'}
-            </span>
-          </div>
-          <button
-            onClick={() => advanceFrom(grid, opponentOf(turn))}
-            disabled={pending != null}
-            title="홀드 등 수동으로 턴을 넘겨요"
-            className="inline-flex items-center gap-1 rounded-lg bg-zinc-100 px-2.5 py-1.5 text-xs font-bold text-zinc-600 hover:bg-zinc-200 disabled:opacity-40 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
-          >
-            <ArrowLeftRight size={13} /> 턴 넘기기
-          </button>
+      {/* 승률 + 추천 (상단) — 탐색 중엔 '계산 중', 끝나면 승률을 추천 패널에 함께 표시. 홀드 추천이 있으면 위에. */}
+      {computing ? (
+        <div className="flex items-center gap-2 rounded-2xl border border-zinc-200 bg-white px-3 py-3 text-sm font-bold text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900/50">
+          <Loader2 size={16} className="animate-spin text-indigo-500" />
+          계산 중… (오래 걸릴 수 있어요)
         </div>
-        {boardFull ? (
-          <span className="text-[11px] font-bold text-amber-600 dark:text-amber-400">
-            보드가 가득 찼어요 — 한 판 종료. 점수로 승패가 갈립니다.
-          </span>
-        ) : meFull ? (
-          <span className="text-[11px] text-zinc-500">내 필드가 가득 — 상대가 알까기로 칸을 비울 때까지 상대 턴이 계속돼요.</span>
-        ) : aiFull ? (
-          <span className="text-[11px] text-zinc-500">상대 필드가 가득 — 내가 알까기로 칸을 비울 때까지 내 턴이 계속돼요.</span>
-        ) : null}
-      </div>
+      ) : (
+        <>
+          {hold && (
+            <AdvicePanel
+              isHold
+              headline={hold.headline}
+              factors={hold.factors}
+              winRate={winRate ?? undefined}
+              open={holdOpen}
+              onToggle={() => setHoldOpen((v) => !v)}
+            />
+          )}
+          {advice && (
+            <AdvicePanel
+              headline={advice.headline}
+              factors={advice.factors}
+              winRate={hold ? undefined : winRate ?? undefined}
+              open={adviceOpen}
+              onToggle={() => setAdviceOpen((v) => !v)}
+            />
+          )}
+          {!hold && !advice && winRate != null && (
+            <div className="flex items-center gap-2 rounded-xl border border-zinc-200 bg-white px-3 py-2 dark:border-zinc-800 dark:bg-zinc-900/50">
+              <span className="shrink-0 text-xs font-bold text-zinc-500 dark:text-zinc-400 lg:text-sm">예상 승률</span>
+              <WinRateBar winRate={winRate} />
+            </div>
+          )}
+        </>
+      )}
 
       {/* 보드 */}
       <div className="flex flex-col gap-2.5 lg:gap-4">
         <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-1 text-xs font-bold lg:text-base">
-          <span className="text-indigo-600 dark:text-indigo-400">내 필드</span>
-          <span className="text-zinc-400">VS</span>
+          <span className="text-emerald-600 dark:text-emerald-400">내 필드</span>
+          <span className={`mx-auto rounded-full px-2 py-0.5 text-[10px] text-white ${turn === 'me' ? 'bg-emerald-500' : 'bg-rose-500'}`}>
+            {turn === 'me' ? '내 차례' : '상대 차례'}
+          </span>
           <span className="text-right text-rose-600 dark:text-rose-400">상대 필드</span>
         </div>
 
@@ -691,7 +768,7 @@ export function TikatukaSim() {
                 <span className="text-[10px] font-bold text-zinc-400 lg:text-sm">{line + 1}번</span>
                 {/* 점수 — 자릿수가 달라도 라인 폭이 어긋나지 않게 각 수를 고정폭 셀로(콜론 기준 정렬). */}
                 <span className="font-bold tabular-nums lg:text-2xl">
-                  <span className="inline-block w-[1.3em] text-right text-indigo-500">{meSum}</span>
+                  <span className="inline-block w-[1.3em] text-right text-emerald-500">{meSum}</span>
                   <span className="mx-1 text-zinc-300">:</span>
                   <span className="inline-block w-[1.3em] text-left text-rose-500">{aiSum}</span>
                 </span>
@@ -802,41 +879,6 @@ export function TikatukaSim() {
         </div>
       )}
 
-      {/* 승률 + 추천 (합침) — 탐색 중엔 '계산 중', 끝나면 승률을 추천 패널에 함께 표시. 홀드 추천이 있으면 위에. */}
-      {computing ? (
-        <div className="flex items-center gap-2 rounded-2xl border border-zinc-200 bg-white px-3 py-3 text-sm font-bold text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900/50">
-          <Loader2 size={16} className="animate-spin text-indigo-500" />
-          승률·추천 계산 중… (오래 걸릴 수 있어요)
-        </div>
-      ) : (
-        <>
-          {hold && (
-            <AdvicePanel
-              isHold
-              headline={hold.headline}
-              factors={hold.factors}
-              winRate={winRate ?? undefined}
-              open={holdOpen}
-              onToggle={() => setHoldOpen((v) => !v)}
-            />
-          )}
-          {advice && (
-            <AdvicePanel
-              headline={advice.headline}
-              factors={advice.factors}
-              winRate={hold ? undefined : winRate ?? undefined}
-              open={adviceOpen}
-              onToggle={() => setAdviceOpen((v) => !v)}
-            />
-          )}
-          {!hold && !advice && winRate != null && (
-            <div className="flex items-center gap-2 rounded-xl border border-zinc-200 bg-white px-3 py-2 dark:border-zinc-800 dark:bg-zinc-900/50">
-              <span className="shrink-0 text-xs font-bold text-zinc-500 dark:text-zinc-400 lg:text-sm">예상 승률</span>
-              <WinRateBar winRate={winRate} />
-            </div>
-          )}
-        </>
-      )}
 
       {/* 실전 기록 — 양측 수를 RTDB에 자동 적재(시뮬 정확도 개선용). 매 수 후 자동 저장, 버튼 불필요. */}
       <div className="flex flex-wrap items-center gap-2 rounded-xl border border-zinc-200 bg-white px-3 py-2 dark:border-zinc-800 dark:bg-zinc-900/50">
@@ -858,9 +900,6 @@ export function TikatukaSim() {
           <span className="ml-auto text-[11px] font-bold text-rose-600 dark:text-rose-400">{saveMsg}</span>
         )}
       </div>
-
-      {/* AI 성향 분석 — 저장된 경기에서 ★별 실제 AI 성향을 집계해 보여줌(읽기 전용, 어드바이저 미반영). */}
-      <AnalysisPanel tendencies={tendencies} open={analysisOpen} onToggle={() => setAnalysisOpen((v) => !v)} />
 
       {/* 컨트롤 버튼 */}
       <div className="flex flex-wrap items-center gap-2">
@@ -911,7 +950,7 @@ function SimField({
   const ring = advice
     ? 'ring-2 ring-emerald-400 bg-emerald-50 dark:bg-emerald-950/30'
     : action === 'place'
-      ? 'ring-1 ring-indigo-300 hover:ring-2 hover:ring-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/30'
+      ? 'ring-1 ring-emerald-300 hover:ring-2 hover:ring-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/30'
       : action === 'push'
         ? 'ring-1 ring-rose-300 hover:ring-2 hover:ring-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30'
         : action === 'shield'
@@ -987,7 +1026,7 @@ function ValueRow({
 function LineBadge({ winner }: { winner: Owner | 'tie' }) {
   const meta =
     winner === 'me'
-      ? { Icon: ChevronsLeft, c: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300' }
+      ? { Icon: ChevronsLeft, c: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' }
       : winner === 'ai'
         ? { Icon: ChevronsRight, c: 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300' }
         : { Icon: Minus, c: 'bg-zinc-200 text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300' };
