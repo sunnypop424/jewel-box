@@ -1,9 +1,11 @@
 import { initializeApp } from 'firebase/app';
 import { initializeFirestore } from 'firebase/firestore';
+import { getDatabase } from 'firebase/database';
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  databaseURL: import.meta.env.VITE_FIREBASE_DATABASE_URL,
   projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
   storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
   messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
@@ -13,3 +15,5 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 // undefined 필드(rosterLabel 등 선택적 필드) 를 자동 무시 — 기존 optional 필드와 동일하게 처리.
 export const db = initializeFirestore(app, { ignoreUndefinedProperties: true });
+// Realtime Database — 티카투카(랭크전·1:1) 전용. 나머지 앱은 계속 Firestore(db) 사용.
+export const rtdb = getDatabase(app);

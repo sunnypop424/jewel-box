@@ -1,16 +1,21 @@
 // 티카투카 게임 루트 — 난이도 선택 / 플레이(보드+컨트롤) / 결과.
-import { useState, useEffect } from 'react';
-import { Dices, Hand, Megaphone, Sparkles, Trophy, RotateCcw, Info, Lightbulb } from 'lucide-react';
+// mode='free': 기존 AI 자유전(TP 무관). mode='ranked': TP 레벨로 ★ 자동 매칭, 종료 시 TP 반영(콜백).
+import { useState, useEffect, useRef } from 'react';
+import { Dices, Hand, Megaphone, Sparkles, Trophy, RotateCcw, Info, Lightbulb, Check } from 'lucide-react';
 import { useTikatuka } from './useTikatuka';
 import { isFieldFull } from './engine';
+import { canDeclareTikatuka } from './reducer';
 import { recommendMove, recommendChoose, recommendShield, recommendHold, recommendFirstShield, estimateWinRate } from './ai';
 import type { Factor } from './ai';
 import { AdvicePanel } from './components/AdvicePanel';
 import { Board } from './components/Board';
 import { DiceTray } from './components/DiceTray';
 import type { RollAnim } from './components/DiceTray';
-import type { AiLevel, GameState, LineIndex, Owner } from './types';
+import type { AiLevel, GameState, LineIndex, Owner, ResultDetail } from './types';
+import { cardClass, subtitleClass, btnPrimary, CHROME, GAME } from './ui';
 import './tikatuka.css';
+
+export type TikatukaMode = 'free' | 'ranked';
 
 const LEVELS: { lv: AiLevel; name: string; desc: string }[] = [
   { lv: 0, name: '★☆☆☆☆ 랜덤', desc: '완전 무작위' },
@@ -38,11 +43,60 @@ function useIsPc(): boolean {
   return isPc;
 }
 
-export function TikatukaGame({ onClose }: { onClose?: () => void }) {
-  const g = useTikatuka();
+export interface TikatukaGameProps {
+  onClose?: () => void;
+  mode?: TikatukaMode; // 기본 'free'
+  fixedStar?: AiLevel; // ranked: 매칭된 ★ (난이도 선택 숨김, 자동 시작)
+  resumeState?: GameState; // ranked: 저장된 진행 게임 복원
+  tpBanner?: React.ReactNode; // ranked: 결과 위에 표시할 TP 변동 배너
+  onFinish?: (result: ResultDetail, declaredByMe: boolean) => void; // 종료 시 1회
+  onStateChange?: (state: GameState) => void; // 매 상태 변경(랭크 영속용)
+  onReplay?: () => void; // ranked 다시하기(부모가 재매칭/영속 처리)
+  onExit?: () => void; // 허브로 나가기
+  onForfeit?: () => void; // ranked 기권(진행 중)
+}
+
+export function TikatukaGame({
+  onClose,
+  mode = 'free',
+  fixedStar,
+  resumeState,
+  tpBanner,
+  onFinish,
+  onStateChange,
+  onReplay,
+  onExit,
+  onForfeit,
+}: TikatukaGameProps) {
+  const g = useTikatuka(resumeState);
   const { state } = g;
-  const [level, setLevel] = useState<AiLevel>(3);
-  const [assist, setAssist] = useState(false); // 지원 모드: 수 추천 + 이유
+  const ranked = mode === 'ranked';
+  const [level, setLevel] = useState<AiLevel>(fixedStar ?? 3);
+  const [assist, setAssist] = useState(false); // 지원 모드: 수 추천 + 이유 (랭크전 비활성)
+
+  // 랭크전: 난이도 선택 화면을 건너뛰고 매칭 ★로 자동 시작(복원 게임이 없을 때만).
+  const autoStartedRef = useRef(false);
+  useEffect(() => {
+    if (ranked && !resumeState && state.phase === 'coinToss' && fixedStar != null && !autoStartedRef.current) {
+      autoStartedRef.current = true;
+      g.start(fixedStar);
+    }
+  }, [ranked, resumeState, state.phase, fixedStar, g]);
+
+  // 상태 변경 통지(랭크 영속).
+  useEffect(() => {
+    onStateChange?.(state);
+  }, [state, onStateChange]);
+
+  // 종료 시 결과 콜백 1회.
+  const finishedRef = useRef(false);
+  useEffect(() => {
+    if (state.phase === 'gameOver' && state.result && !finishedRef.current) {
+      finishedRef.current = true;
+      onFinish?.(state.result, state.tikatukaUsed.me);
+    }
+    if (state.phase !== 'gameOver') finishedRef.current = false;
+  }, [state.phase, state.result, state.tikatukaUsed.me, onFinish]);
   const [adviceOpen, setAdviceOpen] = useState(false); // 추천 근거 펼침(기본 접힘 — 모바일 한 화면 유지)
   const isPc = useIsPc(); // PC(≥1024px)면 가로 큰 레이아웃, 아니면 모바일 레이아웃 그대로
   // 지원 모드 추천 — 깊은 몬테카를로라 무거움. 페인트를 막지 않도록 렌더가 아니라 페인트 후(effect)에 계산.
@@ -63,26 +117,43 @@ export function TikatukaGame({ onClose }: { onClose?: () => void }) {
     };
   }, [state, assist]);
 
-  // ── 난이도 선택 화면 ──
+  // ── 랭크전: 난이도 선택 없이 매칭 ★로 자동 시작(coinToss 잠깐 표시) ──
+  if (ranked && state.phase === 'coinToss') {
+    return (
+      <div className={`${CHROME} flex flex-col items-center gap-4 py-10 text-center`}>
+        <Dices size={36} className="animate-spin text-indigo-500" />
+        <div className="text-lg font-bold text-zinc-700 dark:text-zinc-200">
+          상대 매칭 중… {fixedStar != null && <span className="text-amber-500">★{fixedStar}</span>}
+        </div>
+        {onExit && (
+          <button onClick={onExit} className="text-xs font-bold text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300">
+            나가기
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  // ── 난이도 선택 화면(자유전) ──
   if (state.phase === 'coinToss') {
     return (
-      <div className="flex flex-col gap-5 lg:gap-7">
+      <div className={`${CHROME} flex flex-col gap-4`}>
         <Intro />
-        <div>
-          <div className="mb-2 text-sm font-bold text-zinc-700 dark:text-zinc-300 lg:mb-3 lg:text-lg">컴퓨터 난이도</div>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:gap-3">
+        <div className={cardClass}>
+          <div className={subtitleClass}>컴퓨터 난이도</div>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
             {LEVELS.map((l) => (
               <button
                 key={l.lv}
                 onClick={() => setLevel(l.lv)}
-                className={`flex flex-col items-start gap-0.5 rounded-xl border p-3 text-left transition-colors lg:gap-1.5 lg:rounded-2xl lg:p-5 ${
+                className={`flex flex-col items-start gap-0.5 rounded-lg border p-3 text-left transition-colors ${
                   level === l.lv
                     ? 'border-indigo-500 bg-indigo-50 dark:border-indigo-500 dark:bg-indigo-950/40'
-                    : 'border-zinc-200 bg-white hover:border-indigo-300 dark:border-zinc-800 dark:bg-zinc-900/50'
+                    : 'border-zinc-200 bg-white hover:border-indigo-300 dark:border-zinc-700 dark:bg-zinc-900/50'
                 }`}
               >
-                <span className="text-xs font-bold text-amber-500 lg:text-lg">{l.name}</span>
-                <span className="text-[11px] text-zinc-500 dark:text-zinc-400 lg:text-sm">{l.desc}</span>
+                <span className="text-xs font-bold text-amber-500">{l.name}</span>
+                <span className="text-[11px] text-zinc-500 dark:text-zinc-400">{l.desc}</span>
               </button>
             ))}
           </div>
@@ -92,21 +163,19 @@ export function TikatukaGame({ onClose }: { onClose?: () => void }) {
         <button
           type="button"
           onClick={() => setAssist((v) => !v)}
-          className={`flex items-center justify-between gap-3 rounded-xl border p-3 text-left transition-colors lg:rounded-2xl lg:p-5 ${
-            assist
-              ? 'border-emerald-400 bg-emerald-50 dark:border-emerald-700 dark:bg-emerald-950/30'
-              : 'border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900/50'
+          className={`${cardClass} flex items-center justify-between gap-3 text-left transition-colors ${
+            assist ? 'border-emerald-400 dark:border-emerald-700' : ''
           }`}
         >
           <span className="flex items-start gap-2">
-            <Lightbulb size={16} className={`mt-0.5 shrink-0 lg:h-6 lg:w-6 ${assist ? 'text-emerald-500' : 'text-zinc-400'}`} />
+            <Lightbulb size={16} className={`mt-0.5 shrink-0 ${assist ? 'text-emerald-500' : 'text-zinc-400'}`} />
             <span className="flex flex-col">
-              <span className="text-sm font-bold text-zinc-700 dark:text-zinc-200 lg:text-lg">지원 모드</span>
-              <span className="text-[11px] text-zinc-500 dark:text-zinc-400 lg:text-sm">어디에 두고/밀고, 타짜 쓸지 추천 + 이유를 알려줘요</span>
+              <span className="text-sm font-bold text-zinc-700 dark:text-zinc-200">지원 모드</span>
+              <span className="text-[11px] text-zinc-500 dark:text-zinc-400">어디에 두고/밀고, 타짜 쓸지 추천 + 이유를 알려줘요</span>
             </span>
           </span>
           <span
-            className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold lg:px-4 lg:py-1.5 lg:text-sm ${
+            className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold ${
               assist ? 'bg-emerald-500 text-white' : 'bg-zinc-200 text-zinc-500 dark:bg-zinc-700 dark:text-zinc-300'
             }`}
           >
@@ -114,10 +183,7 @@ export function TikatukaGame({ onClose }: { onClose?: () => void }) {
           </span>
         </button>
 
-        <button
-          onClick={() => g.start(level)}
-          className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-indigo-600 py-3.5 text-base font-bold text-white shadow-lg shadow-indigo-500/20 transition hover:bg-indigo-500 lg:py-5 lg:text-xl"
-        >
+        <button onClick={() => g.start(level)} className={`${btnPrimary} w-full`}>
           <Dices size={18} /> 게임 시작 (선공 무작위)
         </button>
       </div>
@@ -169,8 +235,10 @@ export function TikatukaGame({ onClose }: { onClose?: () => void }) {
   const myTurn = state.turn === 'me' && state.winner === null;
   const tazzaEnabled = myTurn && state.phase === 'acting' && !state.tazzaUsed.me;
   const holdEnabled = myTurn && (state.phase === 'acting' || state.phase === 'rolling') && !state.held;
-  const tikatukaEnabled =
-    myTurn && !state.tikatukaUsed && state.phase !== 'rolling';
+  const tikatukaEnabled = canDeclareTikatuka(state, 'me');
+  const tikatukaTip = state.tikatukaUsed.me
+    ? '이미 선언함'
+    : `주사위 10개+부터 3턴간 가능 · 선언 시 -200 TP, 승리 시 +400 TP${state.tikatukaWindow ? ` (남은 ${state.tikatukaWindow}턴)` : ''}`;
 
   // 추천 패널(헤드라인 + 접기) — PC/모바일 공용 컴포넌트.
   const advicePanel = advice && (
@@ -244,7 +312,7 @@ export function TikatukaGame({ onClose }: { onClose?: () => void }) {
       />
     );
     return (
-      <div className="flex flex-col gap-5">
+      <div className={`${GAME} flex flex-col gap-5`}>
         {/* 간단 상단바 — 나 / 컴퓨터 + 현재 턴. 게임 종료 시엔 결과 패널이 점수를 표시하므로 숨김(중복 방지). */}
         {state.winner === null && (
           <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-4">
@@ -252,17 +320,30 @@ export function TikatukaGame({ onClose }: { onClose?: () => void }) {
               <PcPlayerTag owner="me" label="나" active={myTurn} note={state.held ? '홀드 중' : undefined} />
             </div>
             <div className="flex items-center justify-self-center gap-3">
-              {state.tikatukaUsed && <span className="text-sm font-bold text-fuchsia-500">티카투카!</span>}
-              <button
-                type="button"
-                onClick={() => setAssist((v) => !v)}
-                title="수 추천 + 이유 보기"
-                className={`inline-flex shrink-0 touch-manipulation select-none items-center gap-1.5 rounded-full px-4 py-2 text-sm font-bold transition-colors ${
-                  assist ? 'bg-emerald-500 text-white' : 'bg-zinc-200 text-zinc-500 dark:bg-zinc-700 dark:text-zinc-300'
-                }`}
-              >
-                <Lightbulb size={16} /> 지원 {assist ? 'ON' : 'OFF'}
-              </button>
+              {state.tikatukaUsed.me && <span className="text-sm font-bold text-fuchsia-500">티카투카!</span>}
+              {ranked ? (
+                onForfeit && (
+                  <button
+                    type="button"
+                    onClick={onForfeit}
+                    title="기권하면 패배로 기록됩니다"
+                    className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-rose-100 px-4 py-2 text-sm font-bold text-rose-600 hover:bg-rose-200 dark:bg-rose-950/40 dark:text-rose-300"
+                  >
+                    기권
+                  </button>
+                )
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setAssist((v) => !v)}
+                  title="수 추천 + 이유 보기"
+                  className={`inline-flex shrink-0 touch-manipulation select-none items-center gap-1.5 rounded-full px-4 py-2 text-sm font-bold transition-colors ${
+                    assist ? 'bg-emerald-500 text-white' : 'bg-zinc-200 text-zinc-500 dark:bg-zinc-700 dark:text-zinc-300'
+                  }`}
+                >
+                  <Lightbulb size={16} /> 지원 {assist ? 'ON' : 'OFF'}
+                </button>
+              )}
             </div>
             <div className="justify-self-end">
               <PcPlayerTag owner="ai" label={`컴퓨터 ★${state.aiLevel}`} active={state.turn === 'ai'} />
@@ -307,7 +388,7 @@ export function TikatukaGame({ onClose }: { onClose?: () => void }) {
               disabled={!tikatukaEnabled}
               icon={<Megaphone size={18} />}
               label="티카투카!"
-              tip={state.tikatukaUsed ? '이미 외침' : '패널티 없음. 이기면 보너스 승점'}
+              tip={tikatukaTip}
               accent
               size="lg"
             />
@@ -315,7 +396,13 @@ export function TikatukaGame({ onClose }: { onClose?: () => void }) {
         )}
 
         {state.phase === 'gameOver' && state.result && (
-          <ResultPanel result={state.result} onReplay={() => g.start(state.aiLevel)} onSetup={g.reset} />
+          <ResultPanel
+            result={state.result}
+            ranked={ranked}
+            tpBanner={tpBanner}
+            onReplay={ranked ? (onReplay ?? (() => g.start(fixedStar ?? state.aiLevel))) : () => g.start(state.aiLevel)}
+            onSetup={ranked ? onExit : g.reset}
+          />
         )}
 
         <Log lines={state.log} />
@@ -333,27 +420,40 @@ export function TikatukaGame({ onClose }: { onClose?: () => void }) {
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className={`${GAME} flex flex-col gap-4`}>
       {/* 상태 바 */}
       <div className="flex items-center justify-between gap-2 rounded-xl bg-zinc-50 py-2 text-xs font-bold dark:bg-zinc-900/50">
         <span className="text-zinc-500">
           난이도 <span className="text-amber-500">★{state.aiLevel}</span>
           {state.held && <span className="ml-2 text-indigo-500">홀드 중</span>}
-          {state.tikatukaUsed && <span className="ml-2 text-fuchsia-500">티카투카!</span>}
+          {state.tikatukaUsed.me && <span className="ml-2 text-fuchsia-500">티카투카!</span>}
         </span>
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setAssist((v) => !v)}
-            title="수 추천 + 이유 보기"
-            className={`inline-flex shrink-0 touch-manipulation select-none items-center gap-1 rounded-full px-2 py-1 text-[11px] font-bold transition-colors ${
-              assist
-                ? 'bg-emerald-500 text-white'
-                : 'bg-zinc-200 text-zinc-500 dark:bg-zinc-700 dark:text-zinc-300'
-            }`}
-          >
-            <Lightbulb size={12} /> 지원 {assist ? 'ON' : 'OFF'}
-          </button>
+          {ranked ? (
+            onForfeit && (
+              <button
+                type="button"
+                onClick={onForfeit}
+                title="기권하면 패배로 기록됩니다"
+                className="inline-flex shrink-0 items-center gap-1 rounded-full bg-rose-100 px-2 py-1 text-[11px] font-bold text-rose-600 dark:bg-rose-950/40 dark:text-rose-300"
+              >
+                기권
+              </button>
+            )
+          ) : (
+            <button
+              type="button"
+              onClick={() => setAssist((v) => !v)}
+              title="수 추천 + 이유 보기"
+              className={`inline-flex shrink-0 touch-manipulation select-none items-center gap-1 rounded-full px-2 py-1 text-[11px] font-bold transition-colors ${
+                assist
+                  ? 'bg-emerald-500 text-white'
+                  : 'bg-zinc-200 text-zinc-500 dark:bg-zinc-700 dark:text-zinc-300'
+              }`}
+            >
+              <Lightbulb size={12} /> 지원 {assist ? 'ON' : 'OFF'}
+            </button>
+          )}
         </div>
       </div>
 
@@ -435,7 +535,7 @@ export function TikatukaGame({ onClose }: { onClose?: () => void }) {
               disabled={!tikatukaEnabled}
               icon={<Megaphone size={14} />}
               label="티카투카!"
-              tip={state.tikatukaUsed ? '이미 외침' : '패널티 없음. 이기면 보너스 승점'}
+              tip={tikatukaTip}
               accent
             />
           </div>
@@ -446,8 +546,10 @@ export function TikatukaGame({ onClose }: { onClose?: () => void }) {
       {state.phase === 'gameOver' && state.result && (
         <ResultPanel
           result={state.result}
-          onReplay={() => g.start(state.aiLevel)}
-          onSetup={g.reset}
+          ranked={ranked}
+          tpBanner={tpBanner}
+          onReplay={ranked ? (onReplay ?? (() => g.start(fixedStar ?? state.aiLevel))) : () => g.start(state.aiLevel)}
+          onSetup={ranked ? onExit : g.reset}
         />
       )}
 
@@ -478,8 +580,11 @@ function PcPlayerTag({ owner, label, active, note }: { owner: Owner; label: stri
     <div className={`flex items-center gap-2 rounded-2xl border px-4 py-2.5 ${ring}`}>
       <span className={`text-base font-bold ${tone}`}>{label}</span>
       {active && (
-        <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold text-white ${owner === 'me' ? 'bg-indigo-500' : 'bg-rose-500'}`}>
-          TURN
+        <span
+          className={`inline-flex shrink-0 items-center justify-center rounded-full p-0.5 text-white ${owner === 'me' ? 'bg-indigo-500' : 'bg-rose-500'}`}
+          title={owner === 'me' ? '내 차례' : '상대 차례'}
+        >
+          <Check size={14} strokeWidth={3} />
         </span>
       )}
       {note && <span className="text-xs font-bold text-indigo-500">{note}</span>}
@@ -526,10 +631,14 @@ function ResultPanel({
   result,
   onReplay,
   onSetup,
+  ranked,
+  tpBanner,
 }: {
   result: NonNullable<ReturnType<typeof useTikatuka>['state']['result']>;
   onReplay: () => void;
-  onSetup: () => void;
+  onSetup?: () => void;
+  ranked?: boolean;
+  tpBanner?: React.ReactNode;
 }) {
   const headline =
     result.winner === 'me' ? '승리!' : result.winner === 'ai' ? '패배' : '무승부';
@@ -552,6 +661,7 @@ function ResultPanel({
           </span>
         )}
       </div>
+      {tpBanner}
       <div className="text-center text-sm font-bold">
         <span className="text-rose-500">컴퓨터 {result.aiLineWins}라인</span>
         <span className="mx-2 text-zinc-300">vs</span>
@@ -568,12 +678,14 @@ function ResultPanel({
         >
           <RotateCcw size={15} /> 다시하기
         </button>
-        <button
-          onClick={onSetup}
-          className="rounded-xl bg-zinc-100 px-4 py-2.5 text-sm font-bold text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
-        >
-          난이도 변경
-        </button>
+        {onSetup && (
+          <button
+            onClick={onSetup}
+            className="rounded-xl bg-zinc-100 px-4 py-2.5 text-sm font-bold text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+          >
+            {ranked ? '나가기' : '난이도 변경'}
+          </button>
+        )}
       </div>
     </div>
   );

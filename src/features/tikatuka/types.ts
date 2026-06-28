@@ -75,8 +75,9 @@ export interface GameState {
   rolledChoices: [Die, Die] | null; // 타짜로 둘 굴렸을 때 후보
   pendingShield: Die | null; // 밀어내기로 획득, 배치 대기 중인 쉴드
   tazzaUsed: { me: boolean; ai: boolean }; // 타짜의 손놀림 사용 여부(각 1회)
-  held: boolean; // 플레이어 홀드 여부(플레이어 전용)
-  tikatukaUsed: boolean; // 플레이어 티카투카 발동 여부(보너스용 플래그)
+  held: boolean; // 플레이어 홀드 여부(플레이어 전용 — PvP에선 미사용)
+  tikatukaUsed: { me: boolean; ai: boolean }; // 티카투카(베팅) 선언 여부(각 진영 1회, 보너스/차감 판정용)
+  tikatukaWindow: number | null; // 베팅 선언 가능 잔여 턴(주사위 10개+ 도달 시 3으로 열리고 턴마다 감소). null=아직 미개방
   pendingFirstShield: Owner | null; // 선공측 첫 주사위는 쉴드로 시작 — 그 첫 굴림에서 소비되면 null
   winner: Owner | 'draw' | null; // 확정된 승자(종료 시)
   result: ResultDetail | null;

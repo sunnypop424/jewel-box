@@ -61,7 +61,18 @@
   100% { transform: scale(1) rotate(0); opacity: 1; }
 }
 
+/* 감정표현 말풍선 — 아래에서 톡 떠올라 중앙에 오래 머물다 그 자리에서 페이드아웃.
+   총 4400ms: 등장/사라짐은 짧게 유지하고 중앙에 머무는 구간만 길게(노출 시간 ↑). */
+@keyframes tk-emote-float {
+  0%   { transform: translateY(6px) scale(0.6); opacity: 0; }
+  10%  { transform: translateY(0) scale(1.12); opacity: 1; }
+  16%  { transform: translateY(0) scale(1); opacity: 1; }
+  89%  { transform: translateY(0) scale(1); opacity: 1; }
+  100% { transform: translateY(0) scale(0.92); opacity: 0; }
+}
+
 .tk-tumble { animation: tk-tumble 130ms linear infinite; }
+.tk-emote { animation: tk-emote-float 4400ms cubic-bezier(0.2, 1.1, 0.32, 1) both; }
 .tk-settle { animation: tk-settle 520ms cubic-bezier(0.18, 1.1, 0.32, 1) both; }
 .tk-pop { animation: tk-place 380ms cubic-bezier(0.2, 1.15, 0.32, 1) both; }
 .tk-ram-right { animation: tk-ram-right 540ms cubic-bezier(0.5, 0, 0.5, 1) forwards; }
@@ -71,5 +82,5 @@
 .tk-shield-in { animation: tk-shield-in 460ms 160ms cubic-bezier(0.2, 1.2, 0.34, 1) both; }
 
 @media (prefers-reduced-motion: reduce) {
-  .tk-tumble, .tk-settle, .tk-pop, .tk-ram-right, .tk-ram-left, .tk-shatter, .tk-impact, .tk-shield-in { animation-duration: 1ms; }
+  .tk-tumble, .tk-settle, .tk-pop, .tk-ram-right, .tk-ram-left, .tk-shatter, .tk-impact, .tk-shield-in, .tk-emote { animation-duration: 1ms; }
 }

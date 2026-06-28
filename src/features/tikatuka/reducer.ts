@@ -9,7 +9,9 @@ import {
   makeDie,
   opponentOf,
   placeDie,
+  totalDice,
 } from './engine';
+import { TP } from './tp';
 import type { AiTurn } from './ai';
 import type {
   AiLevel,
@@ -48,7 +50,8 @@ export function initialState(aiLevel: AiLevel = 2): GameState {
     pendingShield: null,
     tazzaUsed: { me: false, ai: false },
     held: false,
-    tikatukaUsed: false,
+    tikatukaUsed: { me: false, ai: false },
+    tikatukaWindow: null,
     pendingFirstShield: null,
     winner: null,
     result: null,
@@ -60,8 +63,27 @@ function log(s: GameState, msg: string): string[] {
   return [...s.log, msg].slice(-40);
 }
 
+// 티카투카(베팅) 선언 가능 여부 — 잔여 윈도우 + 진행 단계.
+// 선언은 한 게임에 '둘 중 한 명만' 가능 → 누구든 이미 선언했으면 불가.
+export function canDeclareTikatuka(s: GameState, owner: Owner): boolean {
+  if (s.winner !== null) return false;
+  if (s.turn !== owner) return false;
+  if (s.tikatukaUsed.me || s.tikatukaUsed.ai) return false; // 둘 중 한 명만
+  if (s.phase === 'rolling' || s.phase === 'gameOver' || s.phase === 'coinToss') return false;
+  return s.tikatukaWindow !== null && s.tikatukaWindow > 0;
+}
+
+// 다음 턴 기준 베팅 윈도우 갱신: 합산 주사위 10개+ 최초 도달 시 3턴 개방, 이후 턴마다 감소.
+function nextTikatukaWindow(prev: number | null, board: Board): number | null {
+  if (prev === null) {
+    return totalDice(board) >= TP.BET_MIN_DICE ? TP.BET_WINDOW_TURNS : null;
+  }
+  return prev > 0 ? prev - 1 : 0;
+}
+
 // 종료 체크 + 다음 턴 세팅(단일 지점).
 function advanceTurn(s: GameState, board: Board, extraLog: string[]): GameState {
+  const tikatukaWindow = nextTikatukaWindow(s.tikatukaWindow, board);
   if (isTerminal(board, s.held)) {
     const result = evaluate(board, s.tikatukaUsed);
     return {
@@ -73,6 +95,7 @@ function advanceTurn(s: GameState, board: Board, extraLog: string[]): GameState 
       rolledDie: null,
       rolledChoices: null,
       pendingShield: null,
+      tikatukaWindow,
       log: [...extraLog, '게임 종료'].slice(-40),
     };
   }
@@ -86,6 +109,7 @@ function advanceTurn(s: GameState, board: Board, extraLog: string[]): GameState 
     rolledDie: null,
     rolledChoices: null,
     pendingShield: null,
+    tikatukaWindow,
     log: extraLog,
   };
 }
@@ -196,9 +220,14 @@ export function reducer(state: GameState, action: Action): GameState {
     }
 
     case 'TIKATUKA': {
-      if (state.turn !== 'me' || state.winner !== null || state.tikatukaUsed) return state;
-      if (state.phase === 'gameOver' || state.phase === 'coinToss') return state;
-      return { ...state, tikatukaUsed: true, log: log(state, '티카투카! (승리 시 보너스)') };
+      // 선언 가능 조건(잔여 윈도우·미선언·진행 단계)은 canDeclareTikatuka에 단일화.
+      if (!canDeclareTikatuka(state, state.turn)) return state;
+      const seat = state.turn;
+      return {
+        ...state,
+        tikatukaUsed: { ...state.tikatukaUsed, [seat]: true },
+        log: log(state, `티카투카 선언! (${TP.BET_COST} TP 차감 · 승리 시 +${TP.BET_WIN} TP)`),
+      };
     }
 
     case 'AI_PUSH': {
