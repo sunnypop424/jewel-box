@@ -6,11 +6,12 @@
 //  · 타짜: 두 눈을 입력하면 어느 쪽이 좋은지 추천 → 선택하면 그 값으로 진행(게임당 1회 소진).
 import { useState, useEffect, useRef, useCallback, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { Info, RotateCcw, Undo2, ShieldCheck, Flag, Sparkles, X, ArrowLeftRight, Loader2, PictureInPicture2, ChevronsLeft, ChevronsRight, Minus } from 'lucide-react';
-import { createEmptyBoard, lineSum, makeDie, opponentOf } from './engine';
+import { Info, RotateCcw, Undo2, ShieldCheck, Flag, Sparkles, X, ArrowLeftRight, Loader2, PictureInPicture2, ChevronsLeft, ChevronsRight, Minus, Swords } from 'lucide-react';
+import { createEmptyBoard, evaluate, lineSum, makeDie, opponentOf } from './engine';
 import { estimateWinRate } from './ai';
 import type { Factor } from './ai';
-import type { Board, Die, DieValue, LineIndex, Owner } from './types';
+import type { AiLevel, Board, Die, DieValue, LineIndex, Owner } from './types';
+import { saveSimGame, type SimGameLog, type SimMoveEvent, type LogGrid } from './simLog';
 import { DiePip } from './components/DiePip';
 import { DiceGroupOverlay } from './components/DiceGroupOverlay';
 import { AdvicePanel, WinRateBar } from './components/AdvicePanel';
@@ -89,6 +90,7 @@ function loadStore(): {
   started: boolean;
   firstShield: Owner | null;
   tazza: boolean;
+  star?: AiLevel | null;
 } | null {
   if (typeof window === 'undefined') return null;
   try {
@@ -100,6 +102,28 @@ function loadStore(): {
     /* 무시 */
   }
   return null;
+}
+
+// ── 실전 기록(데이터 적재) ──────────────────────────────
+// 내가 입력하는 실제 경기(양측 수 전부)를 RTDB에 쌓아 나중에 분석·추천 개선에 쓴다.
+const REC_KEY = 'tikatukaSimRec_v1'; // 기록 ON/OFF 보존
+// 시뮬 Grid → 로그용 순수 스냅샷(깊은 복사). Piece={value,shield,owner}라 구조 동일.
+function cloneGrid(grid: Grid): LogGrid {
+  return grid.map((l) => ({ me: l.me.map((p) => ({ ...p })), ai: l.ai.map((p) => ({ ...p })) }));
+}
+function genGameId(): string {
+  try {
+    return crypto.randomUUID();
+  } catch {
+    return `${Date.now()}-${Math.floor(Math.random() * 1e9)}`;
+  }
+}
+function readPlayerName(): string {
+  try {
+    return localStorage.getItem('tikatuka_name_v1') ?? ''; // 허브에서 설정한 이름
+  } catch {
+    return '';
+  }
 }
 
 // ── Document Picture-in-Picture — 시뮬 영역만 항상-위 창으로 띄운다(게임 위 오버레이) ──
@@ -194,6 +218,7 @@ export function TikatukaSim() {
   const [firstShield, setFirstShield] = useState<Owner | null>(() => initial?.firstShield ?? null);
   const [grid, setGrid] = useState<Grid>(() => initial?.grid ?? emptyGrid());
   const [tazza, setTazza] = useState<boolean>(() => initial?.tazza ?? true);
+  const [star, setStar] = useState<AiLevel | null>(() => initial?.star ?? null); // 상대 난이도(★) — 기록 태그용(선택)
   const [value, setValue] = useState<DieValue | null>(null);
   const [pending, setPending] = useState<Pending | null>(null);
   const [tazzaMode, setTazzaMode] = useState(false); // 타짜 택1 입력 중
@@ -206,6 +231,92 @@ export function TikatukaSim() {
   const workerRef = useRef<Worker | null>(null);
   const reqIdRef = useRef(0);
   const { pipWindow, openPip } = usePipWindow();
+
+  // 실전 기록 — 진행 중 경기 로그(ref로 유지), 기록 ON/OFF, 이번 세션 저장 수.
+  const [record, setRecord] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(REC_KEY) !== '0';
+    } catch {
+      return true;
+    }
+  });
+  const [savedCount, setSavedCount] = useState(0);
+  const [saveMsg, setSaveMsg] = useState<string | null>(null);
+  const [eventCount, setEventCount] = useState(0); // 진행 중 경기의 기록된 수(버튼 활성용 — ref를 렌더에서 못 읽으므로 상태로 미러)
+  const gameRef = useRef<SimGameLog | null>(null); // 진행 중 경기
+  const pendingPushRef = useRef<Omit<SimMoveEvent, 'seq'> | null>(null); // 알까기 수(쉴드 배치까지 합쳐 1수로 기록)
+  const tazzaShotRef = useRef<{ rolled: [DieValue, DieValue]; chosen: DieValue } | null>(null); // 직전 타짜 택1
+  const savedIdRef = useRef<string | null>(null); // 마지막 저장 후 변경 없음 표시(중복 저장 방지)
+  const savedIdsRef = useRef<Set<string>>(new Set()); // 이번 세션에 저장한 고유 경기 id(저장 경기 수 카운트)
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(REC_KEY, record ? '1' : '0');
+    } catch {
+      /* 무시 */
+    }
+  }, [record]);
+  useEffect(() => {
+    if (!saveMsg) return;
+    const t = setTimeout(() => setSaveMsg(null), 2500);
+    return () => clearTimeout(t);
+  }, [saveMsg]);
+
+  // 새 경기 로그 시작(선공 결정 시). 기록 OFF면 로그를 만들지 않는다.
+  const startGameLog = (ft: Owner) => {
+    pendingPushRef.current = null;
+    tazzaShotRef.current = null;
+    savedIdRef.current = null;
+    setEventCount(0);
+    gameRef.current = record
+      ? { v: 1, id: genGameId(), player: readPlayerName(), star, firstTurn: ft, startedAt: new Date().toISOString(), endedAt: '', events: [], outcome: null }
+      : null;
+  };
+  // 한 수 기록(seq 자동). 기록 OFF/로그 없음이면 무시.
+  const pushEvent = (ev: Omit<SimMoveEvent, 'seq'>) => {
+    const g = gameRef.current;
+    if (!g || !record) return;
+    g.events.push({ seq: g.events.length, ...ev });
+    if (savedIdRef.current === g.id) savedIdRef.current = null; // 저장 이후 내용 바뀜 → 재저장 허용
+    setEventCount(g.events.length);
+  };
+  // 내 수일 때 어드바이저 맥락(추천/승률/추천을 따랐는지).
+  const adviceCtx = (act: 'place' | 'push', line: LineIndex) => ({
+    advice: advice ? { kind: advice.kind, line: advice.line, side: advice.side } : null,
+    followedAdvice: advice ? advice.kind === act && (advice.line === undefined || advice.line === line) : undefined,
+    winRateBefore: winRate,
+  });
+  // 진행 중 경기를 현재 판세(임시 결과)로 RTDB에 갱신(같은 id 덮어쓰기). 매 수마다 자동 호출 → 조용히 적재.
+  // 성공은 알리지 않고(상태 줄의 저장 수만 갱신), 실패만 표시. 마지막 수가 곧 최종 판세라 별도 '종료' 처리 불필요.
+  const finalizeAndSave = useCallback(async (g: Grid) => {
+    const game = gameRef.current;
+    if (!record || !game || game.events.length === 0 || savedIdRef.current === game.id) return;
+    const r = evaluate(gridToBoard(g), false);
+    const finalized: SimGameLog = {
+      ...game,
+      endedAt: new Date().toISOString(),
+      outcome: { winner: r.winner, meLineWins: r.meLineWins, aiLineWins: r.aiLineWins, meTotal: r.meTotal, aiTotal: r.aiTotal },
+    };
+    savedIdRef.current = game.id; // 낙관적 잠금(같은 내용 중복 저장 방지 — 새 수가 들어오면 pushEvent가 해제)
+    try {
+      await saveSimGame(finalized);
+      savedIdsRef.current.add(game.id);
+      setSavedCount(savedIdsRef.current.size); // 고유 경기 수
+    } catch {
+      savedIdRef.current = null; // 실패 → 재시도 허용
+      setSaveMsg('저장 실패 — RTDB 권한/네트워크 확인');
+    }
+  }, [record]);
+  // 보드가 가득 차면(자연 종료) 즉시 저장(디바운스 대기 없이).
+  const maybeAutoFinalize = (g: Grid) => {
+    if (allFull(g, 'me') && allFull(g, 'ai')) void finalizeAndSave(g);
+  };
+  // 자동 저장 — 매 수 후 잠깐 멈추면 진행 중 경기를 RTDB에 갱신한다(버튼 없이 알아서). 디바운스로 연속 입력은 한 번만.
+  useEffect(() => {
+    if (!record || eventCount === 0) return;
+    const t = setTimeout(() => void finalizeAndSave(grid), 600);
+    return () => clearTimeout(t);
+  }, [grid, eventCount, record, finalizeAndSave]);
 
   // PiP 토글 바를 항상 맨 위에 붙이고, PiP가 열려 있으면 시뮬 본체를 PiP 창으로 포털한다(본체는 그대로 마운트 유지).
   const renderWithPip = (content: ReactNode) => {
@@ -228,11 +339,11 @@ export function TikatukaSim() {
 
   useEffect(() => {
     try {
-      localStorage.setItem(STORE_KEY, JSON.stringify({ grid, firstTurn, turn, started, firstShield, tazza }));
+      localStorage.setItem(STORE_KEY, JSON.stringify({ grid, firstTurn, turn, started, firstShield, tazza, star }));
     } catch {
       /* 무시 */
     }
-  }, [grid, firstTurn, turn, started, firstShield, tazza]);
+  }, [grid, firstTurn, turn, started, firstShield, tazza, star]);
 
   // 깊은 탐색 워커 — 메인 스레드를 막지 않고 최선 수를 비동기 계산. 최신 요청(reqId)만 반영.
   useEffect(() => {
@@ -297,6 +408,7 @@ export function TikatukaSim() {
   };
 
   const begin = (ft: Owner) => {
+    void finalizeAndSave(grid); // 이전 경기 미저장분이 있으면 현재 판세로 보존
     setFirstTurn(ft);
     setTurn(ft);
     setFirstShield(ft);
@@ -308,6 +420,7 @@ export function TikatukaSim() {
     setTazzaMode(false);
     setT2(null);
     setStarted(true);
+    startGameLog(ft); // 새 경기 로그 시작
   };
 
   // 행동 후 턴 넘기기 — desired가 둘 곳 없으면(전 필드 풀) 상대로 자동 패스(둘 곳 생길 때까지 상대 턴 지속).
@@ -340,25 +453,54 @@ export function TikatukaSim() {
 
     if (act === 'shield') {
       const ng = addPiece(grid, line, owner, { value: pending!.value!, shield: true, owner: pending!.pusher });
+      // 진행 중이던 알까기 수에 쉴드 배치를 합쳐 1수로 기록(미는 쪽이 얻은 쉴드만).
+      if (pendingPushRef.current && pending!.pusher === pendingPushRef.current.actor) {
+        pushEvent({ ...pendingPushRef.current, shield: { value: pending!.value!, line, owner } });
+      }
+      pendingPushRef.current = null;
       setGrid(ng);
       setPending(null);
       advanceFrom(ng, opponentOf(turn)); // 쉴드 배치로 그 턴 종료 → 다음 턴(둘 곳 없으면 자동 패스)
+      maybeAutoFinalize(ng);
       return;
     }
     if (act === 'place') {
       const isShield = firstShield === owner; // 선공측 첫 주사위 → 쉴드
+      pushEvent({
+        actor: turn,
+        boardBefore: cloneGrid(grid),
+        roll: value!,
+        tazza: tazzaShotRef.current ?? undefined,
+        action: 'place',
+        line,
+        ...(turn === 'me' ? adviceCtx('place', line) : {}),
+      });
+      tazzaShotRef.current = null;
       const ng = addPiece(grid, line, owner, { value: value!, shield: isShield, owner });
       setGrid(ng);
       if (isShield) setFirstShield(null);
       advanceFrom(ng, opponentOf(turn));
+      maybeAutoFinalize(ng);
       return;
     }
     // act === 'push' — 상대 필드(owner)의 같은 값 제거. 미는 쪽=turn → 쉴드 획득(값 입력 후 배치). 턴 유지.
+    // 알까기 수는 쉴드 배치까지 합쳐 1수로 기록 → 여기선 보류해 두고 'shield' 단계에서 확정.
+    pendingPushRef.current = {
+      actor: turn,
+      boardBefore: cloneGrid(grid),
+      roll: value!,
+      tazza: tazzaShotRef.current ?? undefined,
+      action: 'push',
+      line,
+      ...(turn === 'me' ? adviceCtx('push', line) : {}),
+    };
+    tazzaShotRef.current = null;
     setGrid(removeMatching(grid, line, owner, value!));
     setPending({ pusher: turn, value: null });
   };
 
   const applyTazza = (chosen: DieValue) => {
+    if (value != null && t2 != null) tazzaShotRef.current = { rolled: [value, t2], chosen }; // 다음 수에 타짜 기록
     setValue(chosen);
     setT2(null);
     setTazzaMode(false);
@@ -370,6 +512,28 @@ export function TikatukaSim() {
     return renderWithPip(
       <div className="flex flex-col gap-4">
         <Intro />
+        {/* 상대 난이도(선택) — 기록에 ★를 태그해 난이도별로 분석(필수 아님). */}
+        <div className="rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900/50">
+          <div className="mb-2 flex items-center gap-2 text-sm font-bold text-zinc-700 dark:text-zinc-200 lg:text-base">
+            <Swords size={16} className="text-rose-500" /> 상대 난이도{' '}
+            <span className="text-[11px] font-normal text-zinc-400">(선택 — 기록에 ★ 태그)</span>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {([null, 0, 1, 2, 3, 4, 5] as (AiLevel | null)[]).map((s) => (
+              <button
+                key={String(s)}
+                onClick={() => setStar(s)}
+                className={`inline-flex h-9 min-w-[3rem] items-center justify-center rounded-lg border px-2 text-xs font-bold transition-colors ${
+                  star === s
+                    ? 'border-rose-500 bg-rose-500 text-white'
+                    : 'border-zinc-300 bg-white text-zinc-700 hover:border-rose-400 hover:bg-rose-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200'
+                }`}
+              >
+                {s === null ? '모름' : `★${s}`}
+              </button>
+            ))}
+          </div>
+        </div>
         <div className="rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900/50">
           <div className="mb-3 flex items-center gap-2 text-sm font-bold text-zinc-700 dark:text-zinc-200 lg:text-base">
             <Flag size={16} className="text-indigo-500" /> 선공(먼저 두는 쪽)을 고르세요
@@ -598,6 +762,25 @@ export function TikatukaSim() {
         />
       ) : null}
 
+      {/* 실전 기록 — 양측 수를 RTDB에 자동 적재(시뮬 정확도 개선용). 매 수 후 자동 저장, 버튼 불필요. */}
+      <div className="flex flex-wrap items-center gap-2 rounded-xl border border-zinc-200 bg-white px-3 py-2 dark:border-zinc-800 dark:bg-zinc-900/50">
+        <button
+          onClick={() => setRecord((r) => !r)}
+          title="실제 경기 입력을 데이터로 쌓아 시뮬 정확도를 높입니다"
+          className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold transition-colors ${
+            record ? 'bg-emerald-500 text-white' : 'bg-zinc-200 text-zinc-500 dark:bg-zinc-700 dark:text-zinc-300'
+          }`}
+        >
+          <span className={`h-2 w-2 rounded-full ${record ? 'bg-white' : 'bg-zinc-400'}`} /> 실전 기록 {record ? 'ON' : 'OFF'}
+        </button>
+        <span className="text-[11px] text-zinc-500">
+          {record ? `자동 저장 중 · ${star === null ? '난이도 모름' : `★${star}`} · 이번 세션 ${savedCount}경기` : '기록 꺼짐'}
+        </span>
+        {saveMsg && (
+          <span className="ml-auto text-[11px] font-bold text-rose-600 dark:text-rose-400">{saveMsg}</span>
+        )}
+      </div>
+
       {/* 컨트롤 버튼 */}
       <div className="flex flex-wrap items-center gap-2">
         <button
@@ -610,6 +793,8 @@ export function TikatukaSim() {
         <button
           onClick={() => {
             // 선공 선택 화면으로 — 선공을 다시 고르면 보드가 새로 시작된다.
+            void finalizeAndSave(grid); // 진행 중 경기 미저장분 보존
+            gameRef.current = null;
             setStarted(false);
             setGrid(emptyGrid());
             setPast([]);
