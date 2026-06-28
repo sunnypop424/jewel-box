@@ -5,8 +5,9 @@ import { Dices, Hand, Megaphone, Sparkles, Trophy, RotateCcw, Info, Lightbulb, C
 import { useTikatuka } from './useTikatuka';
 import { isFieldFull } from './engine';
 import { canDeclareTikatuka } from './reducer';
-import { recommendMove, recommendChoose, recommendShield, gradedHold, recommendFirstShield, estimateWinRate } from './ai';
+import { recommendFirstShield } from './ai';
 import type { Factor } from './ai';
+import { useAdvisorPool, type AdvReq } from './useAdvisorPool';
 import { AdvicePanel } from './components/AdvicePanel';
 import { Board } from './components/Board';
 import { DiceTray } from './components/DiceTray';
@@ -98,23 +99,74 @@ export function TikatukaGame({
   }, [state.phase, state.result, state.tikatukaUsed.me, onFinish]);
   const [adviceOpen, setAdviceOpen] = useState(false); // 추천 근거 펼침(기본 접힘 — 모바일 한 화면 유지)
   const isPc = useIsPc(); // PC(≥1024px)면 가로 큰 레이아웃, 아니면 모바일 레이아웃 그대로
-  // 지원 모드 추천 — 깊은 몬테카를로라 무거움. 페인트를 막지 않도록 렌더가 아니라 페인트 후(effect)에 계산.
-  // 보드/주사위는 즉시 보이고, 추천은 곧이어 표시됨. 상태가 바뀔 때만 재계산.
-  const [advice, setAdvice] = useState<AdviceView | null>(null);
+  // 지원 모드 추천 — 시뮬과 '동일한' 워커 풀(useAdvisorPool)로 계산(같은 표본수·로직, 메인스레드 비차단).
+  // 무거운 MC(수 추천/승률/홀드)는 워커에서, 선공 첫 쉴드 추천만 메인스레드(가벼움 — 시뮬과 동일 함수)로.
+  const pool = useAdvisorPool();
+  const [firstShieldAdvice, setFirstShieldAdvice] = useState<AdviceView | null>(null);
   useEffect(() => {
-    if (!assist) {
-      setAdvice(null);
+    const s = state;
+    if (!assist || s.turn !== 'me' || s.winner !== null) {
+      pool.reset();
+      setFirstShieldAdvice(null);
       return;
     }
-    let alive = true;
-    const id = setTimeout(() => {
-      if (alive) setAdvice(computeAdvice(state, assist));
-    }, 0);
-    return () => {
-      alive = false;
-      clearTimeout(id);
-    };
+    const ctx = { iAmFirst: s.pendingFirstShield === 'me', isFirstShield: s.rolledDie?.shield ?? false };
+    const tazzaAvail = !s.tazzaUsed.me;
+    let advReq: AdvReq = null; // null=승률만(wr)
+    let fs: AdviceView | null = null;
+    if (s.phase === 'acting' && s.rolledDie && s.rolledDie.shield) {
+      // 선공 첫 주사위(쉴드) — 어디 둘지 메인스레드 추천 + 승률은 워커(wr).
+      const a = recommendFirstShield(s.board, 'me', s.rolledDie.value, tazzaAvail);
+      fs = a ? { headline: a.headline, factors: a.factors, line: a.line, side: a.owner } : null;
+    } else if (s.phase === 'acting' && s.rolledDie) {
+      advReq = { kind: 'move', value: s.rolledDie.value };
+    } else if (s.phase === 'choosingDie' && s.rolledChoices) {
+      const [d0, d1] = s.rolledChoices;
+      if (d0.shield) {
+        // 선공 첫 턴 타짜 → 둘 다 쉴드. 더 높은 값을 골라 밀리지 않는 앵커로(메인스레드 특수 처리 + 승률은 워커).
+        const index: 0 | 1 = d1.value > d0.value ? 1 : 0;
+        const chosen = s.rolledChoices[index].value;
+        fs = {
+          headline: `${chosen}를 선택`,
+          factors: [{ tag: '자원', text: `둘 다 쉴드예요(선공 첫 턴). 더 높은 ${chosen}을(를) 골라 밀리지 않는 고점 앵커로 쓰세요.` }],
+          chooseIndex: index,
+        };
+      } else {
+        advReq = { kind: 'choose', value: d0.value, value2: d1.value };
+      }
+    } else if (s.phase === 'placingShield' && s.pendingShield) {
+      advReq = { kind: 'shield', value: s.pendingShield.value };
+    } else {
+      pool.reset();
+      setFirstShieldAdvice(null);
+      return;
+    }
+    setFirstShieldAdvice(fs);
+    const t = setTimeout(() => pool.request(s.board, 'me', advReq, ctx, tazzaAvail), 60);
+    return () => clearTimeout(t);
+    // pool.request/reset는 안정 ref/세터만 사용 — deps 제외(매 렌더 재실행 방지).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state, assist]);
+
+  // 화면용 추천 — 선공 첫 쉴드(메인) 우선, 그다음 홀드(워커 승률 기반), 그다음 수 추천. 승률 막대는 공용.
+  const advice: AdviceView | null =
+    !assist || state.turn !== 'me' || state.winner !== null
+      ? null
+      : firstShieldAdvice
+        ? { ...firstShieldAdvice, winRate: pool.winRate ?? undefined }
+        : pool.hold
+          ? { headline: pool.hold.headline, factors: pool.hold.factors, isHold: true, winRate: pool.winRate ?? undefined }
+          : pool.advice
+            ? {
+                headline: pool.advice.headline,
+                factors: pool.advice.factors,
+                line: pool.advice.line,
+                side: pool.advice.side,
+                chooseIndex: pool.advice.chooseIndex,
+                isTazza: pool.advice.kind === 'tazza',
+                winRate: pool.winRate ?? undefined,
+              }
+            : null;
 
   // ── 랭크전: 난이도 선택 없이 매칭 ★로 자동 시작(coinToss 잠깐 표시) ──
   if (ranked && state.phase === 'coinToss') {
@@ -738,62 +790,6 @@ interface AdviceView {
   winRate?: number; // 예상 승률(0~1)
 }
 
-function computeAdvice(s: GameState, assist: boolean): AdviceView | null {
-  if (!assist) return null;
-  if (s.turn !== 'me' || s.winner !== null) return null;
-  const winRate = estimateWinRate(s.board, 'me');
-  const base = computeAdviceBase(s, winRate);
-  return base ? { ...base, winRate } : null;
-}
-
-function computeAdviceBase(s: GameState, winRate: number): AdviceView | null {
-  // 홀드 추천 — 시뮬과 동일하게 gradedHold(승률 기반 6단계 + 홀드 승률). 더 던지지 말 것 권장.
-  if ((s.phase === 'acting' || s.phase === 'rolling') && !s.held) {
-    const h = gradedHold(s.board, 'me', winRate);
-    if (h) return { headline: h.headline, factors: h.factors, isHold: true };
-  }
-
-  // 선공 첫 주사위는 쉴드 — 어느 라인 내 필드에 둘지 추천.
-  if (s.phase === 'acting' && s.rolledDie && s.rolledDie.shield) {
-    const a = recommendFirstShield(s.board, 'me', s.rolledDie.value, !s.tazzaUsed.me);
-    if (!a) return null;
-    return { headline: a.headline, factors: a.factors, line: a.line, side: a.owner };
-  }
-  if (s.phase === 'acting' && s.rolledDie && !s.rolledDie.shield) {
-    const a = recommendMove(s.board, 'me', s.rolledDie.value, !s.tazzaUsed.me);
-    if (!a) return null;
-    return {
-      headline: a.headline,
-      factors: a.factors,
-      line: a.line,
-      side: a.action === 'push' ? 'ai' : a.action === 'place' ? 'me' : undefined,
-      isTazza: a.action === 'tazza',
-    };
-  }
-  if (s.phase === 'choosingDie' && s.rolledChoices) {
-    const [d0, d1] = s.rolledChoices;
-    // 선공 첫 턴 타짜 → 둘 다 쉴드. 더 높은 값을 골라 밀리지 않는 앵커로.
-    if (d0.shield) {
-      const index: 0 | 1 = d1.value > d0.value ? 1 : 0;
-      const chosen = s.rolledChoices[index].value;
-      return {
-        headline: `${chosen}를 선택`,
-        factors: [
-          { tag: '자원', text: `둘 다 쉴드예요(선공 첫 턴). 더 높은 ${chosen}을(를) 골라 밀리지 않는 고점 앵커로 쓰세요.` },
-        ],
-        chooseIndex: index,
-      };
-    }
-    const a = recommendChoose(s.board, 'me', [d0.value, d1.value]);
-    return { headline: a.headline, factors: a.factors, chooseIndex: a.index };
-  }
-  if (s.phase === 'placingShield' && s.pendingShield) {
-    const a = recommendShield(s.board, 'me', s.pendingShield.value);
-    if (!a) return null;
-    return { headline: a.headline, factors: a.factors, line: a.line, side: a.owner };
-  }
-  return null;
-}
 
 function Intro() {
   return (
