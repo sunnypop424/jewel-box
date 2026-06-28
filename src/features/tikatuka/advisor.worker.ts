@@ -22,6 +22,8 @@ interface ReqMsg {
   board: Board;
   turn: Owner; // 현재 턴(승률 시뮬 시작 진영)
   advReq: Req | null; // 추천 요청(없으면 승률만 갱신)
+  iAmFirst?: boolean; // 내가 선공인가(타짜 문턱 보정용)
+  myFirstShield?: boolean; // 지금 굴린 주사위가 선공 첫 쉴드인가(선공 첫 턴)
 }
 interface Advice {
   kind: string;
@@ -33,14 +35,17 @@ interface Advice {
 }
 
 ctx.onmessage = (e: MessageEvent<ReqMsg>) => {
-  const { id, board, turn, advReq } = e.data;
+  const { id, board, turn, advReq, iAmFirst, myFirstShield } = e.data;
 
   // 정밀 승률 — 현재 턴부터 끝까지 MC.
   const winRate = mcWinRate(board, 'me', turn, WR_PLAYOUTS, WR_LEVEL);
 
   let advice: Advice | null = null;
   if (advReq?.kind === 'move') {
-    const a = recommendMove(board, 'me', advReq.value, advReq.tazza, CFG);
+    const a = recommendMove(board, 'me', advReq.value, advReq.tazza, CFG, {
+      iAmFirst: !!iAmFirst,
+      isFirstShield: !!myFirstShield,
+    });
     if (a)
       advice = {
         kind: a.action,

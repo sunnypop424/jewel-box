@@ -4,8 +4,9 @@
 //  · 알까기 성공 → 미는 쪽이 쉴드 1개 획득. 값을 입력하면(내 쉴드면 추천 칸 강조) 칸 클릭해 배치(어느 필드든).
 //  · 선공측의 '첫 주사위'는 쉴드로 자동. 행동을 마치면 턴이 자동으로 넘어간다(필요 시 수동 전환).
 //  · 타짜: 두 눈을 입력하면 어느 쪽이 좋은지 추천 → 선택하면 그 값으로 진행(게임당 1회 소진).
-import { useState, useEffect, useRef } from 'react';
-import { Info, RotateCcw, Undo2, ShieldCheck, Flag, Sparkles, X, ArrowLeftRight, Loader2 } from 'lucide-react';
+import { useState, useEffect, useRef, useCallback, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
+import { Info, RotateCcw, Undo2, ShieldCheck, Flag, Sparkles, X, ArrowLeftRight, Loader2, PictureInPicture2 } from 'lucide-react';
 import { createEmptyBoard, lineSum, makeDie, opponentOf } from './engine';
 import { estimateWinRate } from './ai';
 import type { Factor } from './ai';
@@ -100,6 +101,88 @@ function loadStore(): {
   return null;
 }
 
+// ── Document Picture-in-Picture — 시뮬 영역만 항상-위 창으로 띄운다(게임 위 오버레이) ──
+// 같은 컴포넌트 인스턴스를 PiP 창으로 '포털'만 옮겨 워커·상태·localStorage를 그대로 유지한다.
+const PIP_SUPPORTED = typeof window !== 'undefined' && 'documentPictureInPicture' in window;
+
+function usePipWindow() {
+  const [pipWindow, setPipWindow] = useState<Window | null>(null);
+
+  const openPip = useCallback(async () => {
+    if (!PIP_SUPPORTED) return;
+    // @ts-expect-error documentPictureInPicture는 아직 표준 타입에 없음(Chrome 116+).
+    const pip: Window = await window.documentPictureInPicture.requestWindow({ width: 460, height: 820 });
+
+    // 스타일 이식 — Tailwind/토큰 CSS는 <link>(빌드)·<style>(dev) 양쪽으로 들어오므로 둘 다 복사.
+    document.querySelectorAll('link[rel="stylesheet"]').forEach((l) => {
+      const link = pip.document.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = (l as HTMLLinkElement).href; // 절대경로
+      pip.document.head.appendChild(link);
+    });
+    document.querySelectorAll('style').forEach((s) => pip.document.head.appendChild(s.cloneNode(true)));
+
+    // 테마/배경 — 토큰이 [data-theme]에 묶여 있어 html 속성·클래스를 복사하고, 배경색도 테마를 따라간다.
+    const syncTheme = () => {
+      const t = document.documentElement.getAttribute('data-theme');
+      if (t) pip.document.documentElement.setAttribute('data-theme', t);
+      pip.document.documentElement.className = document.documentElement.className;
+      pip.document.body.style.background = t === 'dark' ? '#18181b' : '#ffffff'; // 다크: zinc-900 / 라이트: 흰색
+    };
+    syncTheme();
+    pip.document.body.className = document.body.className;
+    Object.assign(pip.document.body.style, { margin: '0', padding: '12px', overflowY: 'auto' });
+
+    // 메인에서 테마를 바꾸면 PiP에도 반영.
+    const obs = new MutationObserver(syncTheme);
+    obs.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'class'] });
+    pip.addEventListener('pagehide', () => {
+      obs.disconnect();
+      setPipWindow(null);
+    });
+    setPipWindow(pip);
+  }, []);
+
+  return { pipWindow, openPip };
+}
+
+// PiP 토글 — 페이지에선 '띄우기', PiP 창 안에선 '닫기'로 동작(같은 줄을 포털로 공유).
+function PipBar({ pipWindow, onOpen }: { pipWindow: Window | null; onOpen: () => void }) {
+  return (
+    <div className="flex items-center justify-between gap-2 rounded-xl border border-indigo-200 bg-indigo-50/60 px-3 py-2 dark:border-indigo-900/50 dark:bg-indigo-950/20">
+      <span className="flex items-center gap-1.5 text-[11px] font-bold text-indigo-700 dark:text-indigo-300 lg:text-xs">
+        <PictureInPicture2 size={14} />
+        {pipWindow ? 'PiP 오버레이 — 게임 위에 떠 있어요' : '시뮬을 게임 위에 항상 띄우기'}
+      </span>
+      <button
+        onClick={() => (pipWindow ? pipWindow.close() : onOpen())}
+        disabled={!PIP_SUPPORTED}
+        title={PIP_SUPPORTED ? '' : '이 브라우저는 Document PiP를 지원하지 않아요 (크롬 116+ 필요)'}
+        className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        {pipWindow ? 'PiP 닫기' : 'PiP로 띄우기'}
+      </button>
+    </div>
+  );
+}
+
+// PiP가 열려 있는 동안 본 페이지에 남기는 안내(시뮬 본체는 PiP 창에 있음).
+function PipPlaceholder({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-indigo-300 bg-indigo-50/40 p-8 text-center dark:border-indigo-800/60 dark:bg-indigo-950/20">
+      <PictureInPicture2 size={28} className="text-indigo-500" />
+      <p className="text-sm font-bold text-zinc-700 dark:text-zinc-200">시뮬이 PiP 창에 떠 있어요</p>
+      <p className="text-[11px] text-zinc-500">게임을 테두리 없는 창모드로 두면 그 위에 항상 표시됩니다.</p>
+      <button
+        onClick={onClose}
+        className="inline-flex items-center gap-1.5 rounded-lg bg-zinc-100 px-4 py-2 text-xs font-bold text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+      >
+        이 창으로 되돌리기
+      </button>
+    </div>
+  );
+}
+
 export function TikatukaSim() {
   const initial = loadStore();
   // 새로고침하면 항상 선공 선택부터 — started는 복원하지 않는다(저장값 무시).
@@ -121,6 +204,26 @@ export function TikatukaSim() {
   const [computing, setComputing] = useState(false); // 워커가 최선 수 탐색 중
   const workerRef = useRef<Worker | null>(null);
   const reqIdRef = useRef(0);
+  const { pipWindow, openPip } = usePipWindow();
+
+  // PiP 토글 바를 항상 맨 위에 붙이고, PiP가 열려 있으면 시뮬 본체를 PiP 창으로 포털한다(본체는 그대로 마운트 유지).
+  const renderWithPip = (content: ReactNode) => {
+    const withBar = (
+      <>
+        <PipBar pipWindow={pipWindow} onOpen={openPip} />
+        {content}
+      </>
+    );
+    if (pipWindow) {
+      return (
+        <>
+          <PipPlaceholder onClose={() => pipWindow.close()} />
+          {createPortal(withBar, pipWindow.document.body)}
+        </>
+      );
+    }
+    return withBar;
+  };
 
   useEffect(() => {
     try {
@@ -172,9 +275,11 @@ export function TikatukaSim() {
     setAdvice(null); // 입력이 바뀌었으니 이전 추천 강조 제거(워커 결과로 다시 채움)
     setComputing(advReq != null);
     const id = ++reqIdRef.current;
-    const t = setTimeout(() => workerRef.current?.postMessage({ id, board, turn, advReq }), 200);
+    // 선공/후수·선공 첫 쉴드 여부를 함께 보내 타짜(롤) 추천 문턱을 맥락으로 보정한다.
+    const ctx = { iAmFirst: firstTurn === 'me', myFirstShield: firstShield === 'me' };
+    const t = setTimeout(() => workerRef.current?.postMessage({ id, board, turn, advReq, ...ctx }), 200);
     return () => clearTimeout(t);
-  }, [grid, value, t2, tazzaMode, tazza, pending, turn, started]);
+  }, [grid, value, t2, tazzaMode, tazza, pending, turn, started, firstTurn, firstShield]);
 
   const snapshot = (): Snap => ({ grid, firstShield, turn, pending });
   const undo = () => {
@@ -261,7 +366,7 @@ export function TikatukaSim() {
 
   // ── 선공 선택 화면 ──
   if (!started) {
-    return (
+    return renderWithPip(
       <div className="flex flex-col gap-4">
         <Intro />
         <div className="rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900/50">
@@ -297,7 +402,7 @@ export function TikatukaSim() {
   const aiFull = allFull(grid, 'ai');
   const boardFull = meFull && aiFull;
 
-  return (
+  return renderWithPip(
     <div className="flex flex-col gap-4">
       {/* 턴 표시 + 수동 전환 + 자동 패스 안내 */}
       <div className="flex flex-col gap-1 rounded-xl border border-zinc-200 bg-white px-3 py-2 dark:border-zinc-800 dark:bg-zinc-900/50">

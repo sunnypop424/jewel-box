@@ -47,6 +47,26 @@ const TAZZA_EV_MARGIN = 15; // 타짜: 다시 굴렸을 때 기대 최선 점수
 const VULN_W = 0.9; // 같은 값 스택이 한 번에 통째로 날아갈 위험 가중(보너스 인식 손실 점수에 곱)
 const LOCK_PENALTY = 4; // 내 필드를 다 채워 그 라인 밀어내기(쉴드 수급) 권리를 잃은 비용
 const PAIR_W = 0.2; // 빈 슬롯이 기존 고눈을 페어/트리플로 키울 잠재 가치 가중(보수적)
+// 전략 가중(사용자 실전 전략 반영) — 저눈은 제물 라인 한 곳에 몰아주고, 확보 라인이 있으면 상대 '버릴 공간'을 막는다.
+const LOW_SCATTER_W = 2; // 낮은 눈(1·2)을 주력/접전 라인에 흩뿌리는 비용(제물 라인으로 몰아주기 유도)
+const CLOSEOUT_W = 2; // 확보 라인이 있을 때 상대 빈 슬롯(버릴 공간)을 줄이는 가치(저눈 엉킴 유도)
+
+// 한 진영이 보드에 올린 주사위 수(쉴드 포함).
+function pieceCount(board: Board, owner: Owner): number {
+  return LINES.reduce<number>((s, l) => s + board.lines[l][owner].length, 0);
+}
+
+// 상대가 같은 라인에 같은 눈으로 쌓아둔 '중복' 주사위 수(비쉴드 페어 이상). 0이면 알까기 거리가 적은 상태.
+function oppDupCount(board: Board, owner: Owner): number {
+  const oppo = opponentOf(owner);
+  let dup = 0;
+  for (const line of LINES) {
+    const m = new Map<number, number>();
+    for (const d of board.lines[line][oppo]) if (!d.shield) m.set(d.value, (m.get(d.value) ?? 0) + 1);
+    for (const [, n] of m) if (n >= 2) dup += n;
+  }
+  return dup;
+}
 
 // 라인 한쪽의 '다 채웠을 때' 기대 점수 — 빈 슬롯은 평균(FILL)으로 채우되,
 // 기존 최고눈을 페어로 키우는 같은 눈 보너스 잠재력까지 더한다(매칭 시 한 칸당 +2v, 일반 FILL 대비 초과분).
@@ -102,6 +122,7 @@ function boardScore(board: Board, owner: Owner): number {
   let myVuln = 0; // 내 약점: 상대가 밀어낼 수 있는 내 페어/스택의 점수
   let oppVuln = 0; // 상대 약점: 내가 밀어낼 수 있는 상대 페어/스택의 점수
   let lockCost = 0; // 내 필드를 다 채워 밀어내기 권리를 잃은 라인의 비용
+  let lowScatter = 0; // 낮은 눈(1·2)이 주력/접전 라인을 차지한 낭비(제물 라인으로 몰아줄수록 작아짐)
 
   for (const line of LINES) {
     const mine = board.lines[line][owner];
@@ -116,6 +137,9 @@ function boardScore(board: Board, owner: Owner): number {
     if (mine.length < 3) oppVuln += maxPushLoss(opp); // 내가 이 라인에서 상대 스택을 밀 수 있음
     // 공격 슬롯 보존: 내 필드가 다 찼는데 그 라인에 아직 밀 만한 상대 비쉴드가 남으면 권리 상실 비용.
     if (mine.length === 3 && opp.some((d) => !d.shield)) lockCost += LOCK_PENALTY;
+    // 저눈 몰아주기: 1·2는 제물 라인 한 곳에 모아야 주력 라인 슬롯을 아끼고 한 번에 청소 유도.
+    // 주력/접전 라인(p≥0.4)에 놓인 비쉴드 저눈은 슬롯 낭비로 본다 → 자연히 열세 라인으로 몰린다.
+    if (p >= 0.4) for (const d of mine) if (!d.shield && d.value <= 2) lowScatter += 1;
   }
 
   // 2라인 확보가 목표. 확정 2라인이면 큰 보너스, 2라인 패배면 큰 감점.
@@ -127,6 +151,12 @@ function boardScore(board: Board, owner: Owner): number {
   score -= myVuln * VULN_W; // 내 페어가 밀릴 위험은 감점(노출 페어 응징·쉴드 유도)
   score += oppVuln * VULN_W; // 상대 페어를 청소할 기회는 가점
   score -= lockCost; // 공격 슬롯 보존
+  score -= lowScatter * LOW_SCATTER_W; // 저눈은 제물 라인 한 곳으로 몰아주기(주력 라인 슬롯 보존)
+  // 마무리 봉쇄: 이미 확보한 라인이 있으면 상대 빈 슬롯(버릴 공간)이 적을수록 유리 — 저눈을 버릴 데가 없어 엉킨다.
+  if (secured >= 1) {
+    const oppOpen = LINES.reduce<number>((s, l) => s + (3 - board.lines[l][oppo].length), 0);
+    score += (9 - oppOpen) * CLOSEOUT_W; // 상대 빈칸이 적을수록 가점(최대 9칸)
+  }
   return score;
 }
 
@@ -256,6 +286,7 @@ const ROLLOUT_MAX_TURNS = 80;
 // 지원모드 전용 — 페인트 후 비동기로 1회만 돈다(속도 제약 약함).
 // 루트 얕은 expectimax(상대 6눈 전수 전개) + 가지당 끝까지 MC 롤아웃. 한 후보당 6×이 표본을 읽는다.
 const ADV_PLAYOUTS_PER_BRANCH = 150;
+const ADV_TIE = 0.03; // 후보 승률이 이 정도 이내로 비슷하면 전략 점수(저눈 몰아주기·마무리 봉쇄)로 가른다
 
 interface McConfig {
   topK: number;
@@ -567,8 +598,7 @@ function advBestMove(
   cfg: AdvCfg = ADV_DEFAULT
 ): { move: Move; winRate: number } {
   const oppo = opponentOf(owner);
-  let best = moves[0];
-  let bestRate = -1;
+  const results: { m: Move; rate: number; strat: number }[] = [];
   for (const m of moves) {
     // 1) 내 수 적용 → 보드(들). push로 얻는 쉴드는 정밀이면 1~6 전수(각 최선 배치)로 펼치고, 아니면 4 근사 1개.
     const myBoards: Board[] = [];
@@ -598,12 +628,12 @@ function advBestMove(
       }
     }
     const rate = acc / (myBoards.length * 6); // 내 쉴드 분포 × 상대 6눈 균등 평균
-    if (rate > bestRate) {
-      bestRate = rate;
-      best = m;
-    }
+    results.push({ m, rate, strat: boardScore(applyMove(board, owner, m, value, shield), owner) });
   }
-  return { move: best, winRate: bestRate };
+  // 승률 우선 — 단, 승률이 ADV_TIE 이내로 비슷한 후보들 사이에선 전략 점수(저눈 몰아주기·마무리 봉쇄)로 가른다.
+  const maxRate = Math.max(...results.map((r) => r.rate));
+  const top = results.filter((r) => r.rate >= maxRate - ADV_TIE).sort((a, b) => b.strat - a.strat)[0];
+  return { move: top.m, winRate: top.rate };
 }
 
 // ── 지원 모드(수 추천) ─────────────────────────────────
@@ -626,6 +656,11 @@ export interface MoveAdvice {
   line?: LineIndex; // place/push일 때 대상 라인
   headline: string;
   factors: Factor[];
+}
+// 타짜(롤) 추천을 선공/후수·턴 맥락으로 보정하기 위한 컨텍스트(시뮬에서 주입).
+export interface TazzaCtx {
+  iAmFirst: boolean; // 내가 선공인가
+  isFirstShield: boolean; // 지금 굴린 주사위가 선공 첫 쉴드인가(선공 첫 턴)
 }
 export interface ChooseAdvice {
   index: 0 | 1;
@@ -697,9 +732,12 @@ function analyzeMove(board: Board, owner: Owner, move: Move, value: DieValue): F
       const nowPts = value * (2 * n - 1);
       const pairWord = n >= 3 ? '트리플' : '페어';
       facts.push(F('목표', `이 라인 ${value}에 더해 ${pairWord} 완성(${value}×${2 * n - 1} = ${nowPts}점, +${nowPts - beforePts}) — 같은 눈 보너스로 점수가 크게 올라요.`));
-      if (board.lines[move.line][oppo].length < 3)
+      // 저눈 몰아주기: 같은 낮은 눈은 한 라인에 모아 한 번에 청소되도록 유도(주력 라인 슬롯 보존). 이땐 밀리는 게 오히려 이득.
+      if (value <= 2)
+        facts.push(F('목표', `같은 ${value}끼리 한 라인에 몰아주면(몰아주기) AI가 ${value}를 굴렸을 때 ${nowPts}점을 한 번에 청소하게 유도하고, 주력 2라인 슬롯은 고눈·쉴드용으로 아껴요 — 저눈 ${pairWord}는 밀려도 손해가 작아요.`));
+      if (value > 2 && board.lines[move.line][oppo].length < 3)
         facts.push(F('위험', `비쉴드 ${pairWord}라 상대가 ${value} 하나만 굴리면 ${nowPts}점이 통째로 밀려요. 상대 필드를 캡으로 채우거나 쉴드로 덮으면 안전해져요.`));
-      else
+      else if (value > 2)
         facts.push(F('자원', `상대 필드가 이미 꽉 차 이 라인에선 상대가 밀 수 없어요 — 안전지대의 ${pairWord}예요.`));
     } else if (value <= 2 && a < 0.4) {
       facts.push(F('목표', `낮은 눈은 이 제물 라인에 버리고, 주력 2라인 슬롯은 고눈/쉴드용으로 아껴요.`));
@@ -770,13 +808,52 @@ function bestCleanTarget(
   return best;
 }
 
+// 타짜(롤) 추천 문턱을 맥락으로 보정(소프트 바이어스) — 기본 EV 게이트는 유지하되 문턱만 낮추거나 올린다.
+// 선공 첫 쉴드 1·2는 적극 재굴림, 후수 첫 주사위 1·2는 억제, 초반(3~4턴·상대 중복 적음·내 패 양호)이면 알까기 변수를 노려 문턱↓.
+// 절대 음수로 떨어뜨리지 않아(하한 3) 명백히 나쁜 롤은 막는다.
+function tazzaBias(
+  board: Board,
+  owner: Owner,
+  rolledValue: DieValue,
+  ctx?: TazzaCtx
+): { margin: number; note: Factor | null } {
+  let margin = TAZZA_EV_MARGIN;
+  let note: Factor | null = null;
+  const low = rolledValue <= 2;
+  const myPieces = pieceCount(board, owner);
+  const totalPieces = myPieces + pieceCount(board, opponentOf(owner));
+
+  if (ctx?.isFirstShield) {
+    // 선공 첫 주사위는 쉴드(밀리지 않는 앵커) — 1·2면 다시 굴려 높은 고정 앵커를 노린다.
+    if (low) {
+      margin -= 12;
+      note = F('타짜', `선공 첫 주사위는 쉴드(밀리지 않는 앵커)예요 — ${rolledValue}은(는) 너무 낮아 다시 굴려 높은 고정 앵커를 노리는 게 좋아요.`);
+    }
+  } else if (ctx && !ctx.iAmFirst && myPieces === 0 && low) {
+    // 후수 첫 주사위: 단지 낮다는 이유로는 재굴림하지 않는다(문턱을 크게 올려 억제).
+    margin += 40;
+    note = F('타짜', `후수 첫 주사위는 ${rolledValue}처럼 낮아도 굳이 타짜를 쓰지 않아요 — 후수는 상대 배치를 보고 두는 정보 우위가 있어 1·2는 제물 라인에 흘려보내고, 타짜는 더 결정적인 순간에 아껴요.`);
+  }
+
+  // 초반 변수 롤: 양측 주사위가 적고(≈3~4턴) 상대 중복도 적으며 내 패가 나쁘지 않으면, 알까기 변수를 노려 문턱을 낮춘다.
+  const early = myPieces >= 1 && totalPieces >= 2 && totalPieces <= 9;
+  if (early && oppDupCount(board, owner) === 0 && estimateWinRate(board, owner) >= 0.42) {
+    margin -= 7;
+    if (!note)
+      note = F('타짜', '초반이고 서로 알까기·상대 중복이 적어요 — 패가 나쁘지 않다면 다시 굴려 알까기 변수를 노려볼 만한 타이밍이에요(세 칸이 다른 숫자로 깔리는 반반 싸움이라도 알까기 기회를 만드는 게 유리).');
+  }
+
+  return { margin: Math.max(margin, 3), note };
+}
+
 // 굴린 값에 대한 추천 수(+근거들). 타짜 사용 가능하고 지금 수가 시원찮으면 타짜를 권한다.
 export function recommendMove(
   board: Board,
   owner: Owner,
   rolledValue: DieValue,
   tazzaAvailable: boolean,
-  cfg: AdvCfg = ADV_DEFAULT // 시뮬은 강한 설정 주입(깊은 롤아웃·★5 응수·쉴드 전수). 게임/지원모드는 기본값.
+  cfg: AdvCfg = ADV_DEFAULT, // 시뮬은 강한 설정 주입(깊은 롤아웃·★5 응수·쉴드 전수). 게임/지원모드는 기본값.
+  ctx?: TazzaCtx // 선공/후수·첫 턴 맥락(타짜 문턱 보정용). 없으면 순수 EV 게이트.
 ): MoveAdvice | null {
   const moves = legalMoves(board, owner, rolledValue);
   if (moves.length === 0) return null;
@@ -793,15 +870,19 @@ export function recommendMove(
   const best = advBestMove(board, owner, rolledValue, moves, Math.random, false, cfg).move;
 
   // 타짜: 다시 굴렸을 때 기대 이득이 충분할 때만 권한다(6 같은 높은 눈은 권하지 않음).
+  // 문턱은 선공/후수·초반 맥락으로 보정(소프트 바이어스) — 선공 1·2는 적극, 후수 1·2는 억제, 초반은 변수 롤.
   if (tazzaAvailable) {
     const s1 = bestMoveScore(board, owner, rolledValue, 3);
     const ev = rerollEV(board, owner, rolledValue, 3);
-    if (ev - s1 > TAZZA_EV_MARGIN) {
-      const factors: Factor[] = [
+    const { margin, note } = tazzaBias(board, owner, rolledValue, ctx);
+    if (ev - s1 > margin) {
+      const factors: Factor[] = [];
+      if (note) factors.push(note); // 맥락별 권유(선공 첫 쉴드/초반 변수 롤 등)를 맨 앞에
+      factors.push(
         F('타짜', `지금 ${rolledValue} 눈으로 둘 수 있는 최선 수가 시원찮아요.`),
         F('타짜', `다시 굴리면 기대 이득이 약 +${(ev - s1).toFixed(0)}점 더 높아요 — ${rolledValue}은(는) 흘려보내기 아까운 눈이에요.`),
         F('타짜', '타짜는 게임당 1번뿐 — 지금처럼 더 나은 눈을 노릴 만할 때 쓰는 게 좋아요.'),
-      ];
+      );
       // 노릴 값: 다시 굴려 나오면 상대 페어/트리플을 청소할 수 있는 가장 가치 큰 매칭값.
       const fish = bestCleanTarget(board, owner);
       if (fish)
