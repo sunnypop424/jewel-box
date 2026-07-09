@@ -10,6 +10,7 @@ import {
     isRosterScopeRaid,
 } from '../data/raids';
 import type { Character, RaidId, RaidSchedule, WeeklyClears, ClearEntry, RosterRaidState } from '../types';
+import { DimensionalistGuideButton } from './DimensionalistGuide';
 
 // ✨ Hook 및 Toast 추가
 import { useConfirm } from '../hooks/useConfirm';
@@ -328,6 +329,7 @@ export function UserRaidProgressPanel({
                                                                 {hasMultipleRosters && c.rosterLabel && (
                                                                     <span className="rounded bg-violet-100 px-1.5 py-0.5 text-[9px] font-bold text-violet-700 dark:bg-violet-900/40 dark:text-violet-300">{c.rosterLabel}</span>
                                                                 )}
+                                                                {c.jobCode === '차원술사' && <DimensionalistGuideButton />}
                                                             </div>
                                                             {c.lostArkName && (
                                                                 <span className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400 truncate">

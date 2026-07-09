@@ -11,6 +11,7 @@ import { createEmptyBoard, evaluate, lineSum, makeDie, opponentOf } from './engi
 import type { AiLevel, Board, Die, DieValue, LineIndex, Owner } from './types';
 import { useAdvisorPool, type AdvReq } from './useAdvisorPool';
 import { saveSimGame, fetchAllSimGames, type SimGameLog, type SimMoveEvent, type LogGrid } from './simLog';
+import { PIP_SUPPORTED, usePipWindow } from '../../hooks/usePipWindow';
 import { DiePip } from './components/DiePip';
 import { DiceGroupOverlay } from './components/DiceGroupOverlay';
 import { WinRateBar, FactorList } from './components/AdvicePanel';
@@ -116,51 +117,6 @@ function readPlayerName(): string {
   }
 }
 
-// ── Document Picture-in-Picture — 시뮬 영역만 항상-위 창으로 띄운다(게임 위 오버레이) ──
-// 같은 컴포넌트 인스턴스를 PiP 창으로 '포털'만 옮겨 워커·상태·localStorage를 그대로 유지한다.
-const PIP_SUPPORTED = typeof window !== 'undefined' && 'documentPictureInPicture' in window;
-
-function usePipWindow() {
-  const [pipWindow, setPipWindow] = useState<Window | null>(null);
-
-  const openPip = useCallback(async () => {
-    if (!PIP_SUPPORTED) return;
-    // @ts-expect-error documentPictureInPicture는 아직 표준 타입에 없음(Chrome 116+).
-    const pip: Window = await window.documentPictureInPicture.requestWindow({ width: 460, height: 820 });
-
-    // 스타일 이식 — Tailwind/토큰 CSS는 <link>(빌드)·<style>(dev) 양쪽으로 들어오므로 둘 다 복사.
-    document.querySelectorAll('link[rel="stylesheet"]').forEach((l) => {
-      const link = pip.document.createElement('link');
-      link.rel = 'stylesheet';
-      link.href = (l as HTMLLinkElement).href; // 절대경로
-      pip.document.head.appendChild(link);
-    });
-    document.querySelectorAll('style').forEach((s) => pip.document.head.appendChild(s.cloneNode(true)));
-
-    // 테마/배경 — 토큰이 [data-theme]에 묶여 있어 html 속성·클래스를 복사하고, 배경색도 테마를 따라간다.
-    const syncTheme = () => {
-      const t = document.documentElement.getAttribute('data-theme');
-      if (t) pip.document.documentElement.setAttribute('data-theme', t);
-      pip.document.documentElement.className = document.documentElement.className;
-      pip.document.body.style.background = t === 'dark' ? '#18181b' : '#ffffff'; // 다크: zinc-900 / 라이트: 흰색
-    };
-    syncTheme();
-    pip.document.body.className = document.body.className;
-    Object.assign(pip.document.body.style, { margin: '0', padding: '12px', overflowY: 'auto' });
-
-    // 메인에서 테마를 바꾸면 PiP에도 반영.
-    const obs = new MutationObserver(syncTheme);
-    obs.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'class'] });
-    pip.addEventListener('pagehide', () => {
-      obs.disconnect();
-      setPipWindow(null);
-    });
-    setPipWindow(pip);
-  }, []);
-
-  return { pipWindow, openPip };
-}
-
 // PiP 토글 — 페이지에선 '띄우기', PiP 창 안에선 '닫기'로 동작(같은 줄을 포털로 공유).
 function PipBar({ pipWindow, onOpen }: { pipWindow: Window | null; onOpen: () => void }) {
   return (
@@ -218,7 +174,7 @@ export function TikatukaSim() {
   const { advice, winRate, hold, computing, request: requestAdvice, reset: resetAdvice } = useAdvisorPool();
   const [adviceOpen, setAdviceOpen] = useState(false);
   const [holdOpen, setHoldOpen] = useState(false);
-  const { pipWindow, openPip } = usePipWindow();
+  const { pipWindow, openPip } = usePipWindow(460, 820);
 
   // 실전 기록 — 진행 중 경기 로그(ref로 유지), 기록 ON/OFF, 이번 세션 저장 수.
   const [record, setRecord] = useState<boolean>(() => {
