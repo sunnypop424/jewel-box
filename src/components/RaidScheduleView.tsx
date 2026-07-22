@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import type { Character, RaidSchedule, RaidRun, RaidId, RaidExclusionMap, RaidSettingsMap } from '../types';
 import { RAID_META } from '../constants';
-import { Shield, Swords, Users, ChevronDown, CircleDashed, CheckCircle2, RotateCcw, Check, UserCheck, UserX, Filter } from 'lucide-react';
+import { Shield, Swords, Users, CircleDashed, CheckCircle2, RotateCcw, Check, UserCheck, UserX, Filter } from 'lucide-react';
 import { getDifficultyStyle } from '../utils/difficultyStyle';
 
 import { useConfirm } from '../hooks/useConfirm';
@@ -37,7 +37,7 @@ export const RaidScheduleView: React.FC<Props> = ({
 
   const { confirm, ConfirmModal } = useConfirm();
 
-  const [raidOpenState, setRaidOpenState] = useState<Record<string, boolean>>({});
+  const [activeRaidId, setActiveRaidId] = useState<RaidId | null>(null);
 
   const candidatesFallback = useMemo(() => {
     const map: Partial<Record<RaidId, Character[]>> = {};
@@ -86,36 +86,25 @@ export const RaidScheduleView: React.FC<Props> = ({
     return map;
   }, [schedule, candidatesFallback, nameCollator]);
 
-  const getUserCardClass = (discordName: string) => {
+  // 유저 구분은 유저명 배지 색으로 표시한다.
+  // 캐릭터명(주 정보)과 역할 아이콘 색(서포터/딜러)은 건드리지 않아야 목록이 조용하게 읽힌다.
+  const getUserBadgeClass = (discordName: string) => {
     const idx = userColorMap.get(discordName) ?? 0;
 
     const palette = [
-      'bg-blue-50 ring-blue-200 dark:bg-blue-950/30 dark:ring-blue-900/50',
-      'bg-rose-50 ring-rose-200 dark:bg-rose-950/30 dark:ring-rose-900/50',
-      'bg-amber-50 ring-amber-200 dark:bg-amber-950/30 dark:ring-amber-900/50',
-      'bg-emerald-50 ring-emerald-200 dark:bg-emerald-950/30 dark:ring-emerald-900/50',
-      'bg-violet-50 ring-violet-200 dark:bg-violet-950/30 dark:ring-violet-900/50',
-      'bg-cyan-50 ring-cyan-200 dark:bg-cyan-950/30 dark:ring-cyan-900/50',
-      'bg-lime-50 ring-lime-200 dark:bg-lime-950/30 dark:ring-lime-900/50',
-      'bg-fuchsia-50 ring-fuchsia-200 dark:bg-fuchsia-950/30 dark:ring-fuchsia-900/50',
-      'bg-slate-50 ring-slate-200 dark:bg-slate-950/30 dark:ring-slate-900/50',
-      'bg-stone-50 ring-stone-200 dark:bg-stone-950/30 dark:ring-stone-900/50',
+      'bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300',
+      'bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300',
+      'bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300',
+      'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300',
+      'bg-violet-100 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300',
+      'bg-cyan-100 text-cyan-800 dark:bg-cyan-500/15 dark:text-cyan-300',
+      'bg-teal-100 text-teal-700 dark:bg-teal-500/15 dark:text-teal-300',
+      'bg-fuchsia-100 text-fuchsia-700 dark:bg-fuchsia-500/15 dark:text-fuchsia-300',
+      'bg-indigo-100 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300',
+      'bg-orange-100 text-orange-800 dark:bg-orange-500/15 dark:text-orange-300',
     ];
 
     return palette[idx % palette.length];
-  };
-
-  const toggleRaid = (raidId: string, allRaidIds: string[]) => {
-    setRaidOpenState((prev) => {
-      const isCurrentlyOpen = prev[raidId] ?? (raidId === allRaidIds[0]);
-      if (isCurrentlyOpen) {
-        return { ...prev, [raidId]: false };
-      }
-      const next: Record<string, boolean> = {};
-      allRaidIds.forEach((id) => { next[id] = false; });
-      next[raidId] = true;
-      return next;
-    });
   };
 
   const handleExcludeClick = async (
@@ -160,23 +149,25 @@ export const RaidScheduleView: React.FC<Props> = ({
     'HORIZON_STEP3',
   ];
 
-  const raidIds = RAID_ORDER.filter((raidId) => (schedule[raidId]?.length ?? 0) > 0);
+  const raidIds = RAID_ORDER.filter((raidId) => (schedule[raidId]?.length ?? 0) > 0) as RaidId[];
 
-  const scrollToRaid = (raidId: RaidId) => {
-    const el = document.getElementById(`raid-section-${raidId}`);
-    if (!el) return;
+  // 활성 탭이 사라지면(전원 완료 등) 첫 레이드로 되돌린다.
+  const activeRaid = activeRaidId && raidIds.includes(activeRaidId) ? activeRaidId : raidIds[0];
 
-    el.scrollIntoView({
-      behavior: 'smooth',
-      block: 'start',
+  const getCandidatesFor = (rid: RaidId) =>
+    raidCandidates?.[rid] ?? candidatesFallback[rid] ?? [];
+
+  // 탭 배지 — 해당 레이드에서 아직 가야 하는 캐릭터 수.
+  const getRemainingCount = (rid: RaidId) => {
+    const excluded = new Set(exclusions?.[rid] ?? []);
+    const seen = new Set<string>();
+    let count = 0;
+    getCandidatesFor(rid).forEach((c) => {
+      if (seen.has(c.id) || excluded.has(c.id) || c.isGuest) return;
+      seen.add(c.id);
+      count++;
     });
-
-    setRaidOpenState(() => {
-      const next: Record<string, boolean> = {};
-      raidIds.forEach((id) => { next[String(id)] = false; });
-      next[raidId] = true;
-      return next;
-    });
+    return count;
   };
 
   return (
@@ -218,23 +209,38 @@ export const RaidScheduleView: React.FC<Props> = ({
         <div className="flex flex-col gap-2">
           <div className="flex items-start gap-2 text-sm font-semibold text-zinc-600 dark:text-zinc-400 sm:items-center">
             <Filter className="h-4 w-4" />
-            <span>레이드 바로가기</span>
+            <span>레이드 선택</span>
           </div>
 
           <div className="flex flex-wrap gap-2">
             {raidIds.map((raidId) => {
               const meta = RAID_META[raidId];
               const diffStyle = getDifficultyStyle(meta.difficulty);
+              const isActive = raidId === activeRaid;
+              const remaining = getRemainingCount(raidId);
 
               return (
                 <button
                   key={raidId}
                   type="button"
-                  onClick={() => scrollToRaid(raidId as RaidId)}
-                  className={`flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-bold transition-all border select-none ${diffStyle.btn}`}
+                  onClick={() => setActiveRaidId(raidId)}
+                  className={`flex select-none items-center gap-2 rounded-lg border px-3 py-1.5 text-xs font-bold transition-all ${
+                    isActive
+                      ? `${diffStyle.btn} ${diffStyle.borderActive} ring-1 ring-inset ring-current`
+                      : 'border-zinc-200 bg-transparent text-zinc-400 hover:bg-zinc-50 dark:border-zinc-800 dark:text-zinc-500 dark:hover:bg-zinc-800/50'
+                  }`}
                 >
-                  <div className={`h-2 w-2 rounded-full ${diffStyle.dotColor}`} />
+                  <div className={`h-2 w-2 rounded-full ${isActive ? diffStyle.dotColor : 'bg-zinc-300 dark:bg-zinc-700'}`} />
                   {meta.label}
+                  {remaining > 0 && (
+                    <span
+                      className={`rounded-full px-1.5 text-[10px] font-extrabold tabular-nums ${
+                        isActive ? 'bg-white/70 dark:bg-black/30' : 'bg-zinc-100 dark:bg-zinc-800'
+                      }`}
+                    >
+                      {remaining}
+                    </span>
+                  )}
                 </button>
               );
             })}
@@ -242,253 +248,169 @@ export const RaidScheduleView: React.FC<Props> = ({
         </div>
       </div>
 
-      {raidIds.map((raidId) => {
-        const runs = schedule[raidId];
-        if (!runs || runs.length === 0) return null;
+      {activeRaid && (() => {
+        const runs = schedule[activeRaid] ?? [];
+        const meta = RAID_META[activeRaid];
+        const diffStyle = getDifficultyStyle(meta.difficulty);
+        const excludedIdsForRaid = exclusions?.[activeRaid] ?? [];
 
-        const meta = RAID_META[raidId];
-        const isRaidOpen = raidOpenState[raidId] ?? (raidId === raidIds[0]);
-        const excludedIdsForRaid = exclusions?.[raidId] ?? [];
-
-        const candidatesForThisRaid = raidCandidates?.[raidId] ?? candidatesFallback[raidId] ?? [];
-
-        const userRemainingCountsForThisRaid = new Map<string, number>();
-        candidatesForThisRaid.forEach((c) => {
-          if (!excludedIdsForRaid.includes(c.id) && !c.isGuest) {
-            userRemainingCountsForThisRaid.set(
-              c.discordName,
-              (userRemainingCountsForThisRaid.get(c.discordName) || 0) + 1
-            );
-          }
+        // 유저별 남은 캐릭터 수 — 편성표에서는 배지를 일일이 세야 알 수 있어 항상 노출한다.
+        const excludedSet = new Set(excludedIdsForRaid);
+        const seenIds = new Set<string>();
+        const remainingByUser = new Map<string, number>();
+        getCandidatesFor(activeRaid).forEach((c) => {
+          if (seenIds.has(c.id) || excludedSet.has(c.id) || c.isGuest) return;
+          seenIds.add(c.id);
+          remainingByUser.set(c.discordName, (remainingByUser.get(c.discordName) ?? 0) + 1);
         });
 
-        const diff = meta.difficulty;
-        const diffStyle = getDifficultyStyle(diff);
-        const { containerBorder, titleColor } = diffStyle;
-        const dotColor = diffStyle.dotTextColor;
-        const headerClass = `${diffStyle.headerClass} ${diffStyle.headerHoverClass}`;
+        const userRows = (allUserNames.length > 0
+          ? allUserNames
+          : Array.from(remainingByUser.keys()).sort(
+              (a, b) => (userColorMap.get(a) ?? 0) - (userColorMap.get(b) ?? 0),
+            )
+        ).filter((name) => !inactiveUsers.has(name));
 
         return (
           <div
-            id={`raid-section-${raidId}`}
-            key={raidId}
-            className={`scroll-mt-36 overflow-hidden rounded-2xl border shadow-sm dark:bg-zinc-900 ${containerBorder}`}
+            className={`overflow-hidden rounded-2xl border bg-white shadow-sm dark:bg-zinc-900 ${diffStyle.containerBorder}`}
           >
-            <div
-              onClick={() => toggleRaid(raidId as string, raidIds as string[])}
-              className={`flex w-full flex-col items-start gap-3 border-b px-4 py-4 text-left transition-colors cursor-pointer select-none sm:flex-row sm:items-center sm:justify-between sm:px-5 ${headerClass} ${
-                isRaidOpen
-                  ? 'border-b-zinc-100 dark:border-b-zinc-800'
-                  : 'border-transparent'
-              }`}
-            >
-              <div className="flex w-full flex-wrap items-center gap-2 sm:flex-1 sm:mr-4">
-                <div
-                  className={`h-3 w-3 rounded-full shadow-sm ring-2 ring-white/50 bg-current shrink-0 ${dotColor}`}
-                />
-                <h4 className={`text-base font-bold whitespace-nowrap shrink-0 ${titleColor}`}>
-                  {meta.label}
-                </h4>
+            <div className="flex flex-col gap-2.5 border-b border-zinc-100 px-4 py-3.5 dark:border-zinc-800 sm:px-5">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex min-w-0 items-center gap-2">
+                  <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${diffStyle.dotColor}`} />
+                  <h4 className="truncate text-base font-bold text-zinc-900 dark:text-zinc-100">
+                    {meta.label}
+                  </h4>
+                </div>
 
-                {allUserNames.length > 0 && (
-                  <div className="flex basis-full flex-wrap items-center gap-1.5 border-current/20 pt-1 sm:ml-2 sm:basis-auto sm:border-l sm:pl-3 sm:pt-0">
-                    {allUserNames.map((name) => {
-                      const remainingCount = userRemainingCountsForThisRaid.get(name) || 0;
-                      const isActive = remainingCount > 0;
+                {onToggleSupportShortage && (
+                  <label
+                    title="랏 서포터 모드: 서포터 부족 시 딜러 발키리를 서포터 자리에 배정합니다"
+                    className={`inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-lg border px-2 py-1 text-[11px] font-semibold transition-colors ${
+                      raidSettings?.[activeRaid]
+                        ? 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800/60 dark:bg-amber-900/20 dark:text-amber-300'
+                        : 'border-zinc-200 text-zinc-500 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={!!raidSettings?.[activeRaid]}
+                      onChange={(e) => onToggleSupportShortage(activeRaid, e.target.checked)}
+                      disabled={isRaidSettingsLoading}
+                      className="h-3 w-3 rounded border-zinc-300 text-amber-600 focus:ring-amber-500"
+                    />
+                    랏폿
+                  </label>
+                )}
+              </div>
+
+              {userRows.length > 0 && (
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
+                  <span className="text-[11px] font-bold text-zinc-400 dark:text-zinc-500">남은 인원</span>
+                  {userRows.map((name) => {
+                    const count = remainingByUser.get(name) ?? 0;
+                    if (count === 0) {
                       return (
                         <span
                           key={name}
-                          className={`text-xs px-2 py-1 rounded transition-all ${
-                            isActive
-                              ? 'font-medium bg-white/60 text-zinc-800 shadow-sm ring-1 ring-black/5 dark:bg-black/30 dark:text-zinc-100 dark:ring-white/10'
-                              : 'font-medium text-current opacity-40 line-through decoration-current/40'
-                          }`}
+                          className="rounded px-1.5 py-0.5 text-[11px] font-medium text-zinc-300 line-through dark:text-zinc-600"
                         >
-                          {name}{isActive ? ` ${remainingCount}` : ''}
+                          {name}
                         </span>
                       );
-                    })}
-                  </div>
-                )}
-
-              </div>
-
-              <div className="flex w-full items-center justify-between gap-2 text-xs text-zinc-500 dark:text-zinc-400 sm:w-auto sm:shrink-0 sm:justify-end">
-                {onToggleSupportShortage && (
-                  <div
-                    onClick={(e) => e.stopPropagation()}
-                    className="mr-2 flex items-center"
-                  >
-                    <label
-                      title="랏 서포터 모드: 서포터 부족 시 딜러 발키리를 서포터 자리에 배정합니다"
-                      className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-xs font-semibold cursor-pointer transition-colors ${
-                        raidSettings?.[raidId]
-                          ? 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300'
-                          : 'border-zinc-200 bg-white/50 hover:bg-white dark:bg-zinc-900/50 dark:border-zinc-700 dark:hover:bg-zinc-900'
-                      }`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={!!raidSettings?.[raidId]}
-                        onChange={(e) =>
-                          onToggleSupportShortage(
-                            raidId as RaidId,
-                            e.target.checked
-                          )
-                        }
-                        disabled={isRaidSettingsLoading}
-                        className="h-3 w-3 text-amber-600 rounded border-zinc-300 focus:ring-amber-500"
-                      />
-                      <span className="dark:text-zinc-300">랏폿</span>
-                    </label>
-                  </div>
-                )}
-                <ChevronDown
-                  size={16}
-                  className={`transition-transform ${isRaidOpen ? '' : '-rotate-90'}`}
-                />
-              </div>
+                    }
+                    return (
+                      <span
+                        key={name}
+                        className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-bold ${getUserBadgeClass(name)}`}
+                      >
+                        {name}
+                        <span className="tabular-nums opacity-70">{count}</span>
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
-            {isRaidOpen && (
-              <div className="divide-y divide-zinc-100 dark:divide-zinc-800 bg-white dark:bg-zinc-900">
-                <RaidPartnershipBreakdown
-                  candidates={
-                    raidCandidates?.[raidId] ??
-                    candidatesFallback[raidId] ??
-                    []
-                  }
-                  runs={runs}
-                  excludedIds={excludedIdsForRaid}
-                  allUserNames={allUserNames}
-                  inactiveUsers={inactiveUsers}
-                />
-                <RaidStatusBoard
-                  raidId={raidId as RaidId}
-                  raidLabel={meta.label}
-                  candidates={
-                    raidCandidates?.[raidId] ??
-                    candidatesFallback[raidId] ??
-                    []
-                  }
-                  runs={runs}
-                  excludedIds={excludedIdsForRaid}
-                  onExclude={(m: Character, isCompleted: boolean) =>
-                    handleExcludeClick(raidId as RaidId, m.id, isCompleted)
-                  }
-                  canExclude={Boolean(onExcludeCharacter)}
-                  getUserCardClass={getUserCardClass}
-                  userColorMap={userColorMap}
-                />
-              </div>
-            )}
+            <RaidRunBoard
+              raidId={activeRaid}
+              candidates={getCandidatesFor(activeRaid)}
+              runs={runs}
+              excludedIds={excludedIdsForRaid}
+              onExclude={(m: Character, isCompleted: boolean) =>
+                handleExcludeClick(activeRaid, m.id, isCompleted)
+              }
+              canExclude={Boolean(onExcludeCharacter)}
+              getUserBadgeClass={getUserBadgeClass}
+              userColorMap={userColorMap}
+            />
           </div>
         );
-      })}
+      })()}
 
       <ConfirmModal />
     </div>
   );
 };
 
-function RaidPartnershipBreakdown(props: {
-  candidates: Character[];
-  runs: RaidRun[];
-  excludedIds: string[];
-  allUserNames: string[];
-  inactiveUsers: Set<string>;
-}) {
-  const { candidates, runs, excludedIds, allUserNames, inactiveUsers } = props;
+type PartySlot =
+  | { kind: 'member'; member: Character }
+  | { kind: 'empty'; role: 'SUPPORT' | 'DPS' };
 
-  const breakdown = useMemo(() => {
-    const excludedSet = new Set(excludedIds);
-    const placedRunIndex = new Map<string, number>();
-    const runUserSets: Set<string>[] = runs.map(() => new Set<string>());
+// 멤버 행과 빈자리 행이 같은 높이로 정렬되도록 고정.
+const SLOT_ROW_CLASS = 'flex min-h-[56px] items-center gap-2.5 px-3 py-2';
 
-    runs.forEach((run, i) => {
-      run.parties.forEach((p) =>
-        p.members.forEach((m) => {
-          if (excludedSet.has(m.id)) return;
-          placedRunIndex.set(m.id, i);
-          if (m.discordName) runUserSets[i].add(m.discordName);
-        })
-      );
-    });
+// 공대 구분 — 번호 칩과 1px 테두리에만 색을 쓴다(면은 흰색 유지).
+const RUN_ACCENTS = [
+  { chip: 'bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-300', border: 'border-blue-200 dark:border-blue-800/70' },
+  { chip: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300', border: 'border-emerald-200 dark:border-emerald-800/70' },
+  { chip: 'bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-300', border: 'border-violet-200 dark:border-violet-800/70' },
+  { chip: 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300', border: 'border-amber-200 dark:border-amber-800/70' },
+  { chip: 'bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-300', border: 'border-rose-200 dark:border-rose-800/70' },
+  { chip: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-500/20 dark:text-cyan-300', border: 'border-cyan-200 dark:border-cyan-800/70' },
+  { chip: 'bg-lime-100 text-lime-700 dark:bg-lime-500/20 dark:text-lime-300', border: 'border-lime-200 dark:border-lime-800/70' },
+  { chip: 'bg-fuchsia-100 text-fuchsia-700 dark:bg-fuchsia-500/20 dark:text-fuchsia-300', border: 'border-fuchsia-200 dark:border-fuchsia-800/70' },
+];
 
-    const uniqueCandidates = Array.from(
-      new Map(candidates.map((c) => [c.id, c])).values()
-    );
-    const map = new Map<string, { together: number; alone: number }>();
-    allUserNames.forEach((n) => map.set(n, { together: 0, alone: 0 }));
+// 파티 슬롯은 서포터 1 + 딜러 3 고정. 빈 자리는 구인 슬롯으로 표시한다.
+function buildPartySlots(members: Character[]): PartySlot[] {
+  const supports = members.filter((m) => m.role === 'SUPPORT');
+  const dealers = members.filter((m) => m.role === 'DPS');
 
-    uniqueCandidates.forEach((c) => {
-      if (excludedSet.has(c.id) || c.isGuest) return;
-      const entry = map.get(c.discordName) ?? { together: 0, alone: 0 };
-      const idx = placedRunIndex.get(c.id);
-      if (idx === undefined) entry.alone++;
-      else if (runUserSets[idx].size > 1) entry.together++;
-      else entry.alone++;
-      map.set(c.discordName, entry);
-    });
-    return map;
-  }, [candidates, runs, excludedIds, allUserNames]);
+  const slots: PartySlot[] = [];
+  slots.push(supports[0] ? { kind: 'member', member: supports[0] } : { kind: 'empty', role: 'SUPPORT' });
+  for (let i = 0; i < 3; i++) {
+    slots.push(dealers[i] ? { kind: 'member', member: dealers[i] } : { kind: 'empty', role: 'DPS' });
+  }
 
-  const visibleUsers = allUserNames.filter((name) => {
-    if (inactiveUsers.has(name)) return false;
-    const entry = breakdown.get(name);
-    if (!entry) return false;
-    return entry.together + entry.alone > 0;
-  });
+  // 엣지(파티에 서포터 2명 등): 초과 인원도 누락 없이 뒤에 덧붙인다.
+  supports.slice(1).forEach((m) => slots.push({ kind: 'member', member: m }));
+  dealers.slice(3).forEach((m) => slots.push({ kind: 'member', member: m }));
 
-  if (visibleUsers.length === 0) return null;
+  return slots;
+}
 
+function EmptySlotCard({ role }: { role: 'SUPPORT' | 'DPS' }) {
+  const isSupport = role === 'SUPPORT';
   return (
-    <div className="flex flex-col gap-3 px-4 pt-4 sm:px-6 sm:pt-6">
-      <div className="flex items-center gap-2 text-sm font-bold text-zinc-600 dark:text-zinc-400">
-        <Users className="h-4 w-4" />
-        <span>유저별 함께 / 혼자 현황</span>
-      </div>
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-        {visibleUsers.map((name) => {
-          const entry = breakdown.get(name) ?? { together: 0, alone: 0 };
-          return (
-            <div
-              key={name}
-              className="rounded-xl bg-white shadow-sm ring-1 ring-zinc-200 dark:bg-zinc-900 dark:ring-zinc-800"
-            >
-              <div className="px-3 pt-2 pb-1.5">
-                <span className="text-sm font-bold text-zinc-900 dark:text-zinc-100">
-                  {name}
-                </span>
-              </div>
-              <div className="flex items-center justify-around border-t border-zinc-100 px-3 py-2 dark:border-zinc-800">
-                <div className="flex items-baseline gap-1.5">
-                  <span className="text-base font-bold tabular-nums text-blue-600 dark:text-blue-300">
-                    {entry.together}
-                  </span>
-                  <span className="text-[10px] font-medium text-zinc-500 dark:text-zinc-400">
-                    함께
-                  </span>
-                </div>
-                <div className="h-4 w-px bg-zinc-200 dark:bg-zinc-700" />
-                <div className="flex items-baseline gap-1.5">
-                  <span className="text-base font-bold tabular-nums text-amber-600 dark:text-amber-300">
-                    {entry.alone}
-                  </span>
-                  <span className="text-[10px] font-medium text-zinc-500 dark:text-zinc-400">
-                    혼자
-                  </span>
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
+    <div
+      className={`${SLOT_ROW_CLASS} ${
+        isSupport ? 'text-emerald-500/50 dark:text-emerald-500/50' : 'text-zinc-300 dark:text-zinc-600'
+      }`}
+    >
+      <span className="shrink-0">
+        {isSupport ? <Shield size={15} /> : <Swords size={15} />}
+      </span>
+      <span className="text-xs font-medium">
+        {isSupport ? '서포터 구인' : '딜러 구인'}
+      </span>
     </div>
   );
 }
 
-function RaidStatusBoard(props: {
+function RaidRunBoard(props: {
   raidId: RaidId;
   raidLabel: string;
   candidates: Character[];
@@ -496,10 +418,19 @@ function RaidStatusBoard(props: {
   excludedIds: string[];
   canExclude: boolean;
   onExclude: (m: Character, isCompleted: boolean) => void | Promise<void>;
-  getUserCardClass: (discordName: string) => string;
+  getUserBadgeClass: (discordName: string) => string;
   userColorMap: Map<string, number>;
 }) {
-  const { candidates, runs, excludedIds, getUserCardClass, userColorMap } = props;
+  const { raidId, candidates, runs, excludedIds, canExclude, onExclude, getUserBadgeClass, userColorMap } = props;
+
+  const partySize = RAID_META[raidId].partySize;
+  const partyCount = partySize === 8 ? 2 : 1;
+
+  const placedCount = runs.reduce(
+    (sum, r) => sum + r.parties.reduce((s, p) => s + p.members.length, 0),
+    0,
+  );
+  const openSlots = runs.length * partySize - placedCount;
 
   const uniqueCandidates = Array.from(
     new Map(candidates.map((c) => [c.id, c])).values()
@@ -528,163 +459,228 @@ function RaidStatusBoard(props: {
     .filter((c) => excludedSet.has(c.id))
     .sort(sortByUserThenPower);
 
-  const assigned = uniqueCandidates
-    .filter((c) => !excludedSet.has(c.id) && placedIds.has(c.id))
-    .sort(sortByUserThenPower);
-
   const unassigned = uniqueCandidates
     .filter((c) => !excludedSet.has(c.id) && !placedIds.has(c.id))
     .sort(sortByUserThenPower);
 
   return (
-    <div className="flex flex-col gap-5 p-6">
-      <div className="grid gap-4 lg:grid-cols-3 lg:gap-6">
-        <StatusColumn
-          title="미배치 / 대기"
-          count={unassigned.length}
-          icon={<CircleDashed size={16} />}
-          color="amber"
-        >
-          {unassigned.map((m) => (
-            <RaidMemberCard
-              key={m.id}
-              member={m}
-              {...props}
-              userCardClass={getUserCardClass(m.discordName)}
-            />
-          ))}
-        </StatusColumn>
-
-        <StatusColumn
-          title="배치됨"
-          count={assigned.length}
-          icon={<Users size={16} />}
-          color="blue"
-        >
-          {assigned.map((m) => (
-            <RaidMemberCard
-              key={m.id}
-              member={m}
-              {...props}
-              userCardClass={getUserCardClass(m.discordName)}
-            />
-          ))}
-        </StatusColumn>
-
-        <StatusColumn title="완료" count={completed.length} icon={<CheckCircle2 size={16} />} color="zinc">
-          {completed.map((m) => (
-            <div key={m.id} className="opacity-60">
-              <RaidMemberCard
-                member={m}
-                {...props}
-                isCompleted={true}
-                canExclude={props.canExclude}
-                userCardClass={getUserCardClass(m.discordName)}
-              />
-            </div>
-          ))}
-        </StatusColumn>
-      </div>
-    </div>
-  );
-}
-
-function StatusColumn({ title, count, icon, color, children }: any) {
-  const colors: any = {
-    amber:
-      'text-amber-700 bg-amber-50 border-amber-200 dark:text-amber-400 dark:bg-amber-900/20 dark:border-amber-900/30',
-    blue:
-      'text-blue-700 bg-blue-50 border-blue-200 dark:text-blue-400 dark:bg-blue-900/20 dark:border-blue-900/30',
-    zinc:
-      'text-zinc-700 bg-zinc-100 border-zinc-200 dark:text-zinc-400 dark:bg-zinc-800 dark:border-zinc-700',
-  };
-
-  return (
-    <div className="flex h-full flex-col rounded-2xl border border-zinc-200 bg-zinc-50/50 dark:border-zinc-800 dark:bg-zinc-950/20">
-      <div
-        className={`flex items-center justify-between border-b px-4 py-3 rounded-t-2xl ${colors[color]} border-inherit`}
-      >
-        <div className="flex items-center gap-2 text-sm font-bold">
-          {icon}
-          <span>{title}</span>
-        </div>
-        <span className="rounded-full bg-white/60 px-2 py-0.5 text-xs font-extrabold dark:bg-black/20">
-          {count}
+    <div className="flex flex-col gap-4 bg-zinc-50/70 p-3 dark:bg-zinc-950/30 sm:p-4">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-zinc-500 dark:text-zinc-400">
+        <span>
+          공대 <span className="font-bold tabular-nums text-zinc-700 dark:text-zinc-200">{runs.length}</span>
         </span>
-      </div>
-
-      <div className="flex flex-1 flex-col gap-2 overflow-y-auto p-3 max-h-[45vh] lg:max-h-[274px]">
-        {React.Children.count(children) === 0 ? (
-          <div className="py-8 text-center text-xs text-zinc-400">없음</div>
-        ) : (
-          children
+        <span>
+          배치 <span className="font-bold tabular-nums text-zinc-700 dark:text-zinc-200">{placedCount}</span>명
+        </span>
+        {openSlots > 0 && (
+          <span className="text-amber-600 dark:text-amber-400">
+            빈자리 <span className="font-bold tabular-nums">{openSlots}</span>
+          </span>
         )}
       </div>
+
+      <div
+        className={`grid gap-3 ${partyCount === 2 ? 'xl:grid-cols-2' : 'sm:grid-cols-2 xl:grid-cols-3'}`}
+      >
+        {runs.map((run, runIdx) => {
+          const memberCount = run.parties.reduce((sum, p) => sum + p.members.length, 0);
+          const isFull = memberCount >= partySize;
+          const accent = RUN_ACCENTS[runIdx % RUN_ACCENTS.length];
+
+          return (
+            <div
+              key={`${run.raidId}-${run.runIndex}-${runIdx}`}
+              className={`overflow-hidden rounded-xl border bg-white dark:bg-zinc-900 ${accent.border}`}
+            >
+              <div className="flex items-center gap-2 px-3 py-2.5">
+                <span className={`rounded-md px-1.5 py-0.5 text-[11px] font-bold ${accent.chip}`}>
+                  {runIdx + 1}공대
+                </span>
+                <span
+                  className={`text-[11px] font-semibold tabular-nums ${
+                    isFull ? 'text-zinc-400 dark:text-zinc-500' : 'text-amber-600 dark:text-amber-400'
+                  }`}
+                >
+                  {memberCount}/{partySize}
+                </span>
+                <span className="ml-auto flex items-baseline gap-1">
+                  <span className="text-[11px] text-zinc-400 dark:text-zinc-500">평균</span>
+                  <span className="text-sm font-bold tabular-nums text-zinc-800 dark:text-zinc-100">
+                    {run.averageCombatPower.toLocaleString()}
+                  </span>
+                </span>
+              </div>
+
+              <div className={`grid ${partyCount === 2 ? 'sm:grid-cols-2 sm:divide-x sm:divide-zinc-100 sm:dark:divide-zinc-800' : ''}`}>
+                {Array.from({ length: partyCount }, (_, partyIdx) => {
+                  const members = run.parties[partyIdx]?.members ?? [];
+                  const slots = buildPartySlots(members);
+
+                  return (
+                    <div key={partyIdx} className="min-w-0">
+                      {partyCount === 2 && (
+                        <div className="border-t border-zinc-100 px-3 py-1 text-[10px] font-bold tracking-wide text-zinc-400 dark:border-zinc-800 dark:text-zinc-500">
+                          {partyIdx + 1}파티
+                        </div>
+                      )}
+                      <div className="divide-y divide-zinc-100 border-t border-zinc-100 dark:divide-zinc-800 dark:border-zinc-800">
+                        {slots.map((slot, slotIdx) =>
+                          slot.kind === 'member' ? (
+                            <RaidMemberRow
+                              key={slot.member.id}
+                              member={slot.member}
+                              canExclude={canExclude}
+                              onExclude={onExclude}
+                              userBadgeClass={getUserBadgeClass(slot.member.discordName)}
+                            />
+                          ) : (
+                            <EmptySlotCard key={`empty-${slotIdx}`} role={slot.role} />
+                          )
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <MemberStrip
+        title="미배치"
+        icon={<CircleDashed size={13} />}
+        members={unassigned}
+        canExclude={canExclude}
+        onExclude={onExclude}
+        getUserBadgeClass={getUserBadgeClass}
+      />
+
+      <MemberStrip
+        title="완료"
+        icon={<CheckCircle2 size={13} />}
+        members={completed}
+        canExclude={canExclude}
+        onExclude={onExclude}
+        getUserBadgeClass={getUserBadgeClass}
+        isCompleted
+      />
     </div>
   );
 }
 
-function RaidMemberCard({
+function MemberStrip(props: {
+  title: string;
+  icon: React.ReactNode;
+  members: Character[];
+  canExclude: boolean;
+  onExclude: (m: Character, isCompleted: boolean) => void | Promise<void>;
+  getUserBadgeClass: (discordName: string) => string;
+  isCompleted?: boolean;
+}) {
+  const { title, icon, members, canExclude, onExclude, getUserBadgeClass, isCompleted } = props;
+  if (members.length === 0) return null;
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center gap-2">
+        <span className="flex items-center gap-1.5 text-xs font-bold text-zinc-500 dark:text-zinc-400">
+          {icon}
+          {title}
+        </span>
+        <span className="rounded-full bg-zinc-200/70 px-1.5 text-[11px] font-bold tabular-nums text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
+          {members.length}
+        </span>
+        <span className="h-px flex-1 bg-zinc-200 dark:bg-zinc-800" />
+      </div>
+      <div
+        className={`grid overflow-hidden rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 ${
+          isCompleted ? 'opacity-60' : ''
+        }`}
+      >
+        {members.map((m) => (
+          <div key={m.id} className="border-b border-zinc-100 last:border-b-0 dark:border-zinc-800">
+            <RaidMemberRow
+              member={m}
+              canExclude={canExclude}
+              onExclude={onExclude}
+              isCompleted={isCompleted}
+              userBadgeClass={getUserBadgeClass(m.discordName)}
+            />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function RaidMemberRow({
   member,
   canExclude,
   onExclude,
-  isCompleted, 
-  userCardClass = '',
+  isCompleted,
+  userBadgeClass = '',
 }: any) {
+  const charName = member.lostArkName || member.discordName;
+  const roleColor = member.isGuest
+    ? 'text-amber-500'
+    : member.role === 'SUPPORT'
+      ? 'text-emerald-500'
+      : 'text-zinc-400 dark:text-zinc-500';
+
   return (
-    <div
-      className={`group flex flex-col gap-3 rounded-xl p-2.5 shadow-sm ring-1 hover:shadow-md sm:flex-row sm:items-center sm:justify-between
-      ${userCardClass}
-      ring-zinc-900/5 dark:ring-zinc-800`}
-    >
-      <div className="flex min-w-0 items-center gap-3">
-        <div
-          className={`flex h-8 w-8 items-center justify-center rounded-lg ${
-            member.isGuest
-              ? 'bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400'
-              : member.role === 'SUPPORT'
-                ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400'
-                : 'bg-white/60 text-zinc-600 dark:bg-zinc-900/40 dark:text-zinc-300'
-          }`}
-        >
-          {member.role === 'SUPPORT' ? <Shield size={16} /> : <Swords size={16} />}
-        </div>
+    <div className={`group ${SLOT_ROW_CLASS} transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-800/40`}>
+      <span className={`shrink-0 ${roleColor}`} title={member.role === 'SUPPORT' ? '서포터' : '딜러'}>
+        {member.role === 'SUPPORT' ? <Shield size={15} /> : <Swords size={15} />}
+      </span>
 
-        <div>
-          <div className="text-sm font-bold dark:text-zinc-100">
+      <div className="min-w-0 flex-1">
+        <div className="flex items-baseline gap-1.5">
+          <span className="truncate text-sm font-semibold leading-snug text-zinc-900 dark:text-zinc-100">
+            {charName}
+          </span>
+          <span className="shrink-0 text-[11px] leading-snug text-zinc-400 dark:text-zinc-500">
             {member.jobCode}
-          </div>
-          <div className="text-[11px] font-medium text-zinc-600 dark:text-zinc-300">
-            {member.discordName} · {member.lostArkName}
-          </div>
+          </span>
         </div>
-      </div>
-
-      <div className="flex w-full items-center justify-between gap-3 sm:w-auto">
-        <div className="text-right">
-          <div className="text-xs font-bold dark:text-zinc-200">
-            Lv.{member.itemLevel}
-          </div>
-          <div className="text-[10px] text-zinc-500 dark:text-zinc-400">
-            CP {member.combatPower.toLocaleString()}
-          </div>
-        </div>
-
-        {canExclude && (
-          <button
-            onClick={() => onExclude(member, isCompleted)}
-            className={`inline-flex items-center gap-1 rounded bg-white px-2 py-1 text-xs font-bold shadow-sm ring-1 transition-colors ${
-              isCompleted 
-                ? 'text-rose-600 ring-rose-200 hover:bg-rose-50 dark:bg-zinc-800 dark:text-rose-400 dark:ring-rose-900/50 dark:hover:bg-rose-900/30' 
-                : 'text-zinc-600 ring-zinc-200 hover:bg-emerald-50 hover:text-emerald-700 hover:ring-emerald-200 dark:bg-zinc-800 dark:text-zinc-400 dark:ring-zinc-700 dark:hover:bg-emerald-900/30 dark:hover:text-emerald-300'
-            }`}
-            title={isCompleted ? "완료 취소" : "완료(제외) 처리"}
+        <div className="mt-1 flex">
+          <span
+            className={`max-w-full truncate rounded px-1.5 py-0.5 text-[10px] font-bold leading-tight ${userBadgeClass}`}
           >
-            {isCompleted ? <RotateCcw size={12} /> : <Check size={12} />}
-            {isCompleted ? '취소' : '완료'}
-          </button>
-        )}
+            {member.discordName}
+          </span>
+        </div>
       </div>
+
+      <div className="shrink-0 text-right">
+        <div className="flex items-baseline justify-end gap-1 leading-snug">
+          <span className="text-[10px] text-zinc-400 dark:text-zinc-600">전투력</span>
+          <span className="text-sm font-bold tabular-nums text-zinc-800 dark:text-zinc-100">
+            {member.combatPower.toLocaleString()}
+          </span>
+        </div>
+        <div className="mt-1 flex items-baseline justify-end gap-1 leading-snug">
+          <span className="text-[10px] text-zinc-400 dark:text-zinc-600">레벨</span>
+          <span className="text-[11px] font-semibold tabular-nums text-zinc-600 dark:text-zinc-300">
+            {member.itemLevel}
+          </span>
+        </div>
+      </div>
+
+      {canExclude && (
+        <button
+          onClick={() => onExclude(member, isCompleted)}
+          className={`inline-flex shrink-0 items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-bold transition-colors ${
+            isCompleted
+              ? 'border-rose-200 text-rose-600 hover:bg-rose-50 dark:border-rose-900/60 dark:text-rose-400 dark:hover:bg-rose-900/30'
+              : 'border-zinc-200 text-zinc-500 hover:border-emerald-400 hover:bg-emerald-50 hover:text-emerald-700 dark:border-zinc-700 dark:text-zinc-400 dark:hover:border-emerald-600 dark:hover:bg-emerald-900/30 dark:hover:text-emerald-300'
+          }`}
+          title={isCompleted ? '완료 취소' : '완료(제외) 처리'}
+        >
+          {isCompleted ? <RotateCcw size={12} /> : <Check size={12} />}
+          {isCompleted ? '취소' : '완료'}
+        </button>
+      )}
     </div>
   );
 }

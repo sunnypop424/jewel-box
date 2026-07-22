@@ -149,6 +149,7 @@ function computeRunsCost(runsMembers: Character[][], dim: BalanceDimension): num
   return std(dpsAvgs) + std(supAvgs);
 }
 
+
 function getMaxSameJobDpsInRun(raidId: RaidId): number {
   return isFourPlayerRaid(raidId) ? 1 : 2;
 }
@@ -197,6 +198,45 @@ function promoteValkyToSupportIfNeeded(raidId: RaidId, characters: Character[], 
   const promote = candidates.slice(0, need);
   const promoteIds = new Set(promote.map((c) => c.id));
 
+  return characters.map((c) => (promoteIds.has(c.id) ? { ...c, role: 'SUPPORT' } : c));
+}
+
+// 4인 레이드: 발키리 플렉스로 전체 공대 수가 줄어들 때만 자동 전환 (수동 토글과 무관하게 동작)
+function autoPromoteValkyForFourMan(raidId: RaidId, characters: Character[]): Character[] {
+  if (!isFourPlayerRaid(raidId)) return characters;
+
+  const candidates = characters
+    .filter((c) => c.jobCode === '발키리' && c.role === 'DPS' && c.valkyCanSupport === true)
+    .slice().sort((a, b) => a.combatPower - b.combatPower || a.id.localeCompare(b.id));
+
+  if (candidates.length === 0) return characters;
+
+  const perPlayerCount: Record<string, number> = {};
+  let supportCount = 0;
+  characters.forEach((ch) => {
+    perPlayerCount[ch.discordName] = (perPlayerCount[ch.discordName] || 0) + 1;
+    if (ch.role === 'SUPPORT') supportCount++;
+  });
+  const maxCharsForOnePlayer = Object.values(perPlayerCount).reduce((max, v) => (v > max ? v : max), 0);
+  const dpsCount = characters.length - supportCount;
+
+  // 딜러는 공대당 최대 3명, 서폿은 공대당 최대 1명이므로 공대 수 >= 서폿 수.
+  const runsNeeded = (sup: number, dps: number) =>
+    Math.max(Math.ceil(dps / 3), sup, maxCharsForOnePlayer, 1);
+
+  let bestPromote = 0;
+  let bestRuns = runsNeeded(supportCount, dpsCount);
+  for (let t = 1; t <= candidates.length; t++) {
+    const runs = runsNeeded(supportCount + t, dpsCount - t);
+    if (runs < bestRuns) {
+      bestRuns = runs;
+      bestPromote = t;
+    }
+  }
+
+  if (bestPromote === 0) return characters;
+
+  const promoteIds = new Set(candidates.slice(0, bestPromote).map((c) => c.id));
   return characters.map((c) => (promoteIds.has(c.id) ? { ...c, role: 'SUPPORT' } : c));
 }
 
@@ -565,6 +605,7 @@ function optimizeCombatPowerBySwapOnly(
   random: () => number,
   concurrentRuns: number,
   lockIds: Set<string> = new Set(),
+  swapAllowed?: (a: Character, b: Character, runs: Character[][], aRunIdx: number, bRunIdx: number) => boolean,
 ): Character[][] {
   const runs = runsMembers.map((r) => [...r]);
   const runCount = runs.length;
@@ -591,6 +632,7 @@ function optimizeCombatPowerBySwapOnly(
       if (!samePersonSwap) continue;
     }
     if (char1.role !== char2.role) continue;
+    if (swapAllowed && !swapAllowed(char1, char2, runs, r1, r2)) continue;
 
     const canSwap = (targetRunIdx: number, cFrom: Character, cTo: Character) => {
       const toRun = runs[targetRunIdx];
@@ -636,6 +678,143 @@ function optimizeCombatPowerBySwapOnly(
     }
   }
   return runs;
+}
+
+// 4인 레이드: 전투력 하위권 캐릭을 정원을 채운 공대로 끌어온다.
+// 미달 공대는 밖에서 인원을 구해야 하는 자리라 약한 캐릭이 자리를 잡기 어렵고,
+// 꽉 찬 공대에서는 공대원들과 함께 갈 수 있다(품앗이).
+// 교환 상대는 전투력이 가장 가까운 캐릭으로 골라 평균 편차가 덜 흔들리게 한다.
+function pullWeakestIntoFullRuns(
+  raidId: RaidId,
+  runsMembers: Character[][],
+  maxPerRun: number,
+  maxSupportsPerRun: number,
+  concurrentRuns: number,
+  lockIds: Set<string>,
+  weakIds: Set<string>,
+): Character[][] {
+  const runs = runsMembers.map((r) => [...r]);
+  if (runs.length === 0 || weakIds.size === 0) return runs;
+
+  const waveOk = (idx: number) => {
+    if (concurrentRuns <= 1) return true;
+    const waveStart = Math.floor(idx / concurrentRuns) * concurrentRuns;
+    const waveEnd = Math.min(waveStart + concurrentRuns, runs.length);
+    const names = new Set(runs[idx].map((m) => m.discordName));
+    for (let i = waveStart; i < waveEnd; i++) {
+      if (i === idx) continue;
+      if (runs[i].some((m) => names.has(m.discordName))) return false;
+    }
+    return true;
+  };
+
+  for (let guard = 0; guard < weakIds.size; guard++) {
+    let applied = false;
+
+    for (let p = 0; p < runs.length && !applied; p++) {
+      if (runs[p].length === 0 || runs[p].length >= maxPerRun) continue;
+
+      for (let pi = 0; pi < runs[p].length && !applied; pi++) {
+        const weak = runs[p][pi];
+        if (!weakIds.has(weak.id) || lockIds.has(weak.id)) continue;
+
+        let best: [number, number] | null = null;
+        let bestDelta = Infinity;
+
+        for (let f = 0; f < runs.length; f++) {
+          if (f === p || runs[f].length < maxPerRun) continue;
+
+          for (let fi = 0; fi < runs[f].length; fi++) {
+            const other = runs[f][fi];
+            if (weakIds.has(other.id) || lockIds.has(other.id)) continue;
+            if (other.role !== weak.role) continue;
+
+            const delta = Math.abs(other.combatPower - weak.combatPower);
+            if (delta >= bestDelta) continue;
+
+            runs[p][pi] = other;
+            runs[f][fi] = weak;
+            const ok =
+              isRunValid(raidId, runs[p], maxPerRun, maxSupportsPerRun) &&
+              isRunValid(raidId, runs[f], maxPerRun, maxSupportsPerRun) &&
+              waveOk(p) &&
+              waveOk(f);
+            runs[p][pi] = weak;
+            runs[f][fi] = other;
+
+            if (!ok) continue;
+            bestDelta = delta;
+            best = [f, fi];
+          }
+        }
+
+        if (best) {
+          const [f, fi] = best;
+          runs[p][pi] = runs[f][fi];
+          runs[f][fi] = weak;
+          applied = true;
+        }
+      }
+    }
+
+    if (!applied) break;
+  }
+
+  return runs;
+}
+
+// 전투력 형평성 마무리 패스 (공대 인원수 확정 후 실행).
+// 정원 미달 공대까지 포함해 모든 공대의 평균 전투력을 서로 비슷하게 맞춘다.
+// 혼자 가거나 인원이 모자란 공대에도 평균에 가까운 캐릭이 배치되어,
+// 너무 약해서 사람을 못 구하거나 너무 강한 캐릭이 혼자 낭비되는 일을 막는다.
+// 스왑만 사용하므로 공대 인원수는 그대로 유지된다.
+function applyCombatPowerFairness(
+  raidId: RaidId,
+  runsMembers: Character[][],
+  maxPerRun: number,
+  maxSupportsPerRun: number,
+  concurrentRuns: number,
+  lockIds: Set<string>,
+  random: () => number,
+): Character[][] {
+  const balance = (
+    rs: Character[][],
+    swapAllowed?: (a: Character, b: Character, runs: Character[][], aRunIdx: number, bRunIdx: number) => boolean,
+  ) =>
+    optimizeCombatPowerBySwapOnly(
+      raidId,
+      rs,
+      maxSupportsPerRun,
+      maxPerRun,
+      'overall',
+      random,
+      concurrentRuns,
+      lockIds,
+      swapAllowed,
+    );
+
+  if (!isFourPlayerRaid(raidId)) return balance(runsMembers);
+
+  const all = runsMembers.flat();
+  const weakCount = Math.max(1, Math.ceil(all.length * RAID_LOGIC_POLICY.FOUR_MAN_WEAK_PERCENT));
+  const weakIds = new Set(
+    all
+      .slice()
+      .sort((a, b) => a.combatPower - b.combatPower || a.id.localeCompare(b.id))
+      .slice(0, weakCount)
+      .map((c) => c.id),
+  );
+
+  // 하위권을 꽉 찬 공대로 끌어온 뒤, 다시 미달 공대로 나가지 못하게 막은 채 균등화로 마무리한다.
+  const keepWeakInFullRuns = (a: Character, b: Character, runs: Character[][], aRunIdx: number, bRunIdx: number) => {
+    if (weakIds.has(a.id) && runs[bRunIdx].length < maxPerRun) return false;
+    if (weakIds.has(b.id) && runs[aRunIdx].length < maxPerRun) return false;
+    return true;
+  };
+
+  let result = balance(runsMembers);
+  result = pullWeakestIntoFullRuns(raidId, result, maxPerRun, maxSupportsPerRun, concurrentRuns, lockIds, weakIds);
+  return balance(result, keepWeakInFullRuns);
 }
 
 // ✅ lockIds 추가 적용
@@ -1199,6 +1378,8 @@ function distributeCharactersIntoRunsLegacy(
 
   optimized = applyPostProcessing(raidId, optimized, maxPerRun, maxSupportsPerRun, fillTwoSupports, concurrentRuns, lockIds);
 
+  optimized = applyCombatPowerFairness(raidId, optimized, maxPerRun, maxSupportsPerRun, concurrentRuns, lockIds, random);
+
   const arrangedRuns: Character[][] = [];
   const remainingRuns = [...optimized];
 
@@ -1257,6 +1438,7 @@ function distributeCharactersIntoRunsLegacy(
 }
 
 const RAID_LOGIC_POLICY = {
+  FOUR_MAN_WEAK_PERCENT: 0.25,
   EIGHT_MAN_WEAK_PERCENT: 0.3,
   EIGHT_MAN_WEAK_CAP_PER_RUN: 2,
   EIGHT_MAN_MOVE_ITER_MULTIPLIER: 300,
@@ -1717,6 +1899,8 @@ function distributeCharactersIntoRunsEightMan(
 
   optimized = applyPostProcessing(raidId, optimized, maxPerRun, maxSupportsPerRun, fillTwoSupports, concurrentRuns, lockIds, weakIds);
 
+  optimized = applyCombatPowerFairness(raidId, optimized, maxPerRun, maxSupportsPerRun, concurrentRuns, lockIds, random);
+
   const runs: RaidRun[] = [];
   optimized.forEach((members, idx) => {
     if (members.length === 0) return;
@@ -2120,7 +2304,13 @@ export function buildRaidSchedule(
   const filtered = activeCharacters.filter((c) => c.itemLevel >= 1700);
   const buckets = groupCharactersByRaid(filtered, exclusions, clears, rosterRaidState);
   const SEED = 123456789;
-  const seededRng = createSeededRandom(SEED);
+  // 레이드마다 독립된 난수 스트림을 쓴다. 하나를 공유하면 특정 레이드의 배치 로직이
+  // 바뀔 때 소비하는 난수 개수가 달라져 무관한 레이드의 결과까지 흔들린다.
+  const rngForRaid = (raidId: RaidId) => {
+    let hash = 0;
+    for (let i = 0; i < raidId.length; i++) hash = Math.imul(hash, 31) + raidId.charCodeAt(i);
+    return createSeededRandom(SEED + hash);
+  };
 
   const schedule = Object.fromEntries(
     ALL_RAID_IDS.map((id) => [id, [] as RaidRun[]])
@@ -2132,7 +2322,9 @@ export function buildRaidSchedule(
     if (family === 'ACT1' || family === 'ACT2' || family === 'ACT3') return;
     const fillTwoSupports = Boolean(raidSettings?.[raidId]);
 
-    const pool = fillTwoSupports ? promoteValkyToSupportIfNeeded(raidId, characters, fillTwoSupports) : characters;
+    const pool = fillTwoSupports
+      ? promoteValkyToSupportIfNeeded(raidId, characters, fillTwoSupports)
+      : autoPromoteValkyForFourMan(raidId, characters);
     const raidGuests = guests[raidId] || [];
     const poolWithGuests = [...pool, ...raidGuests];
 
@@ -2141,7 +2333,7 @@ export function buildRaidSchedule(
         raidId,
         poolWithGuests,
         balanceMode,
-        seededRng,
+        rngForRaid(raidId),
         fillTwoSupports,
       );
     }
@@ -2192,15 +2384,13 @@ export function buildRaidCandidatesMap(
     const unique = Array.from(byId.values()).sort((a, b) => b.combatPower - a.combatPower || a.id.localeCompare(b.id));
     const fillTwoSupports = Boolean(raidSettings?.[raidId]);
 
-    if (fillTwoSupports) {
-      const excludedIds = new Set(exclusions?.[raidId] ?? []);
-      const remaining = unique.filter((c) => !excludedIds.has(c.id));
-      const promotedRemaining = promoteValkyToSupportIfNeeded(raidId, remaining, fillTwoSupports);
-      const promotedById = new Map(promotedRemaining.map((c) => [c.id, c]));
-      map[raidId] = unique.map((c) => promotedById.get(c.id) ?? c);
-    } else {
-      map[raidId] = unique;
-    }
+    const excludedIds = new Set(exclusions?.[raidId] ?? []);
+    const remaining = unique.filter((c) => !excludedIds.has(c.id));
+    const promotedRemaining = fillTwoSupports
+      ? promoteValkyToSupportIfNeeded(raidId, remaining, fillTwoSupports)
+      : autoPromoteValkyForFourMan(raidId, remaining);
+    const promotedById = new Map(promotedRemaining.map((c) => [c.id, c]));
+    map[raidId] = unique.map((c) => promotedById.get(c.id) ?? c);
   });
 
   return map;
