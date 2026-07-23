@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import type { Character, RaidId, RaidExclusionMap, RaidSettingsMap, RaidSwap, WeeklyClears, ClearEntry, RosterRaidState } from './types';
+import type { Character, RaidId, RaidExclusionMap, RaidSettingsMap, RaidSwap, WeeklyClears, ClearEntry, RosterRaidState, RouletteHistory } from './types';
 import type { RaidFamily, DifficultyTier } from './data/raids';
 import { GuestAddModal } from './components/GuestAddModal';
 import { RAID_META } from './constants';
@@ -16,6 +16,7 @@ import {
     fetchClears, writeClearEntry, deleteClearEntry, resetClears, deriveExclusionsFromClears,
     fetchRosterRaidState, writeRosterRaidSelection, deleteRosterRaidSelection,
     fetchAccumulatedGold, updateAccumulatedGoldMulti, resetAccumulatedGold, type AccumulatedGoldMap,
+    fetchRouletteHistory, recordRouletteRound, resetRouletteHistory,
 } from './api/firebaseApi';
 import { syncCharactersWithLostArkAPI, fetchProfile } from './api/lostArkApi';
 import { Modal } from './components/Modal';
@@ -130,6 +131,8 @@ const App: React.FC = () => {
 
     const [accumulatedGold, setAccumulatedGold] = useState<AccumulatedGoldMap>({});
 
+    const [rouletteHistory, setRouletteHistory] = useState<RouletteHistory>({});
+
     const [theme, setTheme] = useState<Theme>(() => {
         if (typeof window === 'undefined') return 'light';
         const stored = window.localStorage.getItem(THEME_KEY) as Theme | null;
@@ -181,6 +184,10 @@ const App: React.FC = () => {
         try { const data = await fetchAccumulatedGold(); setAccumulatedGold(data); } catch (e) { }
     };
 
+    const refreshRouletteHistory = async () => {
+        try { const data = await fetchRouletteHistory(); setRouletteHistory(data); } catch (e) { }
+    };
+
     useEffect(() => {
         refreshAllCharacters().catch(console.error);
         refreshClears().catch(console.error);
@@ -188,6 +195,7 @@ const App: React.FC = () => {
         refreshRaidSettings().catch(console.error);
         refreshSwaps().catch(console.error);
         refreshAccumulatedGold().catch(console.error);
+        refreshRouletteHistory().catch(console.error);
     }, []);
 
     const effectiveCharacters = useMemo(() => {
@@ -371,6 +379,30 @@ const App: React.FC = () => {
             toast.error('초기화에 실패했습니다.');
         } finally {
             setIsUpdating(false);
+        }
+    };
+
+    // 룰렛 한 판 결과 기록(경매 룰렛 전용) → 이력 갱신.
+    const handleRouletteRoundRecord = async (participants: string[], winner: string) => {
+        try {
+            const next = await recordRouletteRound(participants, winner);
+            setRouletteHistory(next);
+        } catch (e) {
+            console.error(e);
+        }
+    };
+
+    // 룰렛 당첨 이력 초기화(딘또썬 전용, 내 원정대 관리 모달 내부).
+    const handleResetRouletteHistory = async () => {
+        const ok = await confirm('룰렛 당첨 이력을 모두 초기화하시겠습니까?\n\n지금까지의 당첨/참여 기록이 삭제되고 확률 보정이 리셋됩니다.', '룰렛 이력 초기화');
+        if (!ok) return;
+        try {
+            await resetRouletteHistory();
+            await refreshRouletteHistory();
+            toast.success('룰렛 당첨 이력이 초기화되었습니다.');
+        } catch (e) {
+            console.error(e);
+            toast.error('초기화에 실패했습니다.');
         }
     };
 
@@ -971,6 +1003,25 @@ const App: React.FC = () => {
                 </div>
 
                 <Modal open={isModalOpen} title="내 원정대 관리" onClose={() => !saving && setIsModalOpen(false)} maxWidth="max-w-6xl">
+                    {localSquad.discordName === '딘또썬' && (
+                        <div className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50/60 px-4 py-3 dark:border-rose-900/50 dark:bg-rose-950/20">
+                            <div className="flex flex-col">
+                                <span className="text-sm font-bold text-rose-700 dark:text-rose-300">룰렛 당첨 이력 관리</span>
+                                <span className="text-xs text-zinc-500 dark:text-zinc-400">
+                                    {Object.keys(rouletteHistory).length > 0
+                                        ? `${Object.keys(rouletteHistory).length}명의 당첨/참여 이력이 기록되어 있습니다.`
+                                        : '기록된 당첨 이력이 없습니다.'}
+                                </span>
+                            </div>
+                            <button
+                                onClick={handleResetRouletteHistory}
+                                disabled={Object.keys(rouletteHistory).length === 0}
+                                className="shrink-0 rounded-lg bg-rose-600 px-3 py-2 text-xs font-bold text-white transition-colors hover:bg-rose-500 disabled:cursor-not-allowed disabled:opacity-40"
+                            >
+                                이력 초기화
+                            </button>
+                        </div>
+                    )}
                     <CharacterFormList
                         discordName={localSquad.discordName}
                         characters={localSquad.characters}
@@ -986,7 +1037,7 @@ const App: React.FC = () => {
                 </Modal>
 
                 <Modal open={isRouletteModalOpen} title="경매 아이템 룰렛" onClose={() => setIsRouletteModalOpen(false)} maxWidth="max-w-4xl">
-                    <RouletteGame allUserNames={allUserNames} />
+                    <RouletteGame allUserNames={allUserNames} history={rouletteHistory} onRoundRecord={handleRouletteRoundRecord} />
                 </Modal>
 
                 <GuestAddModal

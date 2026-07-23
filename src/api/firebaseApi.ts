@@ -1,6 +1,6 @@
 import { collection, doc, getDocs, getDoc, setDoc, updateDoc, addDoc, deleteDoc, query, where, orderBy, arrayUnion, deleteField, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
-import type { Character, RaidSettingsMap, RaidSwap, RaidId, RaidExclusionMap, ClearEntry, WeeklyClears, RosterRaidState, RosterRaidSelection, Mission, NewMission } from '../types';
+import type { Character, RaidSettingsMap, RaidSwap, RaidId, RaidExclusionMap, ClearEntry, WeeklyClears, RosterRaidState, RosterRaidSelection, Mission, NewMission, RouletteHistory } from '../types';
 import type { RaidFamily } from '../data/raids';
 import { getRaidFamily, ALL_RAID_IDS } from '../data/raids';
 
@@ -10,6 +10,7 @@ const SWAPS_DOC_REF = doc(db, 'raidData', 'swaps');
 const CLEARS_DOC_REF = doc(db, 'raidData', 'clears');
 const ROSTER_RAID_STATE_DOC_REF = doc(db, 'raidData', 'rosterRaidState');
 const GOLD_DOC_REF = doc(db, 'raidData', 'accumulatedGold');
+const ROULETTE_HISTORY_DOC_REF = doc(db, 'raidData', 'rouletteHistory');
 // 공대원 개인 일정 컬렉션 (참여 불가일)
 // 각 문서 = 하나의 일정. 구조: { discordName, discordId?, date(YYYY-MM-DD), reason, createdAt, updatedAt, source }
 const SCHEDULES_COLLECTION = collection(db, 'personalSchedules');
@@ -216,6 +217,38 @@ export async function resetAccumulatedGold(discordName: string, offsetGeneral: n
   const newData = { ...current, [discordName]: { general: -offsetGeneral, bound: -offsetBound } };
   await setDoc(GOLD_DOC_REF, newData);
   return newData;
+}
+
+// --- 룰렛 당첨 이력 API (raidData/rouletteHistory) ---
+// 이름 특수문자(마침표 등)로 인한 field-path 문제를 피하려고 map 전체를 read-modify-write.
+export async function fetchRouletteHistory(): Promise<RouletteHistory> {
+  const snap = await getDoc(ROULETTE_HISTORY_DOC_REF);
+  return snap.exists() ? ((snap.data().stats ?? {}) as RouletteHistory) : {};
+}
+
+// 한 판 결과 반영: 참여자 전원 참여/공정지분 누적, 당첨자만 당첨 +1.
+export async function recordRouletteRound(participants: string[], winner: string): Promise<RouletteHistory> {
+  const snap = await getDoc(ROULETTE_HISTORY_DOC_REF);
+  const stats: RouletteHistory = snap.exists() ? ((snap.data().stats ?? {}) as RouletteHistory) : {};
+  const n = participants.length;
+  if (n === 0) return stats;
+
+  const share = 1 / n;
+  const next: RouletteHistory = { ...stats };
+  for (const name of participants) {
+    const s = next[name] ?? { wins: 0, expected: 0, plays: 0 };
+    next[name] = {
+      wins: s.wins + (name === winner ? 1 : 0),
+      expected: s.expected + share,
+      plays: s.plays + 1,
+    };
+  }
+  await setDoc(ROULETTE_HISTORY_DOC_REF, { stats: next });
+  return next;
+}
+
+export async function resetRouletteHistory(): Promise<void> {
+  await setDoc(ROULETTE_HISTORY_DOC_REF, { stats: {} });
 }
 
 // --- 공대원 개인 일정 (참여 불가일) API ---

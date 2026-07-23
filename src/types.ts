@@ -9,6 +9,14 @@ import type { RaidId } from './data/raids';
 // 싱글 모드 저장용 타입 추가
 export type RaidSingleMap = Partial<Record<RaidId, string[]>>; // RaidId별 싱글로 클리어한 캐릭터 ID 배열
 
+// 룰렛 당첨 이력 (raidData/rouletteHistory). 이름 문자열이 곧 식별자(등록 안 된 게스트 포함).
+export interface RouletteStat {
+  wins: number;      // 당첨 횟수
+  expected: number;  // 누적 공정지분(각 판 1/N 합) = 기대 당첨 횟수
+  plays: number;     // 참여 횟수
+}
+export type RouletteHistory = Record<string, RouletteStat>;
+
 export type Character = {
   id: string;
   discordName: string;

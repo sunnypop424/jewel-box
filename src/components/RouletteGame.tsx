@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Play, Trophy, Users, UserCircle, Search } from 'lucide-react';
+import { Play, Trophy, Users, UserCircle, Search, History } from 'lucide-react';
 import { sendDiscordNotification } from '../utils/discord';
+import type { RouletteHistory } from '../types';
+import { computeRouletteWeights } from '../utils/rouletteWeight';
 
 interface Props {
   allUserNames?: string[];
@@ -8,6 +10,10 @@ interface Props {
   initialNames?: string[];
   // winner 결정 시 호출. 제공된 경우 자체 디스코드 알림은 생략(미션 보드의 워커 알림과 중복 방지).
   onWinnerDetermined?: (winner: string) => void;
+  // 제공 시: 참여대비 당첨률 기반 가중 추첨 + 이력/확률 UI 활성화(경매 룰렛 전용). 미제공 시 균등 추첨.
+  history?: RouletteHistory;
+  // 한 판 결과를 이력에 기록. history 와 함께 제공.
+  onRoundRecord?: (participants: string[], winner: string) => void;
 }
 
 const COLORS = [
@@ -24,7 +30,7 @@ const COLORS = [
 const TAU = Math.PI * 2;
 const POINTER_ANGLE = -Math.PI / 2; // 12시 방향
 
-export const RouletteGame: React.FC<Props> = ({ allUserNames = [], initialNames, onWinnerDetermined }) => {
+export const RouletteGame: React.FC<Props> = ({ allUserNames = [], initialNames, onWinnerDetermined, history, onRoundRecord }) => {
   const seededInitial = initialNames && initialNames.length >= 2 ? initialNames.slice(0, 8) : null;
   const [names, setNames] = useState<string[]>(seededInitial ?? ['', '']);
   const [playerCount, setPlayerCount] = useState(seededInitial ? seededInitial.length : 2);
@@ -34,6 +40,7 @@ export const RouletteGame: React.FC<Props> = ({ allUserNames = [], initialNames,
   const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const discordSentRef = useRef(false);
+  const recordedRef = useRef(false);
 
   useEffect(() => {
     setNames((prev) => {
@@ -55,7 +62,15 @@ export const RouletteGame: React.FC<Props> = ({ allUserNames = [], initialNames,
   );
 
   useEffect(() => {
-    if (winner && !discordSentRef.current) {
+    if (!winner) return;
+
+    // 이력 기록: 매 판 1회. (discord 알림과 독립 — 재추첨해도 판마다 누적)
+    if (onRoundRecord && !recordedRef.current) {
+      recordedRef.current = true;
+      onRoundRecord(activeNames, winner);
+    }
+
+    if (!discordSentRef.current) {
       discordSentRef.current = true;
       if (onWinnerDetermined) {
         // 미션 보드 모드: 자체 디스코드 알림 대신 콜백으로 위임 (워커가 미션 정산 알림을 보냄).
@@ -69,9 +84,33 @@ export const RouletteGame: React.FC<Props> = ({ allUserNames = [], initialNames,
     }
   }, [winner]);
 
+  // 이번 판 참여자별 세그먼트. 칸 너비(angle) = 당첨 확률. 경매(history)면 가중, 아니면 균등.
+  const segments = useMemo(() => {
+    const n = activeNames.length;
+    if (n === 0) return [] as { name: string; chance: number; debt: number; angle: number }[];
+    const infos = history
+      ? computeRouletteWeights(activeNames, history)
+      : activeNames.map((name) => ({ name, chance: 1 / n, debt: 0, weight: 1 }));
+    return infos.map((info) => ({ name: info.name, chance: info.chance, debt: info.debt, angle: TAU * info.chance }));
+  }, [history, activeNames]);
+
+  // 이력에 저장된 사람(등록 안 된 게스트 포함)도 자동완성 후보에 노출.
+  const suggestionNames = useMemo(
+    () => Array.from(new Set([...allUserNames, ...(history ? Object.keys(history) : [])])),
+    [allUserNames, history],
+  );
+
+  // 전체 당첨 이력(참여 많은 순).
+  const historyRows = useMemo(() => {
+    if (!history) return [];
+    return Object.entries(history)
+      .map(([name, s]) => ({ name, wins: s.wins, plays: s.plays }))
+      .sort((a, b) => b.plays - a.plays || b.wins - a.wins);
+  }, [history]);
+
   useEffect(() => {
     drawRoulette();
-  }, [activeNames, rotation]);
+  }, [segments, rotation]);
 
   const handleNameChange = (index: number, value: string) => {
     setNames((prev) => {
@@ -84,7 +123,7 @@ export const RouletteGame: React.FC<Props> = ({ allUserNames = [], initialNames,
   const getFilteredNames = (query: string) => {
     const keyword = query.trim().toLowerCase();
 
-    return allUserNames.filter((u) => {
+    return suggestionNames.filter((u) => {
       if (names.includes(u) && u !== query) return false;
       return keyword ? u.toLowerCase().includes(keyword) : true;
     });
@@ -111,8 +150,6 @@ export const RouletteGame: React.FC<Props> = ({ allUserNames = [], initialNames,
     const outerRadius = 170;
     const innerRadius = 30;
     const labelRadius = 118;
-    const segmentCount = Math.max(activeNames.length, 1);
-    const angleStep = TAU / segmentCount;
 
     ctx.clearRect(0, 0, size, size);
 
@@ -136,9 +173,12 @@ export const RouletteGame: React.FC<Props> = ({ allUserNames = [], initialNames,
     // 세그먼트 시작 위치를 12시 기준으로 맞춤
     const baseOffset = POINTER_ANGLE - Math.PI / 2;
 
-    activeNames.forEach((name, i) => {
-      const startAngle = baseOffset + rotation + i * angleStep;
-      const endAngle = startAngle + angleStep;
+    // 칸 너비(angle) = 당첨 확률. 누적각으로 그린다.
+    let cum = 0;
+    segments.forEach((seg, i) => {
+      const startAngle = baseOffset + rotation + cum;
+      const endAngle = startAngle + seg.angle;
+      cum += seg.angle;
 
       ctx.beginPath();
       ctx.moveTo(center, center);
@@ -151,7 +191,10 @@ export const RouletteGame: React.FC<Props> = ({ allUserNames = [], initialNames,
       ctx.lineWidth = 3;
       ctx.stroke();
 
-      const midAngle = startAngle + angleStep / 2;
+      // 너무 얇은 칸은 라벨 생략(겹침 방지).
+      if (seg.angle < 0.28) return;
+
+      const midAngle = startAngle + seg.angle / 2;
       const x = center + Math.cos(midAngle) * labelRadius;
       const y = center + Math.sin(midAngle) * labelRadius;
 
@@ -166,10 +209,21 @@ export const RouletteGame: React.FC<Props> = ({ allUserNames = [], initialNames,
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillStyle = '#ffffff';
-      ctx.font = '700 16px Pretendard, sans-serif';
 
-      const safeName = name.length > 10 ? `${name.slice(0, 10)}…` : name;
-      ctx.fillText(safeName, 0, 0);
+      if (history) {
+        // 경매 모드: 이름 + 확률(%)을 칸 안에 함께 표기.
+        const pct = Math.round(seg.chance * 1000) / 10;
+        const safeName = seg.name.length > 8 ? `${seg.name.slice(0, 8)}…` : seg.name;
+        ctx.font = '700 15px Pretendard, sans-serif';
+        ctx.fillText(safeName, 0, -8);
+        ctx.font = '800 13px Pretendard, sans-serif';
+        ctx.fillStyle = 'rgba(255,255,255,0.9)';
+        ctx.fillText(`${pct}%`, 0, 10);
+      } else {
+        ctx.font = '700 16px Pretendard, sans-serif';
+        const safeName = seg.name.length > 10 ? `${seg.name.slice(0, 10)}…` : seg.name;
+        ctx.fillText(safeName, 0, 0);
+      }
       ctx.restore();
     });
 
@@ -213,10 +267,16 @@ export const RouletteGame: React.FC<Props> = ({ allUserNames = [], initialNames,
     ctx.restore();
   };
 
-  const getWinnerIndex = (finalRotation: number, count: number) => {
-    const angleStep = TAU / count;
-    const normalized = ((POINTER_ANGLE - (finalRotation + (POINTER_ANGLE - Math.PI / 2))) % TAU) + TAU;
-    return Math.floor(normalized / angleStep) % count;
+  // 포인터가 가리키는 세그먼트를 누적각으로 찾는다(가변 너비 대응).
+  const getWinnerIndex = (finalRotation: number) => {
+    const baseOffset = POINTER_ANGLE - Math.PI / 2;
+    const pointerRel = (((POINTER_ANGLE - baseOffset - finalRotation) % TAU) + TAU) % TAU;
+    let cum = 0;
+    for (let i = 0; i < segments.length; i++) {
+      if (pointerRel >= cum && pointerRel < cum + segments[i].angle) return i;
+      cum += segments[i].angle;
+    }
+    return segments.length - 1;
   };
 
   const spin = () => {
@@ -224,11 +284,13 @@ export const RouletteGame: React.FC<Props> = ({ allUserNames = [], initialNames,
 
     setIsSpinning(true);
     setWinner(null);
+    recordedRef.current = false;
 
+    // 칸 너비가 곧 확률이므로 균등 랜덤으로 돌려도 넓은 칸이 더 자주 걸린다.
     const startRotation = rotation;
     const extraSpins = 6 + Math.random() * 3;
-    const randomOffset = Math.random() * TAU;
-    const targetRotation = startRotation + extraSpins * TAU + randomOffset;
+    const targetRotation = startRotation + extraSpins * TAU + Math.random() * TAU;
+
     const duration = 4200;
     const startTime = performance.now();
 
@@ -245,8 +307,8 @@ export const RouletteGame: React.FC<Props> = ({ allUserNames = [], initialNames,
         return;
       }
 
-      const winnerIndex = getWinnerIndex(nextRotation, activeNames.length);
-      setWinner(activeNames[winnerIndex]);
+      const winnerIndex = getWinnerIndex(nextRotation);
+      setWinner(segments[winnerIndex].name);
       setIsSpinning(false);
     };
 
@@ -324,36 +386,61 @@ export const RouletteGame: React.FC<Props> = ({ allUserNames = [], initialNames,
         </div>
       </div>
 
-      <div className="flex flex-col items-center gap-5 rounded-3xl border border-zinc-200 bg-gradient-to-b from-white to-zinc-50 p-6 shadow-sm dark:border-zinc-800 dark:from-zinc-900 dark:to-zinc-950">
-        <div className="relative">
-          <canvas
-            ref={canvasRef}
-            width={420}
-            height={420}
-            className="max-w-full rounded-full"
-          />
+      <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
+        <div className="flex flex-1 flex-col items-center gap-5 rounded-3xl border border-zinc-200 bg-gradient-to-b from-white to-zinc-50 p-6 shadow-sm dark:border-zinc-800 dark:from-zinc-900 dark:to-zinc-950">
+          <div className="relative">
+            <canvas
+              ref={canvasRef}
+              width={420}
+              height={420}
+              className="max-w-full rounded-full"
+            />
+          </div>
+
+          {winner && (
+            <div className="rounded-2xl bg-indigo-50 px-5 py-3 text-center dark:bg-indigo-950/40">
+              <div className="mb-1 text-[11px] font-bold uppercase tracking-[0.24em] text-zinc-500">
+                Winner
+              </div>
+              <div className="flex items-center justify-center gap-2 text-2xl font-black text-indigo-600 dark:text-indigo-300">
+                <Trophy size={24} />
+                {winner}
+              </div>
+            </div>
+          )}
+
+          <button
+            onClick={spin}
+            disabled={isSpinning || activeNames.length < 2}
+            className="flex w-full max-w-xs items-center justify-center gap-2 rounded-2xl bg-indigo-600 py-3.5 text-base font-bold text-white shadow-lg shadow-indigo-500/20 transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Play size={18} fill="currentColor" />
+            {isSpinning ? '추첨하고 있습니다.' : '룰렛 추첨하기'}
+          </button>
         </div>
 
-        {winner && (
-          <div className="rounded-2xl bg-indigo-50 px-5 py-3 text-center dark:bg-indigo-950/40">
-            <div className="mb-1 text-[11px] font-bold uppercase tracking-[0.24em] text-zinc-500">
-              Winner
+        {history && historyRows.length > 0 && (
+          <div className="w-full shrink-0 lg:w-44">
+            <div className="mb-2 flex items-center gap-1.5 text-xs font-bold text-zinc-500 dark:text-zinc-400">
+              <History size={14} />
+              당첨 이력
             </div>
-            <div className="flex items-center justify-center gap-2 text-2xl font-black text-indigo-600 dark:text-indigo-300">
-              <Trophy size={24} />
-              {winner}
+            <div className="max-h-[420px] overflow-y-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
+              <div className="grid grid-cols-[1fr_auto_auto] text-xs">
+                <span className="sticky top-0 bg-zinc-50 px-2 py-1.5 font-bold text-zinc-400 dark:bg-zinc-900">이름</span>
+                <span className="sticky top-0 bg-zinc-50 px-2 py-1.5 text-right font-bold text-zinc-400 dark:bg-zinc-900">당첨</span>
+                <span className="sticky top-0 bg-zinc-50 px-2 py-1.5 text-right font-bold text-zinc-400 dark:bg-zinc-900">참여</span>
+                {historyRows.map((row) => (
+                  <React.Fragment key={row.name}>
+                    <span className="truncate border-t border-zinc-100 px-2 py-1.5 font-bold text-zinc-700 dark:border-zinc-800 dark:text-zinc-200">{row.name}</span>
+                    <span className="border-t border-zinc-100 px-2 py-1.5 text-right tabular-nums text-zinc-600 dark:border-zinc-800 dark:text-zinc-300">{row.wins}</span>
+                    <span className="border-t border-zinc-100 px-2 py-1.5 text-right tabular-nums text-zinc-600 dark:border-zinc-800 dark:text-zinc-300">{row.plays}</span>
+                  </React.Fragment>
+                ))}
+              </div>
             </div>
           </div>
         )}
-
-        <button
-          onClick={spin}
-          disabled={isSpinning || activeNames.length < 2}
-          className="flex w-full max-w-xs items-center justify-center gap-2 rounded-2xl bg-indigo-600 py-3.5 text-base font-bold text-white shadow-lg shadow-indigo-500/20 transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          <Play size={18} fill="currentColor" />
-          {isSpinning ? '추첨하고 있습니다.' : '룰렛 추첨하기'}
-        </button>
       </div>
     </div>
   );
