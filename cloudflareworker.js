@@ -2112,6 +2112,13 @@ export default {
         return new Response(JSON.stringify({ type: 4, data: { content: resultText } }), { headers: { 'Content-Type': 'application/json' } });
       }
 
+      if (commandName === '주사위') {
+        const roll = Math.floor(Math.random() * 100) + 1; // 1~100
+        const resultText = `🎲 **${discordUserName}**님의 주사위 결과: **${roll}** (1~100)`;
+        // 주사위는 공개(flags 없음)
+        return new Response(JSON.stringify({ type: 4, data: { content: resultText } }), { headers: { 'Content-Type': 'application/json' } });
+      }
+
       if (commandName === '완료') {
         const options = interaction.data.options;
         const mainCharName = options.find(o => o.name === '캐릭명').value;

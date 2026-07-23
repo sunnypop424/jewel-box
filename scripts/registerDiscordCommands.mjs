@@ -22,6 +22,10 @@ if (!APP_ID || !BOT_TOKEN) {
 // 1 = SUB_COMMAND, 2 = SUB_COMMAND_GROUP, 3 = STRING, 4 = INTEGER, 5 = BOOLEAN, 6 = USER ...
 const commands = [
   {
+    name: '주사위',
+    description: '1~100 사이의 랜덤 숫자를 뽑습니다.',
+  },
+  {
     name: '가토',
     description: '이번주 가디언 토벌(주간 고정 로테이션) 정보를 알려줍니다.',
     options: [
