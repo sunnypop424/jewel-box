@@ -596,6 +596,58 @@ function optimizeRunsByStdDev(
   return runs;
 }
 
+// cFrom 을 targetRunIdx 공대의 cTo 자리에 넣어도 되는지 확인한다(교환 한쪽 방향).
+// 같은 유저 중복, 웨이브 내 중복, 동일 직업 딜러 상한, 서폿 상한을 본다.
+function canSwapIntoRun(
+  runs: Character[][],
+  targetRunIdx: number,
+  cFrom: Character,
+  cTo: Character,
+  concurrentRuns: number,
+  maxSameJobDps: number,
+  maxSupportsPerRun: number,
+): boolean {
+  const toRun = runs[targetRunIdx];
+  if (toRun.some((m) => m.id !== cTo.id && m.discordName === cFrom.discordName)) return false;
+
+  if (concurrentRuns > 1) {
+    const targetWave = Math.floor(targetRunIdx / concurrentRuns);
+    const waveStart = targetWave * concurrentRuns;
+    const waveEnd = waveStart + concurrentRuns;
+    for (let i = waveStart; i < waveEnd && i < runs.length; i++) {
+      if (i === targetRunIdx) continue;
+      if (runs[i].some((m) => m.id !== cTo.id && m.discordName === cFrom.discordName)) return false;
+    }
+  }
+
+  if (cFrom.role === 'DPS') {
+    const sameJobCount = toRun.filter((m) => m.id !== cTo.id && m.role === 'DPS' && m.jobCode === cFrom.jobCode).length;
+    if (sameJobCount >= maxSameJobDps) return false;
+  } else {
+    const supCount = toRun.filter((m) => m.id !== cTo.id && m.role === 'SUPPORT').length;
+    if (supCount >= maxSupportsPerRun) return false;
+  }
+  return true;
+}
+
+// MRV(외통수 방지) 락이 걸린 캐릭을 교환해도 되는지 판단한다.
+// 락의 목적은 "갈 곳 없는 약한 딜러가 서폿 있는 공대에 앉아 있을 것"을 보장하는 것이므로,
+// 양쪽 공대 모두 서폿을 보유하고 있으면 교환해도 보장이 깨지지 않는다.
+function isLockedSwapAllowed(
+  raidId: RaidId,
+  runs: Character[][],
+  r1: number,
+  r2: number,
+  char1: Character,
+  char2: Character,
+  lockIds: Set<string>,
+): boolean {
+  if (!lockIds.has(char1.id) && !lockIds.has(char2.id)) return true;
+  if (!isFourPlayerRaid(raidId)) return false;
+  if (char1.discordName === char2.discordName) return true;
+  return runs[r1].some((m) => m.role === 'SUPPORT') && runs[r2].some((m) => m.role === 'SUPPORT');
+}
+
 function optimizeCombatPowerBySwapOnly(
   raidId: RaidId,
   runsMembers: Character[][],
@@ -605,7 +657,6 @@ function optimizeCombatPowerBySwapOnly(
   random: () => number,
   concurrentRuns: number,
   lockIds: Set<string> = new Set(),
-  swapAllowed?: (a: Character, b: Character, runs: Character[][], aRunIdx: number, bRunIdx: number) => boolean,
 ): Character[][] {
   const runs = runsMembers.map((r) => [...r]);
   const runCount = runs.length;
@@ -626,40 +677,11 @@ function optimizeCombatPowerBySwapOnly(
     const char1 = runs[r1][c1Idx];
     const char2 = runs[r2][c2Idx];
 
-    const eitherLocked = lockIds.has(char1.id) || lockIds.has(char2.id);
-    if (eitherLocked) {
-      const samePersonSwap = isFourPlayerRaid(raidId) && char1.discordName === char2.discordName;
-      if (!samePersonSwap) continue;
-    }
+    if (!isLockedSwapAllowed(raidId, runs, r1, r2, char1, char2, lockIds)) continue;
     if (char1.role !== char2.role) continue;
-    if (swapAllowed && !swapAllowed(char1, char2, runs, r1, r2)) continue;
 
-    const canSwap = (targetRunIdx: number, cFrom: Character, cTo: Character) => {
-      const toRun = runs[targetRunIdx];
-      if (toRun.some((m) => m.id !== cTo.id && m.discordName === cFrom.discordName)) return false;
-
-      if (concurrentRuns > 1) {
-        const targetWave = Math.floor(targetRunIdx / concurrentRuns);
-        const waveStart = targetWave * concurrentRuns;
-        const waveEnd = waveStart + concurrentRuns;
-        for (let i = waveStart; i < waveEnd && i < runs.length; i++) {
-          if (i === targetRunIdx) continue;
-          if (runs[i].some((m) => m.id !== cTo.id && m.discordName === cFrom.discordName)) return false;
-        }
-      }
-
-      if (cFrom.role === 'DPS') {
-        const sameJobCount = toRun.filter((m) => m.id !== cTo.id && m.role === 'DPS' && m.jobCode === cFrom.jobCode).length;
-        if (sameJobCount >= maxSameJobDps) return false;
-      } else {
-        const supCount = toRun.filter((m) => m.id !== cTo.id && m.role === 'SUPPORT').length;
-        if (supCount >= maxSupportsPerRun) return false;
-      }
-      return true;
-    };
-
-    if (!canSwap(r2, char1, char2)) continue;
-    if (!canSwap(r1, char2, char1)) continue;
+    if (!canSwapIntoRun(runs, r2, char1, char2, concurrentRuns, maxSameJobDps, maxSupportsPerRun)) continue;
+    if (!canSwapIntoRun(runs, r1, char2, char1, concurrentRuns, maxSameJobDps, maxSupportsPerRun)) continue;
 
     runs[r1][c1Idx] = char2;
     runs[r2][c2Idx] = char1;
@@ -680,21 +702,92 @@ function optimizeCombatPowerBySwapOnly(
   return runs;
 }
 
-// 4인 레이드: 전투력 하위권 캐릭을 정원을 채운 공대로 끌어온다.
-// 미달 공대는 밖에서 인원을 구해야 하는 자리라 약한 캐릭이 자리를 잡기 어렵고,
-// 꽉 찬 공대에서는 공대원들과 함께 갈 수 있다(품앗이).
-// 교환 상대는 전투력이 가장 가까운 캐릭으로 골라 평균 편차가 덜 흔들리게 한다.
-function pullWeakestIntoFullRuns(
+// 결정론적 최적 교환 패스: 가능한 모든 동일 role 교환을 전수 탐색해
+// 공대 평균 전투력 편차를 가장 크게 줄이는 교환 하나씩을 반복 적용한다.
+// 난수 기반 언덕오르기가 빠져나오지 못하는 국소최적을 마저 정리하는 용도이며,
+// 난수를 쓰지 않으므로 같은 입력이면 항상 같은 편성이 나온다.
+function refineByBestSwap(
   raidId: RaidId,
   runsMembers: Character[][],
   maxPerRun: number,
   maxSupportsPerRun: number,
   concurrentRuns: number,
   lockIds: Set<string>,
-  weakIds: Set<string>,
 ): Character[][] {
   const runs = runsMembers.map((r) => [...r]);
-  if (runs.length === 0 || weakIds.size === 0) return runs;
+  if (runs.length <= 1) return runs;
+
+  const maxSameJobDps = getMaxSameJobDpsInRun(raidId);
+  let bestCost = computeRunsCost(runs, 'overall');
+
+  for (let round = 0; round < 200; round++) {
+    let bestSwap: [number, number, number, number] | null = null;
+    let bestNextCost = bestCost;
+
+    for (let r1 = 0; r1 < runs.length; r1++) {
+      for (let r2 = r1 + 1; r2 < runs.length; r2++) {
+        if (runs[r1].length === 0 || runs[r2].length === 0) continue;
+
+        for (let i = 0; i < runs[r1].length; i++) {
+          for (let j = 0; j < runs[r2].length; j++) {
+            const char1 = runs[r1][i];
+            const char2 = runs[r2][j];
+            if (char1.role !== char2.role) continue;
+            if (!isLockedSwapAllowed(raidId, runs, r1, r2, char1, char2, lockIds)) continue;
+            if (!canSwapIntoRun(runs, r2, char1, char2, concurrentRuns, maxSameJobDps, maxSupportsPerRun)) continue;
+            if (!canSwapIntoRun(runs, r1, char2, char1, concurrentRuns, maxSameJobDps, maxSupportsPerRun)) continue;
+
+            runs[r1][i] = char2;
+            runs[r2][j] = char1;
+            const ok =
+              isRunValid(raidId, runs[r1], maxPerRun, maxSupportsPerRun) &&
+              isRunValid(raidId, runs[r2], maxPerRun, maxSupportsPerRun);
+            const nextCost = ok ? computeRunsCost(runs, 'overall') : Infinity;
+            runs[r1][i] = char1;
+            runs[r2][j] = char2;
+
+            if (nextCost < bestNextCost) {
+              bestNextCost = nextCost;
+              bestSwap = [r1, i, r2, j];
+            }
+          }
+        }
+      }
+    }
+
+    if (!bestSwap) break;
+
+    const [ar, ai, br, bj] = bestSwap;
+    const moved = runs[ar][ai];
+    runs[ar][ai] = runs[br][bj];
+    runs[br][bj] = moved;
+    bestCost = bestNextCost;
+  }
+
+  return runs;
+}
+
+// MRV 락이 걸린 캐릭을 target 공대로 옮겨도 되는지 판단한다.
+// 락의 목적은 "갈 곳 없는 약한 딜러가 서폿 있는 공대에 앉아 있을 것"이므로,
+// 옮겨갈 공대에도 서폿이 있으면 보장이 유지된다. 락이 없으면 언제든 이동 가능.
+function isLockSafeTarget(target: Character[], ch: Character, lockIds: Set<string>): boolean {
+  if (!lockIds.has(ch.id)) return true;
+  return target.some((m) => m.role === 'SUPPORT');
+}
+
+// 4인 레이드: 인원이 1명뿐인 공대를 없앤다.
+// 다른 공대에 합류시킬 수 있으면 합류시키고, 안 되면 3명 이상인 공대에서 1명을 차출한다.
+// (차출 공대는 빼고도 2명 이상 남아야 해서 새로운 1인 공대가 생기지 않는다.)
+// 어느 쪽이든 옮긴 뒤 평균 전투력 편차가 가장 작아지는 조합을 고른다.
+function avoidSoloRunsFourMan(
+  raidId: RaidId,
+  runsMembers: Character[][],
+  maxPerRun: number,
+  maxSupportsPerRun: number,
+  concurrentRuns: number,
+  lockIds: Set<string>,
+): Character[][] {
+  let runs = runsMembers.map((r) => [...r]);
 
   const waveOk = (idx: number) => {
     if (concurrentRuns <= 1) return true;
@@ -708,56 +801,76 @@ function pullWeakestIntoFullRuns(
     return true;
   };
 
-  for (let guard = 0; guard < weakIds.size; guard++) {
-    let applied = false;
+  for (let guard = 0; guard < runs.length + 8; guard++) {
+    if (runs.filter((r) => r.length > 0).length <= 1) break;
 
-    for (let p = 0; p < runs.length && !applied; p++) {
-      if (runs[p].length === 0 || runs[p].length >= maxPerRun) continue;
+    const soloIdx = runs.findIndex((r) => r.length === 1);
+    if (soloIdx === -1) break;
 
-      for (let pi = 0; pi < runs[p].length && !applied; pi++) {
-        const weak = runs[p][pi];
-        if (!weakIds.has(weak.id) || lockIds.has(weak.id)) continue;
+    const solo = runs[soloIdx][0];
 
-        let best: [number, number] | null = null;
-        let bestDelta = Infinity;
+    // 1) 합류: 혼자인 공대원을 통째로 다른 공대로 옮긴다.
+    let mergeIdx = -1;
+    let mergeCost = Infinity;
+    for (let t = 0; t < runs.length; t++) {
+      if (t === soloIdx || runs[t].length === 0) continue;
+      if (!isLockSafeTarget(runs[t], solo, lockIds)) continue;
 
-        for (let f = 0; f < runs.length; f++) {
-          if (f === p || runs[f].length < maxPerRun) continue;
+      runs[t] = [...runs[t], solo];
+      runs[soloIdx] = [];
+      const ok = isRunValid(raidId, runs[t], maxPerRun, maxSupportsPerRun) && waveOk(t);
+      const cost = ok ? computeRunsCost(runs, 'overall') : Infinity;
+      runs[t] = runs[t].filter((m) => m.id !== solo.id);
+      runs[soloIdx] = [solo];
 
-          for (let fi = 0; fi < runs[f].length; fi++) {
-            const other = runs[f][fi];
-            if (weakIds.has(other.id) || lockIds.has(other.id)) continue;
-            if (other.role !== weak.role) continue;
+      if (cost < mergeCost) {
+        mergeCost = cost;
+        mergeIdx = t;
+      }
+    }
 
-            const delta = Math.abs(other.combatPower - weak.combatPower);
-            if (delta >= bestDelta) continue;
+    if (mergeIdx !== -1) {
+      runs[mergeIdx] = [...runs[mergeIdx], solo];
+      runs = runs.filter((_, i) => i !== soloIdx);
+      continue;
+    }
 
-            runs[p][pi] = other;
-            runs[f][fi] = weak;
-            const ok =
-              isRunValid(raidId, runs[p], maxPerRun, maxSupportsPerRun) &&
-              isRunValid(raidId, runs[f], maxPerRun, maxSupportsPerRun) &&
-              waveOk(p) &&
-              waveOk(f);
-            runs[p][pi] = weak;
-            runs[f][fi] = other;
+    // 2) 차출: 3명 이상인 공대에서 1명을 데려온다.
+    let donor: [number, number] | null = null;
+    let donorCost = Infinity;
+    for (let d = 0; d < runs.length; d++) {
+      if (d === soloIdx || runs[d].length < 3) continue;
 
-            if (!ok) continue;
-            bestDelta = delta;
-            best = [f, fi];
-          }
-        }
+      for (let mi = 0; mi < runs[d].length; mi++) {
+        const member = runs[d][mi];
+        if (!isLockSafeTarget(runs[soloIdx], member, lockIds)) continue;
 
-        if (best) {
-          const [f, fi] = best;
-          runs[p][pi] = runs[f][fi];
-          runs[f][fi] = weak;
-          applied = true;
+        const keepDonor = runs[d];
+        const keepTarget = runs[soloIdx];
+        runs[d] = keepDonor.filter((_, k) => k !== mi);
+        runs[soloIdx] = [...keepTarget, member];
+        const ok =
+          isRunValid(raidId, runs[d], maxPerRun, maxSupportsPerRun) &&
+          isRunValid(raidId, runs[soloIdx], maxPerRun, maxSupportsPerRun) &&
+          waveOk(d) &&
+          waveOk(soloIdx);
+        const cost = ok ? computeRunsCost(runs, 'overall') : Infinity;
+        runs[d] = keepDonor;
+        runs[soloIdx] = keepTarget;
+
+        if (cost < donorCost) {
+          donorCost = cost;
+          donor = [d, mi];
         }
       }
     }
 
-    if (!applied) break;
+    if (!donor) break;
+
+    const [d, mi] = donor;
+    const member = runs[d][mi];
+    runs[d] = runs[d].filter((_, k) => k !== mi);
+    runs[soloIdx] = [...runs[soloIdx], member];
   }
 
   return runs;
@@ -765,8 +878,8 @@ function pullWeakestIntoFullRuns(
 
 // 전투력 형평성 마무리 패스 (공대 인원수 확정 후 실행).
 // 정원 미달 공대까지 포함해 모든 공대의 평균 전투력을 서로 비슷하게 맞춘다.
-// 혼자 가거나 인원이 모자란 공대에도 평균에 가까운 캐릭이 배치되어,
-// 너무 약해서 사람을 못 구하거나 너무 강한 캐릭이 혼자 낭비되는 일을 막는다.
+// 4인 레이드는 정원을 채우는 것보다 평균 전투력 균일화를 우선하므로,
+// 무작위 교환으로 큰 편차를 걷어낸 뒤 전수 탐색으로 마무리한다.
 // 스왑만 사용하므로 공대 인원수는 그대로 유지된다.
 function applyCombatPowerFairness(
   raidId: RaidId,
@@ -777,44 +890,12 @@ function applyCombatPowerFairness(
   lockIds: Set<string>,
   random: () => number,
 ): Character[][] {
-  const balance = (
-    rs: Character[][],
-    swapAllowed?: (a: Character, b: Character, runs: Character[][], aRunIdx: number, bRunIdx: number) => boolean,
-  ) =>
-    optimizeCombatPowerBySwapOnly(
-      raidId,
-      rs,
-      maxSupportsPerRun,
-      maxPerRun,
-      'overall',
-      random,
-      concurrentRuns,
-      lockIds,
-      swapAllowed,
-    );
+  const balance = (rs: Character[][]) =>
+    optimizeCombatPowerBySwapOnly(raidId, rs, maxSupportsPerRun, maxPerRun, 'overall', random, concurrentRuns, lockIds);
 
   if (!isFourPlayerRaid(raidId)) return balance(runsMembers);
 
-  const all = runsMembers.flat();
-  const weakCount = Math.max(1, Math.ceil(all.length * RAID_LOGIC_POLICY.FOUR_MAN_WEAK_PERCENT));
-  const weakIds = new Set(
-    all
-      .slice()
-      .sort((a, b) => a.combatPower - b.combatPower || a.id.localeCompare(b.id))
-      .slice(0, weakCount)
-      .map((c) => c.id),
-  );
-
-  // 하위권을 꽉 찬 공대로 끌어온 뒤, 다시 미달 공대로 나가지 못하게 막은 채 균등화로 마무리한다.
-  const keepWeakInFullRuns = (a: Character, b: Character, runs: Character[][], aRunIdx: number, bRunIdx: number) => {
-    if (weakIds.has(a.id) && runs[bRunIdx].length < maxPerRun) return false;
-    if (weakIds.has(b.id) && runs[aRunIdx].length < maxPerRun) return false;
-    return true;
-  };
-
-  let result = balance(runsMembers);
-  result = pullWeakestIntoFullRuns(raidId, result, maxPerRun, maxSupportsPerRun, concurrentRuns, lockIds, weakIds);
-  return balance(result, keepWeakInFullRuns);
+  return refineByBestSwap(raidId, balance(runsMembers), maxPerRun, maxSupportsPerRun, concurrentRuns, lockIds);
 }
 
 // ✅ lockIds 추가 적용
@@ -1378,6 +1459,11 @@ function distributeCharactersIntoRunsLegacy(
 
   optimized = applyPostProcessing(raidId, optimized, maxPerRun, maxSupportsPerRun, fillTwoSupports, concurrentRuns, lockIds);
 
+  // 인원수를 바꾸는 마지막 단계. 이후는 전부 스왑뿐이라 1인 공대가 되살아나지 않는다.
+  if (is4Player) {
+    optimized = avoidSoloRunsFourMan(raidId, optimized, maxPerRun, maxSupportsPerRun, concurrentRuns, lockIds);
+  }
+
   optimized = applyCombatPowerFairness(raidId, optimized, maxPerRun, maxSupportsPerRun, concurrentRuns, lockIds, random);
 
   const arrangedRuns: Character[][] = [];
@@ -1438,7 +1524,6 @@ function distributeCharactersIntoRunsLegacy(
 }
 
 const RAID_LOGIC_POLICY = {
-  FOUR_MAN_WEAK_PERCENT: 0.25,
   EIGHT_MAN_WEAK_PERCENT: 0.3,
   EIGHT_MAN_WEAK_CAP_PER_RUN: 2,
   EIGHT_MAN_MOVE_ITER_MULTIPLIER: 300,
