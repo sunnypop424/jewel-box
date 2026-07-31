@@ -2114,8 +2114,63 @@ export default {
 
       if (commandName === '주사위') {
         const roll = Math.floor(Math.random() * 100) + 1; // 1~100
-        const resultText = `🎲 **${discordUserName}**님의 주사위 결과: **${roll}** (1~100)`;
+        const resultText = `🎲 **${discordUserName}**님의 주사위 결과: **${roll}**`;
         // 주사위는 공개(flags 없음)
+        return new Response(JSON.stringify({ type: 4, data: { content: resultText } }), { headers: { 'Content-Type': 'application/json' } });
+      }
+
+      if (commandName === '가위바위보') {
+        const emoji = { '가위': '✌️', '바위': '✊', '보': '✋' };
+        const hands = ['가위', '바위', '보'];
+        const userHand = interaction.data.options?.find(o => o.name === '선택')?.value;
+        const botHand = hands[Math.floor(Math.random() * 3)];
+
+        let outcome;
+        if (userHand === botHand) {
+          outcome = '비겼습니다! 🤝';
+        } else if (
+          (userHand === '가위' && botHand === '보') ||
+          (userHand === '바위' && botHand === '가위') ||
+          (userHand === '보' && botHand === '바위')
+        ) {
+          outcome = `**${discordUserName}**님 승리! 🎉`;
+        } else {
+          outcome = `**${discordUserName}**님 패배... 😢`;
+        }
+
+        const resultText =
+          `✊✋✌️ 가위바위보!\n` +
+          `${discordUserName}: ${emoji[userHand]} ${userHand}  vs  봇: ${emoji[botHand]} ${botHand}\n\n` +
+          `${outcome}`;
+
+        return new Response(JSON.stringify({ type: 4, data: { content: resultText } }), { headers: { 'Content-Type': 'application/json' } });
+      }
+
+      if (commandName === '소라고동') {
+        const question = interaction.data.options?.find(o => o.name === '질문')?.value;
+        const answers = [
+          'Go! Go!',
+          '안돼.',
+          '일단 오늘은 아니야.',
+          '다음에 해.',
+          '아무것도 하지 마.',
+          '글쎄다...',
+          '다시 물어봐.',
+          '당연하지!',
+          '절대 안돼.',
+          '해라!',
+          '오늘은 접는 게 좋겠어.',
+          '절대 불가능',
+          '완전 쌉가능',
+          '직접 하지말고 주변 사람한테 부탁해봐.',
+          '내일 해.',
+        ];
+        const ans = answers[Math.floor(Math.random() * answers.length)];
+
+        const resultText =
+          `🐚 마법의 소라고동님, "${question}"\n\n` +
+          `➡️ **${ans}**`;
+
         return new Response(JSON.stringify({ type: 4, data: { content: resultText } }), { headers: { 'Content-Type': 'application/json' } });
       }
 

@@ -26,6 +26,35 @@ const commands = [
     description: '1~100 사이의 랜덤 숫자를 뽑습니다.',
   },
   {
+    name: '가위바위보',
+    description: '봇과 가위바위보 한 판! 승패를 가려줍니다.',
+    options: [
+      {
+        type: 3, // STRING
+        name: '선택',
+        description: '가위 / 바위 / 보 중 하나',
+        required: true,
+        choices: [
+          { name: '가위', value: '가위' },
+          { name: '바위', value: '바위' },
+          { name: '보', value: '보' },
+        ],
+      },
+    ],
+  },
+  {
+    name: '소라고동',
+    description: '마법의 소라고동에게 무엇이든 물어보세요.',
+    options: [
+      {
+        type: 3, // STRING
+        name: '질문',
+        description: '예/아니오로 답할 질문을 입력하세요.',
+        required: true,
+      },
+    ],
+  },
+  {
     name: '가토',
     description: '이번주 가디언 토벌(주간 고정 로테이션) 정보를 알려줍니다.',
     options: [
