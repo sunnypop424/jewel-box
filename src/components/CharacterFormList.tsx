@@ -129,13 +129,12 @@ function SortableCharacterRow({ row, index, handleChangeRow, handleRemoveRow, is
                             <span className="whitespace-nowrap">나메 참여</span>
                         </label>
                     )}
-                    {/* UPDATE-D: 벨가르딘 나메 체크박스 — 활성화 시 아래 블록 주석 해제 (IL≥1780) */}
-                    {/* {typeof row.itemLevel === 'number' && row.itemLevel >= 1780 && (
+                    {typeof row.itemLevel === 'number' && row.itemLevel >= 1780 && (
                         <label className="inline-flex select-none items-center gap-1 rounded-md border border-cyan-200 bg-cyan-50 px-1.5 py-1 text-[11px] font-semibold text-cyan-700 shadow-sm dark:border-cyan-900/50 dark:bg-cyan-900/20 dark:text-cyan-300 hover:bg-cyan-100 dark:hover:bg-cyan-900/40 transition-colors cursor-pointer">
                             <input type="checkbox" checked={row.belgardinNightmare} onChange={(e) => handleChangeRow(index, 'belgardinNightmare', e.target.checked)} disabled={isSaving} className="h-3 w-3 shrink-0 rounded border-cyan-300 text-cyan-600 focus:ring-cyan-500 dark:border-cyan-600 cursor-pointer" />
                             <span className="whitespace-nowrap">벨가 나메</span>
                         </label>
-                    )} */}
+                    )}
                     {row.jobCode === '발키리' && (
                         <label className="inline-flex select-none items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-1.5 py-1 text-[11px] font-semibold text-amber-700 shadow-sm dark:border-amber-900/50 dark:bg-amber-900/20 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors cursor-pointer">
                             <input type="checkbox" checked={row.valkyCanSupport} onChange={(e) => handleChangeRow(index, 'valkyCanSupport', e.target.checked)} disabled={isSaving} className="h-3 w-3 rounded border-amber-300 text-amber-600 focus:ring-amber-500 dark:border-amber-600 cursor-pointer" />

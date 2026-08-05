@@ -32,8 +32,7 @@ export type RaidFamily =
   | 'SERKA'
   | 'HORIZON'
   | 'KAZEROS'
-  // UPDATE-D: 벨가르딘 활성화 시 아래 주석 해제
-  // | 'BELGARDIN'
+  | 'BELGARDIN'
   ;
 
 export type DifficultyTier =
@@ -73,10 +72,9 @@ export type RaidId =
   | 'ACT4_SINGLE'
   | 'FINAL_SINGLE'
   | 'SERKA_SINGLE'
-  // UPDATE-D: 벨가르딘 활성화 시 아래 3줄 주석 해제
-  // | 'BELGARDIN_NORMAL'
-  // | 'BELGARDIN_HARD'
-  // | 'BELGARDIN_NIGHTMARE'
+  | 'BELGARDIN_NORMAL'
+  | 'BELGARDIN_HARD'
+  | 'BELGARDIN_NIGHTMARE'
   ;
 
 export type GoldType = 'GENERAL' | 'BOUND';
@@ -162,24 +160,24 @@ export const RAIDS: RaidDefinition[] = [
       { tier: 'NIGHTMARE', label: '나이트메어', minItemLevel: 1770, generalGold: 45000, boundGold: 0, colorClass: 'bg-pink-800' },
     ],
   },
-  // UPDATE-D: 벨가르딘 (신규 레이드, 8/5). 활성화 시 이 블록 + RaidFamily/RaidId 의 BELGARDIN 주석 해제.
-  // availableFrom 으로 8/5 전엔 자동 숨김. 나이트메어는 belgardinNightmare 플래그 필요(체크 시 나메, 아니면 하드).
-  // {
-  //   family: 'BELGARDIN',
-  //   label: '벨가르딘',
-  //   order: 1,
-  //   clearScope: 'character',
-  //   resetPolicy: 'weekly',
-  //   includeInGoldTop3: true,
-  //   exclusiveDifficulty: true,
-  //   partySize: 8,
-  //   availableFrom: '2026-08-05',
-  //   difficulties: [
-  //     { tier: 'NORMAL', label: '노말', minItemLevel: 1750, generalGold: 50000, boundGold: 0, colorClass: 'bg-cyan-400' },
-  //     { tier: 'HARD', label: '하드', minItemLevel: 1770, generalGold: 62000, boundGold: 0, colorClass: 'bg-cyan-600' },
-  //     { tier: 'NIGHTMARE', label: '나이트메어', minItemLevel: 1780, generalGold: 75000, boundGold: 0, colorClass: 'bg-cyan-800', requiresFlag: 'belgardinNightmare' },
-  //   ],
-  // },
+  {
+    // 벨가르딘 — 2026-08-05 패치 신규 8인 레이드.
+    // 나이트메어는 belgardinNightmare 플래그 필요(체크 시 나메, 아니면 하드).
+    family: 'BELGARDIN',
+    label: '벨가르딘',
+    order: 1,
+    clearScope: 'character',
+    resetPolicy: 'weekly',
+    includeInGoldTop3: true,
+    exclusiveDifficulty: true,
+    partySize: 8,
+    availableFrom: '2026-08-05',
+    difficulties: [
+      { tier: 'NORMAL', label: '노말', minItemLevel: 1750, generalGold: 50000, boundGold: 0, colorClass: 'bg-cyan-400' },
+      { tier: 'HARD', label: '하드', minItemLevel: 1770, generalGold: 62000, boundGold: 0, colorClass: 'bg-cyan-600' },
+      { tier: 'NIGHTMARE', label: '나이트메어', minItemLevel: 1780, generalGold: 75000, boundGold: 0, colorClass: 'bg-cyan-800', requiresFlag: 'belgardinNightmare' },
+    ],
+  },
   {
     family: 'SERKA',
     label: '세르카',
@@ -382,6 +380,7 @@ export const RAID_ORDER_FOR_PROGRESS: RaidId[] = [
   'ACT2_HARD', 'ACT3_HARD',
   'ACT4_NORMAL', 'FINAL_NORMAL', 'SERKA_NORMAL',
   'ACT4_HARD', 'FINAL_HARD', 'SERKA_HARD', 'SERKA_NIGHTMARE',
+  'BELGARDIN_NORMAL', 'BELGARDIN_HARD', 'BELGARDIN_NIGHTMARE',
   'KAZEROS_NORMAL', 'KAZEROS_HARD', 'KAZEROS_NIGHTMARE',
   'HORIZON_STEP1', 'HORIZON_STEP2', 'HORIZON_STEP3',
 ];

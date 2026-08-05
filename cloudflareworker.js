@@ -49,6 +49,21 @@ const RAID_META = {
     "generalGold": 45000,
     "boundGold": 0
   },
+  "BELGARDIN_NORMAL": {
+    "label": "벨가르딘 노말",
+    "generalGold": 50000,
+    "boundGold": 0
+  },
+  "BELGARDIN_HARD": {
+    "label": "벨가르딘 하드",
+    "generalGold": 62000,
+    "boundGold": 0
+  },
+  "BELGARDIN_NIGHTMARE": {
+    "label": "벨가르딘 나이트메어",
+    "generalGold": 75000,
+    "boundGold": 0
+  },
   "SERKA_NORMAL": {
     "label": "세르카 노말",
     "generalGold": 16000,
@@ -185,6 +200,29 @@ const RAIDS = [
         "tier": "NIGHTMARE",
         "minItemLevel": 1770,
         "requiresFlag": null
+      }
+    ]
+  },
+  {
+    "family": "BELGARDIN",
+    "clearScope": "character",
+    "availableFrom": "2026-08-05",
+    "availableUntil": null,
+    "difficulties": [
+      {
+        "tier": "NORMAL",
+        "minItemLevel": 1750,
+        "requiresFlag": null
+      },
+      {
+        "tier": "HARD",
+        "minItemLevel": 1770,
+        "requiresFlag": null
+      },
+      {
+        "tier": "NIGHTMARE",
+        "minItemLevel": 1780,
+        "requiresFlag": "belgardinNightmare"
       }
     ]
   },

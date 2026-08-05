@@ -12,10 +12,10 @@ interface SwapModalProps {
 }
 
 // 캐릭터가 특정 레이드 난이도의 대상인지 판정 — 레지스트리 getEligibleRaids 기준.
-// 기존 Phase 1 동작 호환을 위해 SwapModal 은 SERKA/FINAL/ACT4/HORIZON 패밀리에만 적용.
+// 기존 Phase 1 동작 호환을 위해 SwapModal 은 BELGARDIN/SERKA/FINAL/ACT4/HORIZON 패밀리에만 적용.
 function isCharacterTargetForRaid(char: Character, targetRaidId: RaidId): boolean {
   const family = getRaidFamily(targetRaidId);
-  if (family !== 'SERKA' && family !== 'FINAL' && family !== 'ACT4' && family !== 'HORIZON') {
+  if (family !== 'BELGARDIN' && family !== 'SERKA' && family !== 'FINAL' && family !== 'ACT4' && family !== 'HORIZON') {
     return false;
   }
   return getEligibleRaids(char).includes(targetRaidId);
